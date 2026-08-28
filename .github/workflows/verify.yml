@@ -1,0 +1,51 @@
+name: Verify plugins
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: packages/io.github.__OWNER__.markdown-notes-plus/package-lock.json
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.34.0
+
+      - name: Install Markdown Notes+ dependencies
+        working-directory: packages/io.github.__OWNER__.markdown-notes-plus
+        run: npm ci
+
+      - name: Test and build Markdown Notes+
+        working-directory: packages/io.github.__OWNER__.markdown-notes-plus
+        run: |
+          npm run typecheck
+          npm test
+          npm run test:unit
+          npm run test:integration
+          npm run build
+          test -s dist/index.html
+          for asset in dist/assets/*.js; do node --check "$asset"; done
+
+      - name: Build and validate plugin repository
+        run: |
+          python3 scripts/build_test.py
+          python3 scripts/build.py \
+            --owner test-owner \
+            --base-url https://example.invalid/sn-plugins
