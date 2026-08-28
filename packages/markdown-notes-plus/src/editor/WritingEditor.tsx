@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import type { Ctx } from "@milkdown/ctx";
+import type { Ctx, MilkdownPlugin } from "@milkdown/ctx";
 import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, rootCtx, serializerCtx } from "@milkdown/core";
-import { commonmark } from "@milkdown/preset-commonmark";
+import { commonmark, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
 import { gfm } from "@milkdown/preset-gfm";
 import { history } from "@milkdown/plugin-history";
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
@@ -28,6 +28,12 @@ export type WritingEditorProps = {
   onCapabilityChange?: (result: WritingRoundTripResult) => void;
   onLosslessFallback?: (value: string, result: WritingRoundTripResult) => void;
 };
+
+/** Writing must not enable CommonMark's synthetic empty-line HTML marker. */
+const excludedWritingCommonmark = new Set(remarkPreserveEmptyLinePlugin);
+export const writingCommonmark: MilkdownPlugin[] = commonmark.filter(
+  (plugin) => !excludedWritingCommonmark.has(plugin),
+);
 
 function setTaskListItemAttributes(dom: HTMLElement, node: ProseNode): void {
   dom.dataset.itemType = node.attrs.checked == null ? "list" : "task";
@@ -262,6 +268,58 @@ type WritingEditorValueSync = {
   report: (result: WritingRoundTripResult) => void;
 };
 
+type WritingEditorConfiguration = {
+  host: HTMLDivElement;
+  value: string;
+  readOnlyRef: { current: boolean };
+  controls: WritingControlRegistry;
+  onDeleteTaskRef: { current: (ordinal: number, renderedMarkdown: string) => void };
+  editability: WritingEditability;
+  onMarkdownUpdated: (ctx: Ctx, markdown: string) => void;
+};
+
+/** Own the complete pre-create Writing editor composition. */
+export function configureWritingEditor(editor: Editor, {
+  host,
+  value,
+  readOnlyRef,
+  controls,
+  onDeleteTaskRef,
+  editability,
+  onMarkdownUpdated,
+}: WritingEditorConfiguration): Editor {
+  return editor
+    .config((ctx) => {
+      ctx.set(rootCtx, host);
+      ctx.set(defaultValueCtx, value);
+      ctx.update(editorViewOptionsCtx, (options) => ({
+        ...options,
+        nodeViews: {
+          ...options.nodeViews,
+          list_item: (node, view, getPos) => taskListItemView(
+            node,
+            view,
+            getPos,
+            readOnlyRef,
+            controls,
+            (ordinal, renderedMarkdown) => onDeleteTaskRef.current?.(ordinal, renderedMarkdown),
+            () => {
+              try { return ctx.get(serializerCtx)(view.state.doc); } catch { return undefined; }
+            },
+          ),
+        },
+      }));
+      ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, markdown));
+    })
+    .use(writingCommonmark)
+    .use(gfm)
+    .use(history)
+    .use(listener)
+    .use($prose(() => writingOriginPlugin))
+    .use(slashMenuPlugin(editability))
+    .use(writingLinkShortcutPlugin(editability));
+}
+
 /** Keep the Milkdown document and capability proof aligned with canonical text. */
 export function synchronizeWritingEditorValue({ gate, generation, value, replace, serialize, report }: WritingEditorValueSync): WritingRoundTripResult {
   if (gate.renderedMarkdown !== value) {
@@ -331,55 +389,35 @@ export function WritingEditor({ value, readOnly, onChange, onDeleteTask, command
 
   useEffect(() => {
     if (!host.current) return undefined;
+    const hostElement = host.current;
     let cancelled = false;
     const generation = gate.current.begin(value);
     generationRef.current = generation;
-    const editor = Editor.make()
-      .config((ctx) => {
-        ctx.set(rootCtx, host.current!);
-        ctx.set(defaultValueCtx, value);
-        ctx.update(editorViewOptionsCtx, (options) => ({
-          ...options,
-          nodeViews: {
-            ...options.nodeViews,
-            list_item: (node, view, getPos) => taskListItemView(
-              node,
-              view,
-              getPos,
-              readOnlyRef,
-              controlsRef.current,
-              (ordinal, renderedMarkdown) => onDeleteTaskRef.current?.(ordinal, renderedMarkdown),
-              () => {
-                try { return ctx.get(serializerCtx)(view.state.doc); } catch { return undefined; }
-              },
-            ),
-          },
-        }));
-        ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
-          const originState = writingOriginPluginKey.getState(ctx.get(editorViewCtx).state) ?? { origin: "user" as const };
-          const origin = originState.origin;
-          if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
-          const proof = assessWritingMutation(valueRef.current, markdown, origin, originState.structural?.context);
-          if (!proof.editable) {
-            reportCapability(proof);
-            // The serializer has already rendered the user's transaction.
-            // Keep that exact rendered value visible in Source mode instead of
-            // rolling it back and silently discarding the user's input. The
-            // App owns the temporary fallback buffer and decides when an
-            // explicit Source edit crosses the canonical/save boundary.
-            onLosslessFallbackRef.current?.(markdown, proof);
-            return;
-          }
-          onChangeRef.current(markdown);
-        });
-      })
-      .use(commonmark)
-      .use(gfm)
-      .use(history)
-      .use(listener)
-      .use($prose(() => writingOriginPlugin))
-      .use(slashMenuPlugin({ readOnlyRef, capabilityRef }))
-      .use(writingLinkShortcutPlugin({ readOnlyRef, capabilityRef }));
+    const editor = configureWritingEditor(Editor.make(), {
+      host: hostElement,
+      value,
+      readOnlyRef,
+      controls: controlsRef.current,
+      onDeleteTaskRef,
+      editability: { readOnlyRef, capabilityRef },
+      onMarkdownUpdated: (ctx, markdown) => {
+        const originState = writingOriginPluginKey.getState(ctx.get(editorViewCtx).state) ?? { origin: "user" as const };
+        const origin = originState.origin;
+        if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
+        const proof = assessWritingMutation(valueRef.current, markdown, origin, originState.structural?.context);
+        if (!proof.editable) {
+          reportCapability(proof);
+          // The serializer has already rendered the user's transaction.
+          // Keep that exact rendered value visible in Source mode instead of
+          // rolling it back and silently discarding the user's input. The
+          // App owns the temporary fallback buffer and decides when an
+          // explicit Source edit crosses the canonical/save boundary.
+          onLosslessFallbackRef.current?.(markdown, proof);
+          return;
+        }
+        onChangeRef.current(markdown);
+      },
+    });
     editor.create().then(() => {
       if (cancelled) {
         void editor.destroy();

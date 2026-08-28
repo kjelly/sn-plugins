@@ -10,7 +10,8 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--editor-bg); color: var(--editor-fg); }
+html, body, #root { min-height: 100%; }
+body { min-height: 100vh; margin: 0; background: var(--editor-bg); color: var(--editor-fg); }
 button, textarea { font: inherit; }
 button { min-height: 38px; border: 1px solid var(--editor-border); border-radius: 7px; background: transparent; color: inherit; padding: 6px 10px; cursor: pointer; }
 button:hover:not(:disabled), button:focus-visible { border-color: var(--editor-accent); }
@@ -53,19 +54,21 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 
 /* React/Milkdown/CodeMirror runtime layout. */
-.app-shell { max-width: 1440px; margin: 0 auto; padding: 12px; }
+.app-shell { max-width: 1440px; min-height: 100vh; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; }
 .app-toolbar, .pane-toolbar, .panel-heading, .conflict { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .app-toolbar h1 { margin: 0 auto 0 0; font-size: 1.1rem; }
 .app-toolbar .current-section { margin-right: auto; }
 .current-section { color: var(--editor-muted); font-size: .88rem; }
 .mode-buttons { display: flex; gap: 5px; }
-.editing-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 12px; }
+.editing-grid { display: grid; flex: 1 1 auto; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 12px; margin-top: 12px; }
 .mode-split .editing-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, .8fr); }
-.mode-split .map-pane { grid-column: 2; grid-row: 1 / span 2; }
-.pane { min-width: 0; border: 1px solid var(--editor-border); border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--editor-bg) 96%, var(--editor-fg)); }
+.mode-split .map-pane { grid-column: 2; grid-row: 1; }
+.pane { min-width: 0; min-height: 0; border: 1px solid var(--editor-border); border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--editor-bg) 96%, var(--editor-fg)); }
+.writing-pane, .source-pane, .map-pane { display: flex; flex-direction: column; }
+.writing-pane[hidden] { display: none; }
 .pane-toolbar { min-height: 42px; padding: 6px 9px; border-bottom: 1px solid var(--editor-border); color: var(--editor-muted); font-size: .88rem; }
 .pane-toolbar span, .slash-hint { margin-left: auto; }
-.milkdown-writing { min-height: 48vh; padding: 18px; overflow: auto; }
+.milkdown-writing { flex: 1 1 auto; min-height: 0; padding: 18px; overflow: auto; }
 .milkdown-writing .editor { outline: 0; }
 .milkdown-writing :is(pre, code) { background: var(--editor-code-bg); border-radius: 5px; }
 .milkdown-writing pre { padding: 10px; overflow: auto; }
@@ -81,10 +84,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .slash-menu { position: absolute; z-index: 20; display: grid; gap: 3px; min-width: 150px; padding: 5px; border: 1px solid var(--editor-border); border-radius: 7px; background: var(--editor-bg); box-shadow: 0 5px 18px color-mix(in srgb, var(--editor-fg) 20%, transparent); }
 .slash-menu[hidden] { display: none; }
 .slash-command { min-height: 30px; border: 0; text-align: left; }
-.cm-source, .cm-editor, .cm-scroller, .mindmap-wrap { min-height: 48vh; }
+.cm-source, .cm-editor, .cm-scroller, .mindmap-wrap { min-height: 0; }
+.cm-source { display: flex; flex-direction: column; }
+.cm-source, .cm-source .cm-editor, .cm-source .cm-scroller { flex: 1 1 auto; min-height: 0; }
+.cm-source .cm-scroller { overflow: auto; }
 .cm-source .cm-editor { font-size: 14px; }
 .mindmap-wrap { position: relative; height: 100%; }
-.mindmap-svg { display: block; width: 100%; min-height: 48vh; background: var(--editor-bg); }
+.map-pane .mindmap-wrap { flex: 1 1 auto; min-height: 0; }
+.mindmap-svg { display: block; width: 100%; height: 100%; min-height: 0; background: var(--editor-bg); }
 .lower-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(240px, .8fr); gap: 12px; margin-top: 12px; }
 .tasks-panel, .outline-panel { padding: 12px; }
 .panel-heading h2, .outline-panel h2 { font-size: 1rem; margin: 0 auto 0 0; }

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { Ctx, Container, Clock } from "@milkdown/ctx";
+import { Ctx, Container, Clock, type MilkdownPlugin } from "@milkdown/ctx";
 import { editorViewCtx, marksCtx, nodesCtx, parserCtx, remarkStringifyOptionsCtx } from "@milkdown/core";
-import { schema as commonmarkSchema } from "@milkdown/preset-commonmark";
+import { Editor } from "@milkdown/core";
+import { remarkPreserveEmptyLinePlugin, schema as commonmarkSchema } from "@milkdown/preset-commonmark";
 import { schema as gfmSchema } from "@milkdown/preset-gfm";
+import { splitBlock } from "@milkdown/prose/commands";
 import { Schema, type Node as ProseNode } from "@milkdown/prose/model";
 import { history, undo, undoDepth } from "@milkdown/prose/history";
 import { EditorState, TextSelection } from "@milkdown/prose/state";
@@ -13,15 +15,19 @@ import { CanonicalDocument } from "../src/document/CanonicalDocument";
 import { applyWritingCommand, writingLinkHref } from "../src/editor/WritingCommands";
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState } from "../src/editor/WritingEditorLifecycle";
 import { writingCommandPlan, type WritingCommandName } from "../src/editor/WritingCommandPlan";
-import { taskOrdinalAtDocumentPosition } from "../src/editor/WritingTaskControls";
+import { taskOrdinalAtDocumentPosition, WritingControlRegistry } from "../src/editor/WritingTaskControls";
 import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/EditorKitBridge";
-import { replaceAllWithOrigin, synchronizeWritingEditorValue } from "../src/editor/WritingEditor";
+import { configureWritingEditor, replaceAllWithOrigin, synchronizeWritingEditorValue, writingCommonmark } from "../src/editor/WritingEditor";
 import { analyzeMarkdown, deleteTask } from "../src/markdown/analysis.ts";
 
-function createWritingEnvironment(): { context: Ctx; schema: Schema; parse: (source: string) => ReturnType<NonNullable<typeof ParserState.create>> extends (source: string) => infer Document ? Document : never; serialize: (document: ProseNode) => string } {
+function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark): { context: Ctx; schema: Schema; parse: (source: string) => ReturnType<NonNullable<typeof ParserState.create>> extends (source: string) => infer Document ? Document : never; serialize: (document: ProseNode) => string } {
   const context = new Ctx(new Container(), new Clock());
   context.inject(nodesCtx, []).inject(marksCtx, []).inject(remarkStringifyOptionsCtx, {});
-  for (const plugin of [...commonmarkSchema, ...gfmSchema]) {
+  // Mirror the production Writing preset's schema boundary. This helper does
+  // not run Milkdown's browser lifecycle; it only makes parser/serializer
+  // assertions against the same filtered preset that WritingEditor installs.
+  const writingCommonmarkSchema = plugins.filter((plugin) => commonmarkSchema.includes(plugin));
+  for (const plugin of [...writingCommonmarkSchema, ...gfmSchema]) {
     const handler = plugin(context);
     if (handler) void handler();
   }
@@ -31,6 +37,93 @@ function createWritingEnvironment(): { context: Ctx; schema: Schema; parse: (sou
   const serialize = SerializerState.create!(schema, processor);
   context.inject(editorViewCtx, {} as never);
   return { context, schema, parse, serialize };
+}
+
+function testWritingEditorPresetLifecycle(): void {
+  const editor = Editor.make();
+  const installed: unknown[] = [];
+  const use = editor.use.bind(editor);
+  (editor as unknown as { use: (plugins: MilkdownPlugin | MilkdownPlugin[]) => Editor }).use = (plugins) => {
+    installed.push(plugins);
+    return use(plugins);
+  };
+  const readOnlyRef = { current: false };
+  const registeredEditor = configureWritingEditor(editor, {
+    host: {} as HTMLDivElement,
+    value: "",
+    readOnlyRef,
+    controls: new WritingControlRegistry(),
+    onDeleteTaskRef: { current: () => undefined },
+    editability: { readOnlyRef, capabilityRef: { current: false } },
+    onMarkdownUpdated: () => undefined,
+  });
+  assert.equal(registeredEditor, editor, "WritingEditor configuration must preserve the Editor instance");
+  const registeredPreset = installed.find((plugins): plugins is MilkdownPlugin[] => plugins === writingCommonmark);
+  assert(registeredPreset, "WritingEditor must register its filtered CommonMark preset");
+  assert(Array.isArray(registeredPreset), "WritingEditor must register the preset plugin array");
+
+  const { schema, parse, serialize } = createWritingEnvironment(registeredPreset);
+  const canonical = new CanonicalDocument("");
+  let state = EditorState.create({ schema, doc: parse("") });
+  const gate = new WritingEditorChangeGate();
+  const generation = gate.begin("");
+  let previous = serialize(state.doc);
+  gate.finish(generation, previous);
+  const fallback: string[] = [];
+  let writingEditable = false;
+  const view = {
+    get state() { return state; },
+    editable: true,
+    focus() {},
+    dispatch(transaction: typeof state.tr) {
+      state = state.apply(transaction);
+      const markdown = serialize(state.doc);
+      if (!gate.markdownUpdated(generation, markdown, "user")) return;
+      const proof = assessWritingMutation(previous, markdown);
+      writingEditable = proof.editable;
+      if (!proof.editable) fallback.push(markdown);
+      else {
+        assert.equal(canonical.applyLocal(markdown), true, "editable Writing output must reach canonical Markdown");
+        previous = markdown;
+      }
+    },
+  };
+
+  view.dispatch(state.tr.insertText("# aa"));
+  assert.equal(splitBlock(state, (transaction) => view.dispatch(transaction)), true, "first Enter must split the Writing block");
+  assert.equal(splitBlock(state, (transaction) => view.dispatch(transaction)), true, "second Enter must create the empty Writing paragraph");
+
+  const serialized = serialize(state.doc);
+  assert.equal(fallback.length, 0, "the Writing lifecycle must not request Source fallback");
+  assert.equal(writingEditable, true, "Writing must remain editable after # aa + Enter + Enter");
+  assert(!serialized.includes("<br />"), "Writing serialization must not contain synthetic <br />");
+  assert(!canonical.text.includes("<br />"), "canonical Markdown must not contain synthetic <br />");
+  assert.equal(canonical.text, serialized, "canonical Markdown must match the final Writing serialization");
+}
+
+testWritingEditorPresetLifecycle();
+
+{
+  assert.equal(writingCommonmark.includes(remarkPreserveEmptyLinePlugin.options), false, "Writing preset must exclude the synthetic empty-line options context");
+  assert.equal(writingCommonmark.includes(remarkPreserveEmptyLinePlugin.plugin), false, "Writing preset must exclude the synthetic empty-line plugin by identity");
+  const { context, schema, parse, serialize } = createWritingEnvironment();
+  assert.throws(() => context.get(remarkPreserveEmptyLinePlugin.id), "Writing preset must not register the synthetic empty-line context");
+  const heading = schema.nodes.heading.create({ level: 1 }, schema.text("aa"));
+  const emptyParagraph = schema.nodes.paragraph.create();
+  const doc = schema.nodes.doc.create(null, [heading, emptyParagraph, schema.nodes.paragraph.create()]);
+  const state = EditorState.create({ schema, doc });
+  context.set(editorViewCtx, { get state() { return state; } } as never);
+
+  const serialized = serialize(state.doc);
+  assert.equal(serialized, "# aa\n\n\n\n", "Writing empty paragraphs must serialize as ordinary LF blank lines");
+  assert(!serialized.includes("<br />") && !serialized.includes("<html>"), "Writing must not synthesize raw HTML for empty paragraphs");
+  assert.equal(assessWritingMutation("# aa\n", serialized).editable, true, "empty paragraph serialization must remain editable");
+  const reloaded = serialize(parse(serialized));
+  assert.equal(reloaded, "# aa\n", "ordinary LF blank lines must parse and reload as canonical Markdown");
+  assert(!reloaded.includes("<br />") && !reloaded.includes("<html>"), "reloaded Writing Markdown must remain free of synthetic HTML");
+
+  const sourceLiteral = "# aa\n\n<br />\n";
+  assert.equal(assessWritingMutation("# aa\n\n", sourceLiteral).editable, false, "literal Source HTML must remain protected by the Writing gate");
 }
 
 function testWritingInitializationReplacementHandoff(): void {
