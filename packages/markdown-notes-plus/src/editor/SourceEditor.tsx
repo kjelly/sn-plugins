@@ -61,7 +61,6 @@ export function SourceEditor({ value, resetGeneration, readOnly, onChange, onVie
     view.current = next;
     resetGenerationRef.current = resetGeneration;
     onView(next);
-    onSelectionRef.current?.(next.state.selection.main.head);
     return () => { onView(undefined); next.destroy(); view.current = undefined; };
   }, [onView]);
 
