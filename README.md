@@ -28,7 +28,7 @@ This starter intentionally keeps the release pipeline dependency-light: the repo
   - Markdown Notes+
 
 The editor lives in its own package directory at
-`packages/io.github.__OWNER__.markdown-notes-plus/`. It keeps the repository
+`packages/markdown-notes-plus/`. It keeps the repository
 builder generic, so additional plugins can be added as sibling directories.
 The editor package currently builds a React/Vite runtime with EditorKit,
 Milkdown, CodeMirror 6, and Markmap. Its Deno test command remains a focused
@@ -108,7 +108,7 @@ E-Ink Dark
 https://kjelly.github.io/sn-plugins/entries/io.github.kjelly.eink-dark.json
 
 Markdown Notes+
-https://kjelly.github.io/sn-plugins/entries/io.github.kjelly.markdown-notes-plus.json
+https://kjelly.github.io/sn-plugins/entries/markdown-notes-plus.json
 ```
 
 The generated Pages home page also lists the current manifest, runtime, and
@@ -174,7 +174,7 @@ The generated `latest_url` always points to the current manifest. Standard Notes
 The package-level checks are:
 
 ```sh
-cd packages/io.github.__OWNER__.markdown-notes-plus
+cd packages/markdown-notes-plus
 npm ci
 npm run lint
 npm run typecheck

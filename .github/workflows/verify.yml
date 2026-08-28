@@ -22,18 +22,18 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: packages/io.github.__OWNER__.markdown-notes-plus/package-lock.json
+          cache-dependency-path: packages/markdown-notes-plus/package-lock.json
 
       - uses: denoland/setup-deno@v1
         with:
           deno-version: v1.34.0
 
       - name: Install Markdown Notes+ dependencies
-        working-directory: packages/io.github.__OWNER__.markdown-notes-plus
+        working-directory: packages/markdown-notes-plus
         run: npm ci
 
       - name: Test and build Markdown Notes+
-        working-directory: packages/io.github.__OWNER__.markdown-notes-plus
+        working-directory: packages/markdown-notes-plus
         run: |
           npm run typecheck
           npm test

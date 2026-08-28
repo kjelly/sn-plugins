@@ -13,7 +13,7 @@ installation field:
 | --- | --- |
 | E-Ink Light | <https://kjelly.github.io/sn-plugins/entries/io.github.kjelly.eink-light.json> |
 | E-Ink Dark | <https://kjelly.github.io/sn-plugins/entries/io.github.kjelly.eink-dark.json> |
-| Markdown Notes+ | <https://kjelly.github.io/sn-plugins/entries/io.github.kjelly.markdown-notes-plus.json> |
+| Markdown Notes+ | <https://kjelly.github.io/sn-plugins/entries/markdown-notes-plus.json> |
 
 Paste one complete `entries/*.json` URL, confirm the package details, and
 install it. The plugin then appears in the corresponding Standard Notes
