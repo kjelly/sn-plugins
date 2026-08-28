@@ -1,0 +1,61 @@
+{
+  "name": "@local/markdown-notes-plus",
+  "version": "0.1.0",
+  "description": "Markdown Notes+ editor for Standard Notes with Writing, Source, Task, Outline, and Mind Map projections.",
+  "author": "__OWNER__",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "files": ["dist"],
+  "scripts": {
+    "build": "vite build",
+    "lint": "deno lint src tests",
+    "test": "deno test --no-prompt tests/index.test.ts",
+    "test:unit": "deno test --no-prompt tests/index.test.ts",
+    "test:integration": "deno test --no-prompt tests/integration.test.ts && node tests/run-source-history-boundary.mjs && node tests/run-milkdown-boundary.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "sn": {
+    "identifier": "markdown-notes-plus",
+    "name": "Markdown Notes+",
+    "content_type": "SN|Component",
+    "area": "editor-editor",
+    "main": "dist/index.html",
+    "index_path": "dist/index.html",
+    "file_type": "md",
+    "note_type": "markdown",
+    "interchangeable": true,
+    "showInGallery": false
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-markdown": "^6.3.3",
+    "@codemirror/search": "^6.5.10",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.5",
+    "@milkdown/core": "7.22.1",
+    "@milkdown/ctx": "7.22.1",
+    "@milkdown/kit": "^7.15.5",
+    "@milkdown/preset-commonmark": "7.22.1",
+    "@milkdown/preset-gfm": "7.22.1",
+    "@milkdown/prose": "7.22.1",
+    "@milkdown/transformer": "7.22.1",
+    "@standardnotes/editor-kit": "github:standardnotes/editor-kit#80f3080594c46a84e6a1689984fbc985ddd44a8f",
+    "markmap-lib": "^0.18.12",
+    "markmap-view": "^0.18.12",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remark": "15.0.1",
+    "remark-gfm": "4.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "0.25.12",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
