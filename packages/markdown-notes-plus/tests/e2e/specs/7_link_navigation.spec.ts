@@ -32,7 +32,7 @@ test.describe("Link Navigation in New Tab", () => {
       return (frame.contentWindow as unknown as { __openedLinks: Array<{ url: string; target?: string; features?: string }> }).__openedLinks;
     });
 
-    expect(opened.length).toBeGreaterThan(0);
+    expect(opened.length).toBe(1);
     expect(opened[0].url).toBe("https://standardnotes.com");
     expect(opened[0].target).toBe("_blank");
     expect(opened[0].features).toBe("noopener,noreferrer");
@@ -69,7 +69,7 @@ test.describe("Link Navigation in New Tab", () => {
       return (frame.contentWindow as unknown as { __openedLinks: Array<{ url: string; target?: string; features?: string }> }).__openedLinks;
     });
 
-    expect(opened.length).toBeGreaterThan(0);
+    expect(opened.length).toBe(1);
     expect(opened[0].url).toBe("https://docs.standardnotes.com");
     expect(opened[0].target).toBe("_blank");
   });
@@ -114,7 +114,7 @@ test.describe("Link Navigation in New Tab", () => {
       const frame = document.querySelector("#editor-frame") as HTMLIFrameElement;
       return (frame.contentWindow as unknown as { __openedLinks: Array<{ url: string; target?: string; features?: string }> }).__openedLinks;
     });
-    expect(opened.length).toBeGreaterThan(0);
+    expect(opened.length).toBe(1);
     expect(opened[0].url).toBe("https://standardnotes.com/help");
   });
 
@@ -144,7 +144,7 @@ test.describe("Link Navigation in New Tab", () => {
 
     const opened = await page.evaluate(() => {
       const frame = document.querySelector("#editor-frame") as HTMLIFrameElement;
-      return (frame.contentWindow as unknown as { __openedLinks: Array<{ url: string; target?: string; features?: string }> }).__openedLinks;
+      return (frame.contentWindow as unknown as { __openedLinks?: Array<{ url: string; target?: string; features?: string }> })?.__openedLinks ?? [];
     });
 
     expect(opened.length).toBe(0);

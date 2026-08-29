@@ -6,7 +6,7 @@ function assertEquals<T>(actual: T, expected: T, message = "values are not equal
 
 declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
-import { isSafeExternalUrl, openExternalLink } from "../src/utils/linkOpener.ts";
+import { isSafeExternalUrl, openExternalLink, resetLinkOpenerStateForTesting } from "../src/utils/linkOpener.ts";
 
 Deno.test("linkOpener - isSafeExternalUrl validates safe and unsafe protocols", () => {
   assertEquals(isSafeExternalUrl("https://example.com"), true);
@@ -25,6 +25,7 @@ Deno.test("linkOpener - isSafeExternalUrl validates safe and unsafe protocols", 
 });
 
 Deno.test("linkOpener - openExternalLink opens safe urls with _blank and noopener,noreferrer", () => {
+  resetLinkOpenerStateForTesting();
   let openedUrl = "";
   let openedTarget = "";
   let openedFeatures = "";
@@ -44,4 +45,33 @@ Deno.test("linkOpener - openExternalLink opens safe urls with _blank and noopene
 
   const resultUnsafe = openExternalLink("javascript:alert(1)", mockOpener);
   assertEquals(resultUnsafe, false);
+});
+
+Deno.test("linkOpener - deduplicates rapid link opening to prevent duplicate tabs", () => {
+  resetLinkOpenerStateForTesting();
+  const openedCalls: string[] = [];
+  const mockOpener = (url: string) => {
+    openedCalls.push(url);
+    return null;
+  };
+
+  // First call opens link
+  const first = openExternalLink("https://example.com", mockOpener, 1000);
+  assertEquals(first, true);
+  assertEquals(openedCalls.length, 1);
+
+  // Second rapid call for same url within 250ms is suppressed
+  const duplicate = openExternalLink("https://example.com", mockOpener, 1050);
+  assertEquals(duplicate, false);
+  assertEquals(openedCalls.length, 1);
+
+  // Third call for different url is allowed
+  const different = openExternalLink("https://other.com", mockOpener, 1100);
+  assertEquals(different, true);
+  assertEquals(openedCalls.length, 2);
+
+  // Fourth call after debounce window expires (e.g. 600ms later) is allowed
+  const later = openExternalLink("https://example.com", mockOpener, 1600);
+  assertEquals(later, true);
+  assertEquals(openedCalls.length, 3);
 });
