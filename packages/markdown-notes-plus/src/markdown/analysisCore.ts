@@ -359,3 +359,10 @@ export function uncheckAll(markdown: string): CommandResult { const analysis = a
 export function deleteCompleted(markdown: string): CommandResult { const analysis = analyzeMarkdown(markdown); const ranges = analysis.tasks.filter((task) => task.checked).map((task) => [task.itemStart, task.itemEnd]).sort((a, b) => a[0] - b[0]); const mergedRanges: number[][] = []; for (const [from, to] of ranges) { const previous = mergedRanges[mergedRanges.length - 1]; if (previous && from <= previous[1]) previous[1] = Math.max(previous[1], to); else mergedRanges.push([from, to]); } let output = markdown; for (const [from, to] of [...mergedRanges].reverse()) output = output.slice(0, from) + output.slice(to); const changes = mergedRanges.map(([from, to]) => ({ from, to, insertedLength: 0 })); return { markdown: output, changed: mergedRanges.length > 0, ...(mergedRanges.length > 0 ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) }; }
 export function outlineText(markdown: string): string { return analyzeMarkdown(markdown).headings.map((heading) => `${"  ".repeat(Math.max(0, heading.level - 1))}- ${heading.text}`).join("\n"); }
 export function mindmapText(markdown: string, filter: MindmapFilter): string { const analysis = analyzeMarkdown(markdown); const headingLines = analysis.headings.map((heading) => ({ depth: heading.level - 1, text: heading.text })); const taskLines = filter === "hide" ? [] : analysis.tasks.filter((task) => filter !== "open" || !task.checked).map((task) => ({ depth: Math.min(5, task.depth / 2 + 1), text: `${task.checked ? "☑" : "☐"} ${task.text}` })); return [...headingLines, ...taskLines].map((line) => `${"  ".repeat(Math.max(0, Math.floor(line.depth)))}• ${line.text}`).join("\n"); }
+export function isMindmapSuitable(markdown: string, analysis?: { headings?: unknown[]; tasks?: unknown[] }): boolean {
+  if (!markdown || !markdown.trim()) return false;
+  if (analysis?.headings && analysis.headings.length > 0) return true;
+  if (analysis?.tasks && analysis.tasks.length > 0) return true;
+  if (/^#{1,6}\s+\S/m.test(markdown)) return true;
+  return /^\s*([-*+]|\d+\.)\s+\S/m.test(markdown);
+}

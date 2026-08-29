@@ -3,6 +3,7 @@ export {
   analyzeMarkdown,
   deleteCompleted,
   deleteTask,
+  isMindmapSuitable,
   mindmapText,
   outlineText,
   remapSourceOffset,
