@@ -362,13 +362,13 @@ function writingLinkClickHandlerPlugin() {
         const target = event.target as HTMLElement | null;
         const anchor = target?.closest("a");
         if (anchor) {
-          const href = anchor.getAttribute("href") || anchor.href;
+          event.preventDefault();
+          event.stopPropagation();
+          const href = anchor.getAttribute("href");
           if (href) {
-            event.preventDefault();
-            event.stopPropagation();
             openExternalLink(href);
-            return true;
           }
+          return true;
         }
         return false;
       },

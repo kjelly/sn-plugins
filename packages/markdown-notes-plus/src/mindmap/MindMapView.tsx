@@ -70,13 +70,13 @@ export function MindMapView({
       const target = event.target as Element;
       const anchor = target.closest("a");
       if (anchor) {
-        const href = anchor.getAttribute("href") || (anchor as HTMLAnchorElement).href;
+        event.preventDefault();
+        event.stopPropagation();
+        const href = anchor.getAttribute("href");
         if (href) {
-          event.preventDefault();
-          event.stopPropagation();
           openExternalLink(href);
-          return;
         }
+        return;
       }
 
       const taskIcon = isTaskCheckbox(target);
