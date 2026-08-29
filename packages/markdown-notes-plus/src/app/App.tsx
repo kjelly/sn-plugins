@@ -125,7 +125,7 @@ export function App() {
   const [filter, setFilter] = useState<MindMapFilter>("all");
   const [mindMapScope, setMindMapScope] = useState<MindMapScope>("entire-note");
   const [collapsed, setCollapsed] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" ? window.innerWidth > 900 : true);
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
   const [writingCommand, setWritingCommand] = useState<WritingCommand>();
@@ -290,6 +290,9 @@ export function App() {
   const focusHeading = (from: number, to: number) => {
     setActiveSectionAnchor(from);
     pendingJump.current = { from, to };
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      setSidebarOpen(false);
+    }
     handleModeChange("source");
     const view = sourceViewRef.current;
     if (!view) return;
@@ -313,16 +316,20 @@ export function App() {
         {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><span>Raw Markdown · whitespace preserved</span><StatusAndSidebar currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
         {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools">{mode === "mindmap" ? <EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} /> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusAndSidebar currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} showSidebarToggle={false} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} /></ErrorBoundary></section> : null}
       </section>
-      {mode !== "mindmap" ? <aside className={`sidebar-pane pane ${sidebarOpen ? "open" : "collapsed"}`} aria-label="Sidebar inspector">
-        <section className="outline-panel pane-section">
-          <div className="panel-heading"><h2>Outline ({headings.length})</h2></div>
-          {headings.length ? <ol>{headings.map((heading) => <li key={heading.from} className={`level-${heading.level}`}><button className={currentSection?.anchor === heading.from ? "active-heading" : ""} onClick={() => focusHeading(heading.from, heading.to)}>{heading.text}</button></li>)}</ol> : <p className="empty-hint">No headings yet.</p>}
-        </section>
-        <section className="tasks-panel pane-section" aria-label="Completed tasks">
-          <div className="panel-heading"><h2>Completed ({tasks.completed.length})</h2>{tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}</div>
-          {!collapsed && tasks.completed.length ? <><ul>{tasks.completed.map((task) => <li key={`${task.from}:${task.checkboxOffset}`}><span className="task-item-label"><span className="task-done-badge">✓</span><span className="task-text-body">{task.text}</span>{task.headingPath.length ? <small className="task-breadcrumb"> · {task.headingPath.join(" / ")}</small> : null}</span><div className="task-actions"><button disabled={snapshot.locked} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button><button disabled={snapshot.locked} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button></div></li>)}</ul><div className="actions"><button disabled={snapshot.locked} onClick={() => mutate(uncheckAll)}>Uncheck all</button><button disabled={snapshot.locked} onClick={() => mutate(deleteCompleted)}>Delete completed</button></div></> : null}
-        </section>
-      </aside> : null}
+      {mode !== "mindmap" ? <>
+        {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" /> : null}
+        <aside className={`sidebar-pane pane ${sidebarOpen ? "open" : "collapsed"}`} aria-label="Sidebar inspector">
+          <div className="sidebar-header"><span className="sidebar-title">Inspector</span><button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">✕</button></div>
+          <section className="outline-panel pane-section">
+            <div className="panel-heading"><h2>Outline ({headings.length})</h2></div>
+            {headings.length ? <ol>{headings.map((heading) => <li key={heading.from} className={`level-${heading.level}`}><button className={currentSection?.anchor === heading.from ? "active-heading" : ""} onClick={() => focusHeading(heading.from, heading.to)}>{heading.text}</button></li>)}</ol> : <p className="empty-hint">No headings yet.</p>}
+          </section>
+          <section className="tasks-panel pane-section" aria-label="Completed tasks">
+            <div className="panel-heading"><h2>Completed ({tasks.completed.length})</h2>{tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}</div>
+            {!collapsed && tasks.completed.length ? <><ul>{tasks.completed.map((task) => <li key={`${task.from}:${task.checkboxOffset}`}><span className="task-item-label"><span className="task-done-badge">✓</span><span className="task-text-body">{task.text}</span>{task.headingPath.length ? <small className="task-breadcrumb"> · {task.headingPath.join(" / ")}</small> : null}</span><div className="task-actions"><button disabled={snapshot.locked} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button><button disabled={snapshot.locked} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button></div></li>)}</ul><div className="actions"><button disabled={snapshot.locked} onClick={() => mutate(uncheckAll)}>Uncheck all</button><button disabled={snapshot.locked} onClick={() => mutate(deleteCompleted)}>Delete completed</button></div></> : null}
+          </section>
+        </aside>
+      </> : null}
     </div>
     <footer className="note-meta">{analysis.tasks.length} task{analysis.tasks.length === 1 ? "" : "s"} · {headings.length} section{headings.length === 1 ? "" : "s"} · EditorKit markdown bridge</footer>
   </main>;

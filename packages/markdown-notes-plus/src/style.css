@@ -1,12 +1,32 @@
 :root {
   color-scheme: light dark;
-  --editor-bg: var(--sn-stylekit-editor-background-color, var(--sn-stylekit-background-color, #fff));
-  --editor-fg: var(--sn-stylekit-editor-foreground-color, var(--sn-stylekit-foreground-color, #202124));
+  --editor-bg: var(--sn-stylekit-editor-background-color, var(--sn-stylekit-background-color, var(--sn-theme-editor-background-color, var(--sn-theme-background-color, #ffffff))));
+  --editor-fg: var(--sn-stylekit-editor-foreground-color, var(--sn-stylekit-foreground-color, var(--sn-theme-editor-foreground-color, var(--sn-theme-foreground-color, #202124))));
   --editor-muted: color-mix(in srgb, var(--editor-fg) 64%, transparent);
-  --editor-border: var(--sn-stylekit-border-color, color-mix(in srgb, var(--editor-fg) 20%, transparent));
-  --editor-accent: var(--sn-stylekit-info-color, #3973b9);
-  --editor-code-bg: var(--sn-stylekit-secondary-background-color, color-mix(in srgb, var(--editor-fg) 8%, var(--editor-bg)));
+  --editor-border: var(--sn-stylekit-border-color, var(--sn-theme-border-color, color-mix(in srgb, var(--editor-fg) 20%, transparent)));
+  --editor-accent: var(--sn-stylekit-info-color, var(--sn-theme-info-color, var(--sn-theme-accent-color, #3973b9)));
+  --editor-code-bg: var(--sn-stylekit-secondary-background-color, var(--sn-theme-secondary-background-color, color-mix(in srgb, var(--editor-fg) 8%, var(--editor-bg))));
   font: 15px/1.5 system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --editor-bg: var(--sn-stylekit-editor-background-color, var(--sn-stylekit-background-color, var(--sn-theme-editor-background-color, var(--sn-theme-background-color, #18191a))));
+    --editor-fg: var(--sn-stylekit-editor-foreground-color, var(--sn-stylekit-foreground-color, var(--sn-theme-editor-foreground-color, var(--sn-theme-foreground-color, #f0f0f2))));
+    --editor-muted: color-mix(in srgb, var(--editor-fg) 64%, transparent);
+    --editor-border: var(--sn-stylekit-border-color, var(--sn-theme-border-color, color-mix(in srgb, var(--editor-fg) 22%, transparent)));
+    --editor-accent: var(--sn-stylekit-info-color, var(--sn-theme-info-color, #5b92e5));
+    --editor-code-bg: var(--sn-stylekit-secondary-background-color, var(--sn-theme-secondary-background-color, color-mix(in srgb, var(--editor-fg) 10%, var(--editor-bg))));
+  }
+}
+
+:root.dark, body.dark, body.dark-mode, html[data-theme="dark"], body[data-theme="dark"], [data-color-mode="dark"] {
+  --editor-bg: var(--sn-stylekit-editor-background-color, var(--sn-stylekit-background-color, var(--sn-theme-editor-background-color, var(--sn-theme-background-color, #18191a))));
+  --editor-fg: var(--sn-stylekit-editor-foreground-color, var(--sn-stylekit-foreground-color, var(--sn-theme-editor-foreground-color, var(--sn-theme-foreground-color, #f0f0f2))));
+  --editor-muted: color-mix(in srgb, var(--editor-fg) 64%, transparent);
+  --editor-border: var(--sn-stylekit-border-color, var(--sn-theme-border-color, color-mix(in srgb, var(--editor-fg) 22%, transparent)));
+  --editor-accent: var(--sn-stylekit-info-color, var(--sn-theme-info-color, #5b92e5));
+  --editor-code-bg: var(--sn-stylekit-secondary-background-color, var(--sn-theme-secondary-background-color, color-mix(in srgb, var(--editor-fg) 10%, var(--editor-bg))));
 }
 
 * { box-sizing: border-box; }
@@ -113,17 +133,25 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .slash-command { min-height: 32px; padding: 5px 10px; border: 0; border-radius: 6px; text-align: left; background: transparent; color: var(--editor-fg); font-size: 0.88rem; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all .12s ease; }
 .slash-command:hover, .slash-command.selected { background: color-mix(in srgb, var(--editor-accent) 16%, transparent); color: var(--editor-accent); font-weight: 500; }
 .cm-source, .cm-editor, .cm-scroller, .mindmap-wrap { min-height: 0; }
-.cm-source { display: flex; flex-direction: column; cursor: text; }
+.cm-source { display: flex; flex-direction: column; cursor: text; background: var(--editor-bg); color: var(--editor-fg); }
 .cm-source, .cm-source .cm-editor, .cm-source .cm-scroller { flex: 1 1 auto; min-height: 0; }
-.cm-source .cm-editor { height: 100%; font-size: 14px; line-height: 1.42; cursor: text; }
+.cm-source .cm-editor { height: 100%; font-size: 14px; line-height: 1.42; cursor: text; background: var(--editor-bg); color: var(--editor-fg); }
 .cm-source .cm-scroller { overflow: auto; cursor: text; }
-.cm-source .cm-content { min-height: 100%; line-height: 1.42; cursor: text; }
+.cm-source .cm-content { min-height: 100%; line-height: 1.42; cursor: text; caret-color: var(--editor-fg); }
+.cm-source .cm-cursor { border-left-color: var(--editor-fg); }
+.cm-source .cm-gutters { background: var(--editor-bg); color: var(--editor-muted); border-right: 1px solid var(--editor-border); }
+.cm-source .cm-activeLine { background: color-mix(in srgb, var(--editor-fg) 4%, transparent); }
+.cm-source .cm-activeLineGutter { background: color-mix(in srgb, var(--editor-fg) 8%, transparent); color: var(--editor-fg); }
 .mindmap-wrap { position: relative; height: 100%; }
 .map-pane .mindmap-wrap { flex: 1 1 auto; min-height: 0; }
-.mindmap-svg { display: block; width: 100%; height: 100%; min-height: 0; background: var(--editor-bg); }
+.mindmap-svg { display: block; width: 100%; height: 100%; min-height: 0; background: var(--editor-bg); color: var(--editor-fg); }
+.mindmap-svg text { fill: var(--editor-fg) !important; }
+.mindmap-svg foreignObject { color: var(--editor-fg) !important; }
 .mindmap-svg input[type="checkbox"] { cursor: pointer; pointer-events: auto; margin-right: 4px; vertical-align: middle; accent-color: var(--editor-accent); }
 
 /* Sidebar Inspector */
+.sidebar-header { display: none; }
+.sidebar-backdrop { display: none; }
 .sidebar-pane { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; height: 100%; max-height: 100%; padding: 4px; }
 .sidebar-pane .pane-section { background: color-mix(in srgb, var(--editor-bg) 98%, var(--editor-fg)); border: 1px solid var(--editor-border); border-radius: 5px; padding: 8px; }
 .panel-heading h2 { font-size: .88rem; margin: 0 auto 0 0; font-weight: 600; }
@@ -182,6 +210,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .milkdown-writing li[data-item-type="task"] { min-height: 28px; padding: 2px 2px; gap: 10px; }
   .milkdown-writing li[data-item-type="task"] .task-checkbox { width: 18px; height: 18px; min-width: 18px; min-height: 18px; }
   .milkdown-writing li[data-item-type="task"] .task-delete { opacity: 0.7; visibility: visible; width: 24px; height: 24px; min-height: 24px; font-size: 16px; }
+  .sidebar-backdrop { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 90; backdrop-filter: blur(2px); }
+  .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--editor-border); }
+  .sidebar-title { font-weight: 600; font-size: 0.9rem; }
+  .sidebar-close-btn { min-height: 26px; min-width: 26px; width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--editor-border); border-radius: 4px; font-size: 14px; cursor: pointer; }
   .workspace-layout.with-sidebar { position: relative; grid-template-columns: 1fr; }
   .workspace-layout.with-sidebar .sidebar-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(85vw, 320px); z-index: 100; background: var(--editor-bg); box-shadow: -4px 0 20px color-mix(in srgb, var(--editor-fg) 25%, transparent); padding: 12px; border-left: 1px solid var(--editor-border); }
   .mode-split .editing-grid { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
