@@ -674,6 +674,32 @@ Deno.test("EditorKitBridge conflict lifecycle: dirty local vs multiple remote up
   assertEquals(harness.saves[0].text, "subsequent local edit");
 });
 
+Deno.test("EditorKitBridge - triggers scheduleSave on successful remote auto-merge", async () => {
+  const harness = fakeBridgeHarness();
+  const initial = "# Section 1\n\nContent 1\n\n# Section 2\n\nContent 2\n";
+  await deliverBridgeContext(harness, initial, "note-auto-merge");
+
+  // Local edit in Section 1
+  const local = "# Section 1 (local)\n\nContent 1\n\n# Section 2\n\nContent 2\n";
+  assert(harness.document.applyLocal(local), "apply local edit in section 1");
+  harness.bridge.notifyLocalChange(local);
+
+  // Remote edit in Section 2
+  const remote = "# Section 1\n\nContent 1\n\n# Section 2 (remote)\n\nContent 2\n";
+  await deliverBridgeContext(harness, remote, "note-auto-merge");
+
+  const expectedMerged = "# Section 1 (local)\n\nContent 1\n\n# Section 2 (remote)\n\nContent 2\n";
+  assertEquals(harness.document.pendingRemote, undefined);
+  assertEquals(harness.document.text, expectedMerged);
+  assertEquals(harness.document.dirty, true);
+
+  // Clock runs debounce timer
+  harness.clock.runAll();
+  assertEquals(harness.saves.length, 1);
+  assertEquals(harness.saves[0].text, expectedMerged);
+});
+
+
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }

@@ -112,8 +112,12 @@ export class EditorKitBridge {
           this.saveRequested = false;
         }
         else if (kind !== "metadata") {
-          this.cancelPendingSave();
-          this.document.receiveRemote(text);
+          const result = this.document.receiveRemote(text);
+          if (result === "merged") {
+            this.scheduleSave(this.document.text);
+          } else {
+            this.cancelPendingSave();
+          }
         }
         this.onHostChange();
       },
