@@ -158,22 +158,36 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .sidebar-pane .pane-section { background: color-mix(in srgb, var(--editor-bg) 98%, var(--editor-fg)); border: 1px solid var(--editor-border); border-radius: 5px; padding: 8px; }
 .panel-heading h2 { font-size: .88rem; margin: 0 auto 0 0; font-weight: 600; }
 .panel-heading button { min-height: 22px; padding: 1px 6px; font-size: 0.78rem; border-radius: 4px; }
-.outline-panel ol { list-style: none; padding-left: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 1px; }
-.outline-panel li button { display: flex; align-items: center; gap: 4px; width: 100%; text-align: left; border: 0; min-height: 24px; padding: 2px 6px; border-radius: 4px; font-size: 0.82rem; color: var(--editor-fg); transition: all .15s ease; cursor: pointer; }
-.outline-panel li button:hover { background: color-mix(in srgb, var(--editor-fg) 8%, transparent); }
-.outline-panel li button.active-heading { background: color-mix(in srgb, var(--editor-accent) 15%, transparent); color: var(--editor-accent); font-weight: 600; }
+.outline-panel ol { list-style: none; padding-left: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 2px; }
+.outline-panel li { display: flex; align-items: center; justify-content: space-between; border-radius: 4px; transition: background-color .15s ease; min-height: 26px; }
+.outline-panel li:hover { background: color-mix(in srgb, var(--editor-fg) 5%, transparent); }
+.outline-panel li .outline-heading-btn { display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; text-align: left; border: 0; min-height: 24px; padding: 2px 6px; border-radius: 4px; font-size: 0.82rem; color: var(--editor-fg); background: transparent; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outline-panel li .outline-heading-btn:hover { background: transparent; }
+.outline-panel li .outline-heading-btn.active-heading { background: color-mix(in srgb, var(--editor-accent) 15%, transparent); color: var(--editor-accent); font-weight: 600; }
+.section-task-badge { font-size: 0.72rem; padding: 1px 5px; border-radius: 10px; background: color-mix(in srgb, var(--editor-fg) 8%, transparent); color: var(--editor-muted); margin-left: 4px; flex-shrink: 0; font-weight: 500; }
+.section-task-actions { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; flex-shrink: 0; padding-right: 4px; }
+.section-task-actions button { min-height: 20px; padding: 0 4px; font-size: 0.74rem; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--editor-border) 80%, transparent); background: transparent; color: var(--editor-muted); cursor: pointer; }
+.section-task-actions button:hover { border-color: var(--editor-accent); color: var(--editor-accent); background: color-mix(in srgb, var(--editor-accent) 10%, transparent); }
+.section-task-actions button.delete-btn:hover { border-color: #d32f2f; color: #d32f2f; background: color-mix(in srgb, #d32f2f 10%, transparent); }
+
 .outline-panel li.level-1 { padding-left: 0; }
-.outline-panel li.level-1 button::before { content: "# "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
+.outline-panel li.level-1 .outline-heading-btn::before { content: "# "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
 .outline-panel li.level-2 { padding-left: 8px; }
-.outline-panel li.level-2 button::before { content: "## "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
+.outline-panel li.level-2 .outline-heading-btn::before { content: "## "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
 .outline-panel li.level-3 { padding-left: 14px; }
-.outline-panel li.level-3 button::before { content: "### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
+.outline-panel li.level-3 .outline-heading-btn::before { content: "### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
 .outline-panel li.level-4 { padding-left: 20px; }
-.outline-panel li.level-4 button::before { content: "#### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
+.outline-panel li.level-4 .outline-heading-btn::before { content: "#### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
 .outline-panel li.level-5 { padding-left: 26px; }
-.outline-panel li.level-5 button::before { content: "##### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
+.outline-panel li.level-5 .outline-heading-btn::before { content: "##### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
 .outline-panel li.level-6 { padding-left: 32px; }
-.outline-panel li.level-6 button::before { content: "###### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
+.outline-panel li.level-6 .outline-heading-btn::before { content: "###### "; color: var(--editor-muted); font-size: 0.72rem; font-family: monospace; opacity: 0.6; }
+
+.task-group { margin-top: 6px; }
+.task-group-header { display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; font-weight: 600; color: var(--editor-muted); padding: 3px 4px; border-bottom: 1px solid color-mix(in srgb, var(--editor-border) 40%, transparent); margin-bottom: 3px; }
+.task-group-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-group-actions { display: inline-flex; gap: 3px; flex-shrink: 0; }
+.task-group-actions button { min-height: 20px; padding: 0 5px; font-size: 0.72rem; border-radius: 3px; }
 
 .tasks-panel ul { list-style: none; padding-left: 0; margin: 3px 0 0; display: flex; flex-direction: column; gap: 3px; }
 .tasks-panel li { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; border-radius: 4px; background: color-mix(in srgb, var(--editor-fg) 3%, transparent); border: 1px solid color-mix(in srgb, var(--editor-border) 60%, transparent); }

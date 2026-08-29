@@ -359,6 +359,99 @@ export function uncheckAll(markdown: string): CommandResult { const analysis = a
 export function deleteCompleted(markdown: string): CommandResult { const analysis = analyzeMarkdown(markdown); const ranges = analysis.tasks.filter((task) => task.checked).map((task) => [task.itemStart, task.itemEnd]).sort((a, b) => a[0] - b[0]); const mergedRanges: number[][] = []; for (const [from, to] of ranges) { const previous = mergedRanges[mergedRanges.length - 1]; if (previous && from <= previous[1]) previous[1] = Math.max(previous[1], to); else mergedRanges.push([from, to]); } let output = markdown; for (const [from, to] of [...mergedRanges].reverse()) output = output.slice(0, from) + output.slice(to); const changes = mergedRanges.map(([from, to]) => ({ from, to, insertedLength: 0 })); return { markdown: output, changed: mergedRanges.length > 0, ...(mergedRanges.length > 0 ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) }; }
 export function outlineText(markdown: string): string { return analyzeMarkdown(markdown).headings.map((heading) => `${"  ".repeat(Math.max(0, heading.level - 1))}- ${heading.text}`).join("\n"); }
 export function mindmapText(markdown: string, filter: MindmapFilter): string { const analysis = analyzeMarkdown(markdown); const headingLines = analysis.headings.map((heading) => ({ depth: heading.level - 1, text: heading.text })); const taskLines = filter === "hide" ? [] : analysis.tasks.filter((task) => filter !== "open" || !task.checked).map((task) => ({ depth: Math.min(5, task.depth / 2 + 1), text: `${task.checked ? "☑" : "☐"} ${task.text}` })); return [...headingLines, ...taskLines].map((line) => `${"  ".repeat(Math.max(0, Math.floor(line.depth)))}• ${line.text}`).join("\n"); }
+export function checkAllInSection(markdown: string, sectionAnchor: number): CommandResult {
+  const analysis = analyzeMarkdown(markdown);
+  const section = analysis.sectionByAnchor(sectionAnchor);
+  if (!section) return { markdown, changed: false };
+  const targetTasks = analysis.tasks.filter((task) => !task.checked && task.itemStart >= section.from && task.itemEnd <= section.to);
+  if (targetTasks.length === 0) return { markdown, changed: false };
+  let output = markdown;
+  let changed = false;
+  const changes: TextChange[] = [];
+  for (const task of targetTasks.sort((a, b) => b.checkboxOffset - a.checkboxOffset)) {
+    const result = toggleTask(output, { ...task, checkboxOffset: task.checkboxOffset });
+    output = result.markdown;
+    changed = changed || result.changed;
+    if (result.changed) changes.unshift({ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 });
+  }
+  return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
+}
+
+export function uncheckAllInSection(markdown: string, sectionAnchor: number): CommandResult {
+  const analysis = analyzeMarkdown(markdown);
+  const section = analysis.sectionByAnchor(sectionAnchor);
+  if (!section) return { markdown, changed: false };
+  const targetTasks = analysis.tasks.filter((task) => task.checked && task.itemStart >= section.from && task.itemEnd <= section.to);
+  if (targetTasks.length === 0) return { markdown, changed: false };
+  let output = markdown;
+  let changed = false;
+  const changes: TextChange[] = [];
+  for (const task of targetTasks.sort((a, b) => b.checkboxOffset - a.checkboxOffset)) {
+    const result = toggleTask(output, { ...task, checkboxOffset: task.checkboxOffset });
+    output = result.markdown;
+    changed = changed || result.changed;
+    if (result.changed) changes.unshift({ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 });
+  }
+  return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
+}
+
+export function deleteCompletedInSection(markdown: string, sectionAnchor: number): CommandResult {
+  const analysis = analyzeMarkdown(markdown);
+  const section = analysis.sectionByAnchor(sectionAnchor);
+  if (!section) return { markdown, changed: false };
+  const targetTasks = analysis.tasks.filter((task) => task.checked && task.itemStart >= section.from && task.itemEnd <= section.to);
+  if (targetTasks.length === 0) return { markdown, changed: false };
+  const ranges = targetTasks.map((task) => [task.itemStart, task.itemEnd]).sort((a, b) => a[0] - b[0]);
+  const mergedRanges: number[][] = [];
+  for (const [from, to] of ranges) {
+    const previous = mergedRanges[mergedRanges.length - 1];
+    if (previous && from <= previous[1]) previous[1] = Math.max(previous[1], to);
+    else mergedRanges.push([from, to]);
+  }
+  let output = markdown;
+  for (const [from, to] of [...mergedRanges].reverse()) output = output.slice(0, from) + output.slice(to);
+  const changes = mergedRanges.map(([from, to]) => ({ from, to, insertedLength: 0 }));
+  return { markdown: output, changed: mergedRanges.length > 0, ...(mergedRanges.length > 0 ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
+}
+
+function sameHeadingPath(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((val, idx) => val === b[idx]);
+}
+
+export function uncheckAllInHeadingPath(markdown: string, headingPath: string[]): CommandResult {
+  const analysis = analyzeMarkdown(markdown);
+  const targetTasks = analysis.tasks.filter((task) => task.checked && sameHeadingPath(task.headingPath, headingPath));
+  if (targetTasks.length === 0) return { markdown, changed: false };
+  let output = markdown;
+  let changed = false;
+  const changes: TextChange[] = [];
+  for (const task of targetTasks.sort((a, b) => b.checkboxOffset - a.checkboxOffset)) {
+    const result = toggleTask(output, { ...task, checkboxOffset: task.checkboxOffset });
+    output = result.markdown;
+    changed = changed || result.changed;
+    if (result.changed) changes.unshift({ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 });
+  }
+  return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
+}
+
+export function deleteCompletedInHeadingPath(markdown: string, headingPath: string[]): CommandResult {
+  const analysis = analyzeMarkdown(markdown);
+  const targetTasks = analysis.tasks.filter((task) => task.checked && sameHeadingPath(task.headingPath, headingPath));
+  if (targetTasks.length === 0) return { markdown, changed: false };
+  const ranges = targetTasks.map((task) => [task.itemStart, task.itemEnd]).sort((a, b) => a[0] - b[0]);
+  const mergedRanges: number[][] = [];
+  for (const [from, to] of ranges) {
+    const previous = mergedRanges[mergedRanges.length - 1];
+    if (previous && from <= previous[1]) previous[1] = Math.max(previous[1], to);
+    else mergedRanges.push([from, to]);
+  }
+  let output = markdown;
+  for (const [from, to] of [...mergedRanges].reverse()) output = output.slice(0, from) + output.slice(to);
+  const changes = mergedRanges.map(([from, to]) => ({ from, to, insertedLength: 0 }));
+  return { markdown: output, changed: mergedRanges.length > 0, ...(mergedRanges.length > 0 ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
+}
+
 export function isMindmapSuitable(markdown: string, analysis?: { headings?: unknown[]; tasks?: unknown[] }): boolean {
   if (!markdown || !markdown.trim()) return false;
   if (analysis?.headings && analysis.headings.length > 0) return true;

@@ -1,7 +1,9 @@
-/** Shared scanner/analysis entry point used by every React projection. */
 export {
   analyzeMarkdown,
+  checkAllInSection,
   deleteCompleted,
+  deleteCompletedInSection,
+  deleteCompletedInHeadingPath,
   deleteTask,
   isMindmapSuitable,
   mindmapText,
@@ -14,6 +16,8 @@ export {
   splitMarkdownLines,
   toggleTask,
   uncheckAll,
+  uncheckAllInSection,
+  uncheckAllInHeadingPath,
 } from "./analysisCore.ts";
 export type {
   CommandResult,

@@ -14,7 +14,10 @@ declare const Deno: { test(name: string, fn: () => void | Promise<void>): void }
 
 import {
   analyzeMarkdown,
+  checkAllInSection,
   deleteCompleted,
+  deleteCompletedInSection,
+  deleteCompletedInHeadingPath,
   deleteTask,
   isMindmapSuitable,
   mindmapText,
@@ -26,7 +29,10 @@ import {
   splitMarkdownLines,
   toggleTask,
   uncheckAll,
+  uncheckAllInSection,
+  uncheckAllInHeadingPath,
 } from "../src/markdown/analysis.ts";
+import { groupTasksByHeading } from "../src/tasks/TaskIndex.ts";
 import { createTextChangeSet, mapTextPosition } from "../src/document/PositionMap.ts";
 import { CanonicalDocument } from "../src/document/CanonicalDocument.ts";
 import { reconcileSectionAnchor } from "../src/document/SectionAnchor.ts";
@@ -858,4 +864,92 @@ Deno.test("isMindmapSuitable correctly detects structured vs unstructured markdo
   assert(isMindmapSuitable("- Bullet item 1\n- Bullet item 2"));
   assert(isMindmapSuitable("* Star item"));
   assert(isMindmapSuitable("1. First numbered item\n2. Second numbered item"));
+});
+
+Deno.test("section and headingPath batch task operations correctly mutate target groups", () => {
+  const source = `# Section 1
+- [ ] Task 1.1
+- [x] Task 1.2
+- [ ] Task 1.3
+
+# Section 2
+- [ ] Task 2.1
+- [x] Task 2.2
+`;
+
+  const analysis = analyzeMarkdown(source);
+  const sec1 = analysis.sections[0];
+  const sec2 = analysis.sections[1];
+  assert(sec1 && sec2);
+
+  // 1. checkAllInSection on Section 1
+  const checkSec1 = checkAllInSection(source, sec1.anchor);
+  assert(checkSec1.changed);
+  assertEquals(checkSec1.markdown, `# Section 1
+- [x] Task 1.1
+- [x] Task 1.2
+- [x] Task 1.3
+
+# Section 2
+- [ ] Task 2.1
+- [x] Task 2.2
+`);
+
+  // 2. uncheckAllInSection on Section 1
+  const uncheckSec1 = uncheckAllInSection(checkSec1.markdown, sec1.anchor);
+  assert(uncheckSec1.changed);
+  assertEquals(uncheckSec1.markdown, `# Section 1
+- [ ] Task 1.1
+- [ ] Task 1.2
+- [ ] Task 1.3
+
+# Section 2
+- [ ] Task 2.1
+- [x] Task 2.2
+`);
+
+  // 3. deleteCompletedInSection on Section 2
+  const deleteSec2 = deleteCompletedInSection(source, sec2.anchor);
+  assert(deleteSec2.changed);
+  assertEquals(deleteSec2.markdown, `# Section 1
+- [ ] Task 1.1
+- [x] Task 1.2
+- [ ] Task 1.3
+
+# Section 2
+- [ ] Task 2.1
+`);
+
+  // 4. uncheckAllInHeadingPath
+  const uncheckPath = uncheckAllInHeadingPath(source, ["Section 2"]);
+  assert(uncheckPath.changed);
+  assertEquals(uncheckPath.markdown, `# Section 1
+- [ ] Task 1.1
+- [x] Task 1.2
+- [ ] Task 1.3
+
+# Section 2
+- [ ] Task 2.1
+- [ ] Task 2.2
+`);
+
+  // 5. deleteCompletedInHeadingPath
+  const deletePath = deleteCompletedInHeadingPath(source, ["Section 1"]);
+  assert(deletePath.changed);
+  assertEquals(deletePath.markdown, `# Section 1
+- [ ] Task 1.1
+- [ ] Task 1.3
+
+# Section 2
+- [ ] Task 2.1
+- [x] Task 2.2
+`);
+
+  // 6. groupTasksByHeading
+  const groups = groupTasksByHeading(analysis.tasks.filter((t) => t.checked));
+  assertEquals(groups.length, 2);
+  assertEquals(groups[0].title, "Section 1");
+  assertEquals(groups[0].tasks.length, 1);
+  assertEquals(groups[1].title, "Section 2");
+  assertEquals(groups[1].tasks.length, 1);
 });

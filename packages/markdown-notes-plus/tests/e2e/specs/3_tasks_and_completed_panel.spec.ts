@@ -143,4 +143,65 @@ test.describe("Tasks and Completed Panel", () => {
     await expect(taskItem).toHaveAttribute("data-checked", "false");
     await expect(checkbox).not.toBeChecked();
   });
+
+  test("Outline section task batch actions and grouped completed tasks batch actions", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    const doc = `# Sprint A
+- [ ] Task A1
+- [ ] Task A2
+
+# Sprint B
+- [x] Task B1
+- [x] Task B2
+`;
+    await host.goto(doc, "note-tasks-section-batch", false);
+
+    // 1. Verify Outline displays section badges
+    const outlineItems = editor.outlinePanel.locator("ol li");
+    await expect(outlineItems).toHaveCount(2);
+
+    const sprintABadge = outlineItems.nth(0).locator(".section-task-badge");
+    await expect(sprintABadge).toHaveText("0/2");
+
+    const sprintBBadge = outlineItems.nth(1).locator(".section-task-badge");
+    await expect(sprintBBadge).toHaveText("2/2");
+
+    // 2. Click "Check all in section" for Sprint A
+    const checkAllSprintA = outlineItems.nth(0).locator('.section-task-actions button[title="Check all in this section"]');
+    await checkAllSprintA.click();
+
+    // Verify all tasks in Sprint A are checked -> Total completed is 4
+    await expect(editor.completedCountHeading).toHaveText("Completed (4)");
+    await expect(sprintABadge).toHaveText("2/2");
+
+    // 3. Test grouped tasks panel batch action: Uncheck Sprint A group
+    const sprintAGroup = editor.tasksPanel.locator('.task-group:has-text("Sprint A")');
+    await expect(sprintAGroup).toBeVisible();
+    const uncheckSprintAGroupBtn = sprintAGroup.locator('.task-group-actions button[title="Uncheck all in this group"]');
+    await uncheckSprintAGroupBtn.click();
+
+    // Completed decreases to 2 (Sprint B only)
+    await expect(editor.completedCountHeading).toHaveText("Completed (2)");
+    await expect(sprintABadge).toHaveText("0/2");
+
+    // 4. Test Outline section batch action: Delete completed in Sprint B
+    const deleteCompletedSprintB = outlineItems.nth(1).locator('.section-task-actions button.delete-btn');
+    await deleteCompletedSprintB.click();
+
+    // Completed decreases to 0
+    await expect(editor.completedCountHeading).toHaveText("Completed (0)");
+    await expect(outlineItems.nth(1).locator(".section-task-badge")).toHaveCount(0);
+
+    // Verify in Source mode
+    await editor.switchMode("Source");
+    const sourceText = await editor.getSourceText();
+    expect(sourceText).toContain("# Sprint A");
+    expect(sourceText).toContain("- [ ] Task A1");
+    expect(sourceText).toContain("- [ ] Task A2");
+    expect(sourceText).toContain("# Sprint B");
+    expect(sourceText).not.toContain("Task B1");
+    expect(sourceText).not.toContain("Task B2");
+  });
 });

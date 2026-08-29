@@ -3,10 +3,24 @@ import { EditorView, type EditorView as EditorViewType } from "@codemirror/view"
 import { CanonicalDocument, type DocumentState } from "../document/CanonicalDocument";
 import { EditorKitBridge } from "../standardnotes/EditorKitBridge";
 import { createEditorKit } from "../standardnotes/EditorKitRuntime";
-import { analyzeMarkdown, deleteCompleted, deleteTask, isMindmapSuitable, projectMindmapMarkdown, sectionAnchorAt, toggleTask, uncheckAll } from "../markdown/analysis";
+import {
+  analyzeMarkdown,
+  checkAllInSection,
+  deleteCompleted,
+  deleteCompletedInSection,
+  deleteCompletedInHeadingPath,
+  deleteTask,
+  isMindmapSuitable,
+  projectMindmapMarkdown,
+  sectionAnchorAt,
+  toggleTask,
+  uncheckAll,
+  uncheckAllInSection,
+  uncheckAllInHeadingPath,
+} from "../markdown/analysis";
 import type { TextChangeSet } from "../document/PositionMap.ts";
 import { reconcileSectionAnchor } from "../document/SectionAnchor.ts";
-import { taskIndex } from "../tasks/TaskIndex";
+import { groupTasksByHeading, taskIndex } from "../tasks/TaskIndex";
 import { outlineIndex } from "../outline/OutlineIndex";
 import { installThemeBridge } from "../theme/theme";
 import { SourceEditor, openSourceSearch } from "../editor/SourceEditor";
@@ -160,6 +174,7 @@ export function App() {
   );
   const tasks = taskIndex(snapshot.text);
   const headings = outlineIndex(snapshot.text);
+  const completedGroups = useMemo(() => groupTasksByHeading(tasks.completed), [tasks.completed]);
   const writingReadOnly = snapshot.locked || !appLifecycle.canApplyLocal() || !writingCapability.editable;
   const writingVisible = mode === "writing" || mode === "split";
   const bridgeState = bridge.getState();
@@ -348,11 +363,127 @@ export function App() {
           <div className="sidebar-header"><span className="sidebar-title">Inspector</span><button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">✕</button></div>
           <section className="outline-panel pane-section">
             <div className="panel-heading"><h2>Outline ({headings.length})</h2></div>
-            {headings.length ? <ol>{headings.map((heading) => <li key={heading.from} className={`level-${heading.level}`}><button className={currentSection?.anchor === heading.from ? "active-heading" : ""} onClick={() => focusHeading(heading.from, heading.to)}>{heading.text}</button></li>)}</ol> : <p className="empty-hint">No headings yet.</p>}
+            {headings.length ? (
+              <ol>
+                {headings.map((heading) => {
+                  const section = analysis.sections.find((s) => s.anchor === heading.from);
+                  const secFrom = section ? section.from : heading.from;
+                  const secTo = section ? section.to : heading.to;
+                  const secTasks = analysis.tasks.filter((t) => t.itemStart >= secFrom && t.itemEnd <= secTo);
+                  const secCompleted = secTasks.filter((t) => t.checked);
+                  const secOpen = secTasks.filter((t) => !t.checked);
+                  return (
+                    <li key={heading.from} className={`level-${heading.level}`}>
+                      <button
+                        className={`outline-heading-btn ${currentSection?.anchor === heading.from ? "active-heading" : ""}`}
+                        onClick={() => focusHeading(heading.from, heading.to)}
+                      >
+                        <span className="outline-heading-text">{heading.text}</span>
+                        {secTasks.length ? (
+                          <span className="section-task-badge" title={`${secCompleted.length} of ${secTasks.length} tasks completed`}>
+                            {secCompleted.length}/{secTasks.length}
+                          </span>
+                        ) : null}
+                      </button>
+                      {secTasks.length ? (
+                        <div className="section-task-actions" role="group" aria-label={`Tasks in ${heading.text}`}>
+                          {secOpen.length ? (
+                            <button
+                              title="Check all in this section"
+                              disabled={snapshot.locked}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                mutate((text) => checkAllInSection(text, heading.from));
+                              }}
+                            >
+                              ☑
+                            </button>
+                          ) : null}
+                          {secCompleted.length ? (
+                            <>
+                              <button
+                                title="Uncheck all in this section"
+                                disabled={snapshot.locked}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  mutate((text) => uncheckAllInSection(text, heading.from));
+                                }}
+                              >
+                                ☐
+                              </button>
+                              <button
+                                className="delete-btn"
+                                title="Delete completed in this section"
+                                disabled={snapshot.locked}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  mutate((text) => deleteCompletedInSection(text, heading.from));
+                                }}
+                              >
+                                🗑
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="empty-hint">No headings yet.</p>
+            )}
           </section>
           <section className="tasks-panel pane-section" aria-label="Completed tasks">
-            <div className="panel-heading"><h2>Completed ({tasks.completed.length})</h2>{tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}</div>
-            {!collapsed && tasks.completed.length ? <><ul>{tasks.completed.map((task) => <li key={`${task.from}:${task.checkboxOffset}`}><span className="task-item-label"><span className="task-done-badge">✓</span><span className="task-text-body">{task.text}</span>{task.headingPath.length ? <small className="task-breadcrumb"> · {task.headingPath.join(" / ")}</small> : null}</span><div className="task-actions"><button disabled={snapshot.locked} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button><button disabled={snapshot.locked} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button></div></li>)}</ul><div className="actions"><button disabled={snapshot.locked} onClick={() => mutate(uncheckAll)}>Uncheck all</button><button disabled={snapshot.locked} onClick={() => mutate(deleteCompleted)}>Delete completed</button></div></> : null}
+            <div className="panel-heading">
+              <h2>Completed ({tasks.completed.length})</h2>
+              {tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}
+            </div>
+            {!collapsed && tasks.completed.length ? (
+              <>
+                {completedGroups.map((group) => (
+                  <div key={group.title} className="task-group">
+                    <div className="task-group-header">
+                      <span className="task-group-title">📁 {group.title} ({group.tasks.length})</span>
+                      <div className="task-group-actions">
+                        <button
+                          disabled={snapshot.locked}
+                          title="Uncheck all in this group"
+                          onClick={() => mutate((text) => uncheckAllInHeadingPath(text, group.headingPath))}
+                        >
+                          Uncheck
+                        </button>
+                        <button
+                          disabled={snapshot.locked}
+                          title="Delete all in this group"
+                          onClick={() => mutate((text) => deleteCompletedInHeadingPath(text, group.headingPath))}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    <ul className="task-group-list">
+                      {group.tasks.map((task) => (
+                        <li key={`${task.from}:${task.checkboxOffset}`}>
+                          <span className="task-item-label">
+                            <span className="task-done-badge">✓</span>
+                            <span className="task-text-body">{task.text}</span>
+                          </span>
+                          <div className="task-actions">
+                            <button disabled={snapshot.locked} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button>
+                            <button disabled={snapshot.locked} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+                <div className="actions">
+                  <button disabled={snapshot.locked} onClick={() => mutate(uncheckAll)}>Uncheck all</button>
+                  <button disabled={snapshot.locked} onClick={() => mutate(deleteCompleted)}>Delete completed</button>
+                </div>
+              </>
+            ) : null}
           </section>
         </aside>
       </> : null}

@@ -112,7 +112,7 @@ export class EditorPage {
     this.deleteCompletedButton = this.tasksPanel.getByRole("button", { name: "Delete completed" });
 
     this.outlinePanel = this.frame.locator(".outline-panel");
-    this.outlineHeadings = this.outlinePanel.locator("ol li button");
+    this.outlineHeadings = this.outlinePanel.locator("ol li .outline-heading-btn");
 
     this.footerMeta = this.frame.locator("footer.note-meta");
   }
