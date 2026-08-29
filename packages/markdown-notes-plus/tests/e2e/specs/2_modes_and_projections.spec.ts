@@ -135,4 +135,43 @@ test.describe("Modes and Projections", () => {
     const bgLight = await editor.writingPane.evaluate((el) => getComputedStyle(el).backgroundColor);
     expect(bgLight).toBeDefined();
   });
+
+  test("Toolbar layout places Sidebar on the left and Task next to Redo", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Header\n\nContent paragraph.\n", "note-toolbar-layout", false);
+    await expect(editor.status).toHaveText("Ready");
+
+    // In writing pane toolbar: first button is Sidebar toggle
+    const firstButton = editor.writingPane.locator(".pane-toolbar > button").first();
+    await expect(firstButton).toHaveText("Sidebar");
+
+    // Redo is followed by Task button
+    const redoButton = editor.redoButton;
+    const nextSibling = redoButton.locator("xpath=following-sibling::button[1]");
+    await expect(nextSibling).toHaveText("Task");
+  });
+
+  test("Auto-detection hides Split and Mindmap when content is unstructured, shows them when structured", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    // 1. Unstructured text note: only plain prose with standard trailing newline
+    await host.goto("Just plain text with no headings and no lists.\n", "note-plain-text", false);
+    await expect(editor.status).toHaveText("Ready");
+
+    // Split and Mindmap buttons should NOT exist
+    await expect(editor.splitModeButton).toHaveCount(0);
+    await expect(editor.mindmapModeButton).toHaveCount(0);
+    await expect(editor.writingModeButton).toBeVisible();
+    await expect(editor.sourceModeButton).toBeVisible();
+
+    // 2. Structured note with headings: update note text and Split and Mindmap appear
+    await host.updateCurrentNote("# Structured Heading\n\nSome body text\n");
+    await expect(editor.writingModeButton).toBeVisible();
+    await expect(editor.splitModeButton).toBeVisible();
+    await expect(editor.sourceModeButton).toBeVisible();
+    await expect(editor.mindmapModeButton).toBeVisible();
+  });
 });

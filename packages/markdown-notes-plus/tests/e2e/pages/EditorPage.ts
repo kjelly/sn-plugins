@@ -117,6 +117,19 @@ export class EditorPage {
     this.footerMeta = this.frame.locator("footer.note-meta");
   }
 
+  get writingModeButton(): Locator {
+    return this.modeButtons.getByRole("button", { name: "Writing" });
+  }
+  get splitModeButton(): Locator {
+    return this.modeButtons.getByRole("button", { name: "Split" });
+  }
+  get sourceModeButton(): Locator {
+    return this.modeButtons.getByRole("button", { name: "Source" });
+  }
+  get mindmapModeButton(): Locator {
+    return this.modeButtons.getByRole("button", { name: "Mindmap" });
+  }
+
   async switchMode(mode: EditorMode): Promise<void> {
     await this.modeButtons.getByRole("button", { name: mode }).click();
   }

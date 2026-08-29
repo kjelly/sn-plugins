@@ -16,6 +16,7 @@ import {
   analyzeMarkdown,
   deleteCompleted,
   deleteTask,
+  isMindmapSuitable,
   mindmapText,
   remapSourceOffset,
   scanMarkdownStructure,
@@ -841,4 +842,19 @@ Deno.test("opaque canonical updates clear the selected section", () => {
   const document = new CanonicalDocument(source);
   assert(document.applyLocal("# A\n## B\nchanged\n"));
   assertEquals(reconcileSectionAnchor(document.text, undefined, selected.anchor), undefined);
+});
+
+Deno.test("isMindmapSuitable correctly detects structured vs unstructured markdown", () => {
+  assert(!isMindmapSuitable(""));
+  assert(!isMindmapSuitable("   \n\n  "));
+  assert(!isMindmapSuitable("This is a simple paragraph with no headings or lists."));
+  assert(!isMindmapSuitable("Line one of thought.\nLine two of thought without bullet points."));
+
+  assert(isMindmapSuitable("# Title\nSome content"));
+  assert(isMindmapSuitable("## Subheading\nParagraph"));
+  assert(isMindmapSuitable("- [ ] Buy groceries"));
+  assert(isMindmapSuitable("- [x] Done task"));
+  assert(isMindmapSuitable("- Bullet item 1\n- Bullet item 2"));
+  assert(isMindmapSuitable("* Star item"));
+  assert(isMindmapSuitable("1. First numbered item\n2. Second numbered item"));
 });
