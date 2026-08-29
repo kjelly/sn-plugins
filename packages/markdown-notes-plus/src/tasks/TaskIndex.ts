@@ -1,4 +1,4 @@
-import { analyzeMarkdown, deleteCompleted, deleteTask, toggleTask, uncheckAll, type TaskInfo } from "../markdown/analysis";
+import { analyzeMarkdown, deleteCompleted, deleteTask, toggleTask, uncheckAll, type TaskInfo } from "../markdown/analysis.ts";
 
 export type TaskProjection = { open: TaskInfo[]; completed: TaskInfo[] };
 

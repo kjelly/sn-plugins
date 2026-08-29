@@ -55,7 +55,7 @@ export class AppDocumentLifecycle {
 
   sourceValue(canonicalText: string): string { return this.sourceFallbackText ?? canonicalText; }
 
-  private retireFallback(): void {
+  retireFallback(): void {
     if (!this.hasFallback) return;
     this.setFallback(undefined);
   }

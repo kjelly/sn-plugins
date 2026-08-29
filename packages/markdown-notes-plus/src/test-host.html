@@ -91,6 +91,9 @@
             }, "*");
           } else if (msg.action === "save-items") {
             const items = msg.data?.items || [];
+            if (items.length > 0 && items[0].content?.text !== undefined && currentNote) {
+              currentNote.content.text = items[0].content.text;
+            }
             receivedSaves.push({
               timestamp: Date.now(),
               items: items,
