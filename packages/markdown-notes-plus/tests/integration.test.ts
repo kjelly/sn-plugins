@@ -12,11 +12,19 @@ import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/Ed
 import { writingCommandPlan } from "../src/editor/WritingCommandPlan.ts";
 import { sourceChangeSetFromCodeMirror } from "../src/editor/SourceChanges.ts";
 import { shouldReportSourceSelection } from "../src/editor/SourceSelection.ts";
-import { analyzeMarkdown, sectionAnchorAt } from "../src/markdown/analysis.ts";
+import {
+  analyzeMarkdown,
+  deleteCompleted,
+  deleteTask,
+  projectMindmapMarkdown,
+  sectionAnchorAt,
+  toggleTask,
+  uncheckAll,
+} from "../src/markdown/analysis.ts";
 import { reconcileSectionAnchor } from "../src/document/SectionAnchor.ts";
 import { AppDocumentLifecycle } from "../src/app/AppDocumentLifecycle.ts";
 
-declare const Deno: { test(name: string, fn: () => void): void };
+declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 type FakeBridgeHarness = {
   bridge: EditorKitBridge;
@@ -477,6 +485,195 @@ Deno.test("structural command contexts accept subsequent serializer spelling", (
   }
 });
 
+Deno.test("Task subtree mutation, uncheckAll, and deleteCompleted integrate with CanonicalDocument changeSets and undo/redo", () => {
+  const source = "# Project\n\n## Backend\n- [x] Database setup\n  - [x] Migrations\n  - [ ] Seed data\n- [ ] API routes\n\n## Frontend\n- [x] Setup Vite\n- [ ] Components\n";
+  const document = new CanonicalDocument(source);
+  let latestTransition: { kind: string; changeSet?: unknown } | undefined;
+  document.subscribe((_state, transition) => { latestTransition = transition; });
+
+  // 1. uncheckAll
+  const uncheckResult = uncheckAll(document.text);
+  assert(uncheckResult.changed, "uncheckAll should detect changes");
+  assert(document.applyLocal(uncheckResult.markdown, uncheckResult.changeSet), "uncheckAll should apply to canonical");
+  assertEquals(latestTransition?.kind, "apply");
+  const allUnchecked = analyzeMarkdown(document.text);
+  assertEquals(allUnchecked.tasks.every((task) => !task.checked), true);
+
+  // 2. Toggle specific tasks back to completed
+  const task0 = allUnchecked.tasks[0]; // Database setup
+  const toggleResult = toggleTask(document.text, task0);
+  assert(document.applyLocal(toggleResult.markdown, toggleResult.changeSet), "toggleTask should apply to canonical");
+  const task1 = analyzeMarkdown(document.text).tasks[1]; // Migrations
+  const toggleResult1 = toggleTask(document.text, task1);
+  assert(document.applyLocal(toggleResult1.markdown, toggleResult1.changeSet), "toggleTask should apply to canonical");
+
+  // 3. deleteCompleted - should delete completed tasks and their completed subtasks
+  const deleteResult = deleteCompleted(document.text);
+  assert(deleteResult.changed, "deleteCompleted should detect completed tasks");
+  assert(document.applyLocal(deleteResult.markdown, deleteResult.changeSet), "deleteCompleted should apply to canonical");
+  const remaining = analyzeMarkdown(document.text);
+  assertEquals(remaining.tasks.map((task) => task.text), ["API routes", "Setup Vite", "Components"]);
+  assertEquals(remaining.tasks.every((task) => !task.checked), true);
+
+  // 4. Undo step-by-step
+  assert(document.undo(), "undo deleteCompleted");
+  assertEquals(analyzeMarkdown(document.text).tasks.map((task) => task.text), ["Database setup", "Migrations", "Seed data", "API routes", "Setup Vite", "Components"]);
+  assert(document.undo(), "undo toggle migrations");
+  assert(document.undo(), "undo toggle database setup");
+  assert(document.undo(), "undo uncheckAll");
+  assertEquals(document.text, source);
+
+  // 5. Redo back to final
+  assert(document.redo(), "redo uncheckAll");
+  assert(document.redo(), "redo toggle database");
+  assert(document.redo(), "redo toggle migrations");
+  assert(document.redo(), "redo deleteCompleted");
+  assertEquals(document.text, deleteResult.markdown);
+});
+
+Deno.test("Multi-range Source editor replacements preserve active SectionAnchor across duplicate headings", () => {
+  const source = "# Project\n\n## Milestone\nAlpha details\n\n## Milestone\nBeta details\n\n## Milestone\nGamma details\n";
+  const analysis = analyzeMarkdown(source);
+  const headings = analysis.sections.filter((s) => s.text === "Milestone");
+  assertEquals(headings.length, 3);
+
+  // Select the 2nd duplicate "Milestone" (Beta)
+  let activeAnchor: number | undefined = headings[1].anchor;
+  const document = new CanonicalDocument(source);
+  document.subscribe((_state, transition) => {
+    if (transition?.kind === "apply") {
+      activeAnchor = reconcileSectionAnchor(document.text, transition.changeSet, activeAnchor);
+    }
+  });
+
+  // Edit Milestone 1 (Alpha) and Milestone 3 (Gamma) simultaneously via multi-range changeSet
+  const from1 = source.indexOf("Alpha details");
+  const from3 = source.indexOf("Gamma details");
+  const replacement1 = "Alpha details updated with more information";
+  const replacement3 = "Gamma details finished";
+
+  const next = source.slice(0, from1) + replacement1 + source.slice(from1 + "Alpha details".length, from3) + replacement3 + source.slice(from3 + "Gamma details".length);
+  const diff1 = replacement1.length - "Alpha details".length;
+
+  const changeSet = {
+    oldLength: source.length,
+    newLength: next.length,
+    changes: [
+      { from: from1, to: from1 + "Alpha details".length, insertedLength: replacement1.length },
+      { from: from3, to: from3 + "Gamma details".length, insertedLength: replacement3.length },
+    ],
+  };
+
+  assert(document.applyLocal(next, changeSet), "multi-range edit must apply");
+  // Active anchor should shift by diff1
+  assertEquals(activeAnchor, headings[1].anchor + diff1);
+  const reanalyzed = analyzeMarkdown(document.text);
+  const targetSection = reanalyzed.sections.find((s) => s.anchor === activeAnchor);
+  assert(targetSection !== undefined, "reconciled anchor must resolve to a valid section");
+  assertEquals(targetSection.text, "Milestone");
+  // Verify it still points to the Beta milestone section
+  const sectionContent = document.text.slice(targetSection.from, targetSection.to);
+  assert(sectionContent.includes("Beta details"), "anchor must point to the exact same Beta section");
+});
+
+Deno.test("projectMindmapMarkdown integrates all combinations of scope and task filters", () => {
+  const source = "# Project\n\n## Backend\n- [ ] Open DB task\n- [x] Closed API task\n\n## Frontend\n- [ ] UI task\n";
+  const analysis = analyzeMarkdown(source);
+  const backendSection = analysis.sections.find((s) => s.text === "Backend");
+  assert(backendSection !== undefined, "Backend section must exist");
+
+  // 1. Entire note, all tasks
+  const allMap = projectMindmapMarkdown(source, "all");
+  assert(allMap.includes("Open DB task"), "should contain open task");
+  assert(allMap.includes("Closed API task"), "should contain closed task");
+  assert(allMap.includes("Frontend"), "should contain Frontend");
+
+  // 2. Entire note, open only
+  const openMap = projectMindmapMarkdown(source, "open");
+  assert(openMap.includes("Open DB task"), "should contain open task");
+  assert(!openMap.includes("Closed API task"), "should exclude closed task");
+  assert(openMap.includes("UI task"), "should contain open UI task");
+
+  // 3. Entire note, hide all tasks
+  const hideMap = projectMindmapMarkdown(source, "hide");
+  assert(!hideMap.includes("Open DB task"), "should exclude open task");
+  assert(!hideMap.includes("Closed API task"), "should exclude closed task");
+  assert(hideMap.includes("Backend"), "should retain Backend heading");
+  assert(hideMap.includes("Frontend"), "should retain Frontend heading");
+
+  // 4. Current section, all tasks
+  const sectionMap = projectMindmapMarkdown(source, "all", backendSection.anchor);
+  assert(sectionMap.includes("Backend"), "should contain Backend");
+  assert(sectionMap.includes("Open DB task"), "should contain open task in Backend");
+  assert(sectionMap.includes("Closed API task"), "should contain closed task in Backend");
+  assert(!sectionMap.includes("Frontend"), "should exclude Frontend");
+
+  // 5. Current section, open only
+  const sectionOpenMap = projectMindmapMarkdown(source, "open", backendSection.anchor);
+  assert(sectionOpenMap.includes("Backend"), "should contain Backend");
+  assert(sectionOpenMap.includes("Open DB task"), "should contain open task in Backend");
+  assert(!sectionOpenMap.includes("Closed API task"), "should exclude closed task in Backend");
+  assert(!sectionOpenMap.includes("Frontend"), "should exclude Frontend");
+
+  // 6. Current section with undefined anchor -> falls back to entire note
+  const fallbackMap = projectMindmapMarkdown(source, "all", undefined);
+  assertEquals(fallbackMap, allMap);
+});
+
+Deno.test("EditorKitBridge debounced saving coalesces rapid edits into a single host save", async () => {
+  const harness = fakeBridgeHarness();
+  await deliverBridgeContext(harness, "start", "note-rapid-edits");
+
+  for (let i = 1; i <= 10; i++) {
+    const text = `edit ${i}`;
+    assert(harness.document.applyLocal(text), `edit ${i} must apply`);
+    harness.bridge.notifyLocalChange(text);
+  }
+
+  // Before timer expires, 0 saves dispatched
+  assertEquals(harness.saves.length, 0);
+  assertEquals(harness.document.dirty, true);
+
+  // Run timer
+  harness.clock.runAll();
+
+  // Exactly 1 save dispatched with the final text
+  assertEquals(harness.saves.length, 1);
+  assertEquals(harness.saves[0].text, "edit 10");
+});
+
+Deno.test("EditorKitBridge conflict lifecycle: dirty local vs multiple remote updates with resolution", async () => {
+  const harness = fakeBridgeHarness();
+  await deliverBridgeContext(harness, "initial content", "note-conflict-chain");
+
+  // Local dirty modification
+  assert(harness.document.applyLocal("local modification"), "apply local edit");
+  harness.bridge.notifyLocalChange("local modification");
+
+  // Remote update 1 arrives -> conflict state
+  await deliverBridgeContext(harness, "remote update 1", "note-conflict-chain");
+  assertEquals(harness.document.pendingRemote, "remote update 1");
+  assertEquals(harness.document.text, "local modification");
+  assertEquals(harness.document.dirty, true);
+
+  // Remote update 2 arrives before conflict resolved -> updates pending remote
+  await deliverBridgeContext(harness, "remote update 2", "note-conflict-chain");
+  assertEquals(harness.document.pendingRemote, "remote update 2");
+
+  // Resolve by accepting remote
+  assertEquals(harness.bridge.resolveConflict("accept-remote"), true);
+  assertEquals(harness.document.text, "remote update 2");
+  assertEquals(harness.document.pendingRemote, undefined);
+  assertEquals(harness.document.dirty, false);
+
+  // Subsequent local edit should save cleanly
+  assert(harness.document.applyLocal("subsequent local edit"), "apply subsequent edit");
+  harness.bridge.notifyLocalChange("subsequent local edit");
+  harness.clock.runAll();
+  assertEquals(harness.saves.length, 1);
+  assertEquals(harness.saves[0].text, "subsequent local edit");
+});
+
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -486,3 +683,4 @@ function assertEquals<T>(actual: T, expected: T): void {
     throw new Error(`values are not equal: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
+
