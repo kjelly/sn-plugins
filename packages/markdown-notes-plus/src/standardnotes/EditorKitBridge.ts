@@ -109,10 +109,11 @@ export class EditorKitBridge {
         if (incomingNote !== undefined) this.latestNote = incomingNote;
         if (kind === "initial-context") {
           this.cancelPendingSave();
-          const evaluated = evaluateRecurringTasks(text, new Date());
-          this.document.initialize(evaluated.markdown);
+          this.document.initialize(text);
           this.saveRequested = false;
+          const evaluated = evaluateRecurringTasks(text, new Date());
           if (evaluated.changed) {
+            this.document.applyLocal(evaluated.markdown);
             this.scheduleSave(evaluated.markdown);
           }
         }
