@@ -22,6 +22,7 @@ import {
 } from "../src/markdown/analysis.ts";
 import { reconcileSectionAnchor } from "../src/document/SectionAnchor.ts";
 import { AppDocumentLifecycle } from "../src/app/AppDocumentLifecycle.ts";
+import { findMarkdownLinkAtOffset } from "../src/editor/SourceLinks.ts";
 
 declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
@@ -696,6 +697,29 @@ Deno.test("EditorKitBridge - triggers scheduleSave on successful remote auto-mer
   harness.clock.runAll();
   assertEquals(harness.saves.length, 1);
   assertEquals(harness.saves[0].text, expectedMerged);
+});
+
+Deno.test("SourceLinks - detects inline link [text](url)", () => {
+  const line = "Check out [Standard Notes](https://standardnotes.com) for details";
+  // Inside [Standard Notes]
+  assertEquals(findMarkdownLinkAtOffset(line, 15), "https://standardnotes.com");
+  // Inside (https://standardnotes.com)
+  assertEquals(findMarkdownLinkAtOffset(line, 35), "https://standardnotes.com");
+  // Outside link
+  assertEquals(findMarkdownLinkAtOffset(line, 5), undefined);
+  assertEquals(findMarkdownLinkAtOffset(line, 58), undefined);
+});
+
+Deno.test("SourceLinks - detects autolink <url>", () => {
+  const line = "Visit <https://example.com> now";
+  assertEquals(findMarkdownLinkAtOffset(line, 10), "https://example.com");
+  assertEquals(findMarkdownLinkAtOffset(line, 2), undefined);
+});
+
+Deno.test("SourceLinks - detects bare url", () => {
+  const line = "Visit https://example.com/docs today";
+  assertEquals(findMarkdownLinkAtOffset(line, 10), "https://example.com/docs");
+  assertEquals(findMarkdownLinkAtOffset(line, 2), undefined);
 });
 
 

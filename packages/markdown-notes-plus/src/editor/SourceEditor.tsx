@@ -7,6 +7,8 @@ import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirro
 import { sourceChangeSetFromCodeMirror } from "./SourceChanges.ts";
 import { shouldReportSourceSelection } from "./SourceSelection.ts";
 import { synchronizeSourceEditor } from "./SourceEditorSync.ts";
+import { findMarkdownLinkAtOffset } from "./SourceLinks.ts";
+import { openExternalLink } from "../utils/linkOpener.ts";
 import type { TextChangeSet } from "../document/PositionMap.ts";
 
 export type SourceEditorProps = {
@@ -54,6 +56,23 @@ export function SourceEditor({ value, resetGeneration, readOnly, onChange, onVie
           if (shouldReportSourceSelection(update, applyingExternal.current)) {
             onSelectionRef.current?.(update.state.selection.main.head);
           }
+        }),
+        EditorView.domEventHandlers({
+          click(event, editorView) {
+            if (!event.ctrlKey && !event.metaKey) return false;
+            const pos = editorView.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (pos === null) return false;
+            const line = editorView.state.doc.lineAt(pos);
+            const offsetInLine = pos - line.from;
+            const url = findMarkdownLinkAtOffset(line.text, offsetInLine);
+            if (url) {
+              event.preventDefault();
+              event.stopPropagation();
+              openExternalLink(url);
+              return true;
+            }
+            return false;
+          },
         }),
       ],
     });
