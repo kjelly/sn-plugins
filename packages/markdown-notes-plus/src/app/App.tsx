@@ -27,6 +27,7 @@ import { SourceEditor, openSourceSearch } from "../editor/SourceEditor";
 import { WritingEditor, type WritingCommand, type WritingCommandName } from "../editor/WritingEditor";
 import type { WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
 import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
+import { openExternalLink } from "../utils/linkOpener";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
 
 type Mode = "writing" | "split" | "source" | "mindmap";
@@ -334,7 +335,20 @@ export function App() {
     if (mode === "source") jumpToSource(sourceViewRef.current);
   }, [jumpToSource, mode]);
 
-  return <main className={`app-shell mode-${mode}`}>
+  const handleRootClickCapture = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    const anchor = target?.closest("a");
+    if (anchor) {
+      const href = anchor.getAttribute("href") || anchor.href;
+      if (href) {
+        event.preventDefault();
+        event.stopPropagation();
+        openExternalLink(href);
+      }
+    }
+  };
+
+  return <main className={`app-shell mode-${mode}`} onClickCapture={handleRootClickCapture}>
     {snapshot.pendingRemote !== undefined ? <aside className="conflict" role="alert"><span>Another device changed this note.</span><button onClick={() => bridge.resolveConflict("keep-local")} title="Keep local edits (Standard Notes creates a Conflicted Copy if needed)">Keep local</button><button onClick={() => bridge.resolveConflict("accept-remote")} title="Discard local changes and use remote version">Accept remote</button></aside> : null}
     <div className={`workspace-layout ${sidebarOpen && mode !== "mindmap" ? "with-sidebar" : "sidebar-collapsed"}`}>
       <section className="editing-grid">

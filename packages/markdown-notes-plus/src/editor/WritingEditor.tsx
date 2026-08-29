@@ -16,6 +16,7 @@ import { taskOrdinalAtDocumentPosition, WritingControlRegistry, writingControlIs
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
+import { openExternalLink } from "../utils/linkOpener.ts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -353,6 +354,28 @@ function writingKeyboardShortcutsPlugin(editability: WritingEditability) {
   }));
 }
 
+function writingLinkClickHandlerPlugin() {
+  return $prose(() => new Plugin({
+    key: new PluginKey("markdown-notes-plus-link-click"),
+    props: {
+      handleClick(_view, _pos, event) {
+        const target = event.target as HTMLElement | null;
+        const anchor = target?.closest("a");
+        if (anchor) {
+          const href = anchor.getAttribute("href") || anchor.href;
+          if (href) {
+            event.preventDefault();
+            event.stopPropagation();
+            openExternalLink(href);
+            return true;
+          }
+        }
+        return false;
+      },
+    },
+  }));
+}
+
 const writingOriginPluginKey = new PluginKey<WritingOriginState>("markdown-notes-plus-writing-origin");
 const writingOriginPlugin = new Plugin({
   key: writingOriginPluginKey,
@@ -449,6 +472,7 @@ export function configureWritingEditor(editor: Editor, {
     .use(history)
     .use(listener)
     .use($prose(() => writingOriginPlugin))
+    .use(writingLinkClickHandlerPlugin())
     .use(slashMenuPlugin(editability))
     .use(writingKeyboardShortcutsPlugin(editability));
 }
