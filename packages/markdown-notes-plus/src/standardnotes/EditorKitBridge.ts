@@ -1,5 +1,6 @@
 import { CanonicalDocument } from "../document/CanonicalDocument.ts";
 import { EditorKitLifecycle, type IncomingTextKind } from "./EditorKitLifecycle.ts";
+import { evaluateRecurringTasks } from "../tasks/RecurringTasks.ts";
 
 type HostNote = { content?: { text?: unknown; [key: string]: unknown }; [key: string]: unknown };
 export type EditorKitDelegate = {
@@ -108,8 +109,12 @@ export class EditorKitBridge {
         if (incomingNote !== undefined) this.latestNote = incomingNote;
         if (kind === "initial-context") {
           this.cancelPendingSave();
-          this.document.initialize(text);
+          const evaluated = evaluateRecurringTasks(text, new Date());
+          this.document.initialize(evaluated.markdown);
           this.saveRequested = false;
+          if (evaluated.changed) {
+            this.scheduleSave(evaluated.markdown);
+          }
         }
         else if (kind !== "metadata") {
           const result = this.document.receiveRemote(text);
