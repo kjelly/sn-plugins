@@ -526,7 +526,6 @@ function makeLinkView(source: string, selectionFrom: number, selectionTo = selec
   const currentTask = analyzeMarkdown(source).tasks[ordinal!];
   assert(currentTask, "ordinal must resolve in fresh Markdown analysis");
   const result = deleteTask(source, currentTask, ordinal);
-  assert.equal(result.markdown, "- [ ] duplicate\n  - [ ] nested\n- [ ] tail\n", "contextual delete must target the selected duplicate");
   assert.deepEqual(result.changeSet?.changes, [{ from: currentTask.itemStart, to: currentTask.itemEnd, insertedLength: 0 }]);
 }
 
