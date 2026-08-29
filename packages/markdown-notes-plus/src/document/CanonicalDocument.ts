@@ -7,27 +7,32 @@ export type DocumentState = {
 };
 
 import { createTextChangeSet, invertTextChangeSet, type TextChangeSet } from "./PositionMap.ts";
+import { threeWayMerge } from "./ThreeWayMerge.ts";
 
 export type DocumentTransition = { kind: "initialize" | "apply" | "undo" | "redo"; changeSet?: TextChangeSet; resetGeneration?: number };
 export type DocumentListener = (state: DocumentState, transition?: DocumentTransition) => void;
+export type ReceiveRemoteResult = "initialized" | "merged" | "conflicted";
 
 type HistoryEntry = { from: string; to: string; changeSet?: TextChangeSet; inverseChangeSet?: TextChangeSet };
 
 /** The only durable document state. All other editor data is derived or local. */
 export class CanonicalDocument {
   private state: DocumentState;
+  private baseText: string;
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private listeners = new Set<DocumentListener>();
 
   constructor(text = "") {
     this.state = { text, dirty: false, locked: false, resetGeneration: 0 };
+    this.baseText = text;
   }
 
   get text(): string { return this.state.text; }
   get dirty(): boolean { return this.state.dirty; }
   get locked(): boolean { return this.state.locked; }
   get pendingRemote(): string | undefined { return this.state.pendingRemote; }
+  getBaseText(): string { return this.baseText; }
   snapshot(): DocumentState { return { ...this.state }; }
 
   subscribe(listener: DocumentListener): () => void {
@@ -38,6 +43,7 @@ export class CanonicalDocument {
 
   initialize(text: string): void {
     const resetGeneration = this.state.resetGeneration + 1;
+    this.baseText = text;
     this.state = { ...this.state, text, dirty: false, pendingRemote: undefined, resetGeneration };
     this.undoStack = [];
     this.redoStack = [];
@@ -66,18 +72,29 @@ export class CanonicalDocument {
     return true;
   }
 
-  receiveRemote(text: string): boolean {
-    if (this.dirty) {
-      this.state = { ...this.state, pendingRemote: text };
-      this.emit();
-      return false;
+  receiveRemote(text: string): ReceiveRemoteResult {
+    if (!this.dirty) {
+      this.initialize(text);
+      return "initialized";
     }
-    this.initialize(text);
-    return true;
+    if (text === this.text) {
+      this.baseText = text;
+      return "initialized";
+    }
+    const merge = threeWayMerge(this.baseText, this.text, text);
+    if (merge.success && merge.text !== undefined) {
+      this.baseText = text;
+      this.applyLocal(merge.text);
+      return "merged";
+    }
+    this.state = { ...this.state, pendingRemote: text };
+    this.emit();
+    return "conflicted";
   }
 
   markSaved(text: string): boolean {
     if (text !== this.text) return false;
+    this.baseText = text;
     this.state = { ...this.state, dirty: false };
     this.emit({ kind: "initialize" });
     return true;
@@ -90,6 +107,7 @@ export class CanonicalDocument {
       this.initialize(remote);
       return true;
     }
+    this.baseText = remote;
     this.state = { ...this.state, pendingRemote: undefined, dirty: true };
     this.emit();
     return true;

@@ -212,12 +212,12 @@ Deno.test("CanonicalDocument keeps exact source and makes remote conflicts expli
   const source = "  note\r\n\r\n";
   const document = new CanonicalDocument(source);
   assertEquals(document.text, source);
-  assert(document.applyLocal(source + "- [ ] local"));
-  assertEquals(document.receiveRemote("remote\n"), false);
-  assertEquals(document.text, source + "- [ ] local");
-  assertEquals(document.pendingRemote, "remote\n");
+  assert(document.applyLocal("  local note\r\n\r\n- [ ] local"));
+  assertEquals(document.receiveRemote("  remote note\r\n\r\n"), "conflicted");
+  assertEquals(document.text, "  local note\r\n\r\n- [ ] local");
+  assertEquals(document.pendingRemote, "  remote note\r\n\r\n");
   assert(document.resolveRemote("accept-remote"));
-  assertEquals(document.text, "remote\n");
+  assertEquals(document.text, "  remote note\r\n\r\n");
   assertEquals(document.dirty, false);
 });
 
@@ -576,17 +576,21 @@ Deno.test("Writing gate never swallows a user transaction ordered after a source
 Deno.test("EditorKit lifecycle treats same-text context as remote because hosts do not echo saves", () => {
   const lifecycle = new EditorKitLifecycle();
   const document = new CanonicalDocument();
+  let classifiedKind: string | undefined;
   const hostSetEditorRawText = (text: string) => {
     const kind = lifecycle.classifyContext("note-same-text");
+    classifiedKind = kind;
     if (kind === "initial-context") document.initialize(text);
     else if (kind === "remote-update") document.receiveRemote(text);
   };
 
   hostSetEditorRawText("initial");
+  assertEquals(classifiedKind, "initial-context");
   document.applyLocal("local");
   hostSetEditorRawText("local");
+  assertEquals(classifiedKind, "remote-update");
   assertEquals(document.dirty, true);
-  assertEquals(document.pendingRemote, "local");
+  assertEquals(document.pendingRemote, undefined);
 });
 
 Deno.test("EditorKit fake host does not echo the requested save", () => {
@@ -953,3 +957,27 @@ Deno.test("section and headingPath batch task operations correctly mutate target
   assertEquals(groups[1].title, "Section 2");
   assertEquals(groups[1].tasks.length, 1);
 });
+
+Deno.test("CanonicalDocument - auto-merges non-overlapping remote update when dirty", () => {
+  const doc = new CanonicalDocument("# Header\n\nSection A\n\nSection B\n");
+  doc.applyLocal("# Header\n\nSection A (local edit)\n\nSection B\n");
+  assertEquals(doc.dirty, true);
+
+  const status = doc.receiveRemote("# Header\n\nSection A\n\nSection B (remote edit)\n");
+  assertEquals(status, "merged");
+  assertEquals(doc.dirty, true);
+  assertEquals(doc.pendingRemote, undefined);
+  assertEquals(doc.text, "# Header\n\nSection A (local edit)\n\nSection B (remote edit)\n");
+});
+
+Deno.test("CanonicalDocument - flags conflict on overlapping remote update when dirty", () => {
+  const doc = new CanonicalDocument("# Header\n\nSection A\n");
+  doc.applyLocal("# Header\n\nSection A (local)\n");
+  assertEquals(doc.dirty, true);
+
+  const status = doc.receiveRemote("# Header\n\nSection A (remote)\n");
+  assertEquals(status, "conflicted");
+  assertEquals(doc.pendingRemote, "# Header\n\nSection A (remote)\n");
+  assertEquals(doc.text, "# Header\n\nSection A (local)\n");
+});
+
