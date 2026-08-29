@@ -102,4 +102,45 @@ test.describe("Tasks and Completed Panel", () => {
     await expect(editor.completedTaskList).toBeVisible();
     await expect(editor.tasksCollapseButton).toHaveText("Hide");
   });
+
+  test("Writing mode task creation, in-editor checkbox toggle, and split integrated mode synchronization", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Project\n\nBuy milk\n", "note-task-writing", false);
+
+    // Click into paragraph
+    await editor.writingEditor.locator("p").click();
+
+    // Click Task toolbar button to convert paragraph to task
+    await editor.writingTaskButton.click();
+    const taskItem = editor.writingEditor.locator('li[data-item-type="task"]');
+    await expect(taskItem).toBeVisible();
+
+    // Check the task by clicking checkbox inside Writing editor
+    const checkbox = taskItem.locator('input[type="checkbox"]');
+    await checkbox.click();
+
+    // Completed tasks panel detects the checked task
+    await expect(editor.completedCountHeading).toHaveText("Completed (1)");
+    // In Writing editor, completed task remains visible with checked state
+    await expect(taskItem).toHaveAttribute("data-checked", "true");
+    await expect(checkbox).toBeChecked();
+
+    // Verify SVG checkmark background image is applied to the checked checkbox
+    const bgImage = await checkbox.evaluate((el) => window.getComputedStyle(el).backgroundImage);
+    expect(bgImage).toContain("data:image/svg+xml");
+    expect(bgImage).toContain("polyline");
+
+    // Switch to Split mode (integrated Writing + Mindmap)
+    await editor.switchMode("Split");
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.mindmapPane).toBeVisible();
+
+    // Uncheck task in Writing pane within Split mode
+    await checkbox.click();
+    await expect(editor.completedCountHeading).toHaveText("Completed (0)");
+    await expect(taskItem).toHaveAttribute("data-checked", "false");
+    await expect(checkbox).not.toBeChecked();
+  });
 });

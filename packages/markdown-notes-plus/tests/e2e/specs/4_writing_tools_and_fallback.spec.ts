@@ -24,6 +24,9 @@ test.describe("Writing Tools & Lossless Guard", () => {
     // Click Table button to insert a table
     await editor.writingTableButton.click();
 
+    // Wait for Table to be rendered in Writing editor DOM
+    await expect(editor.writingEditor.locator("table")).toBeVisible();
+
     // Switch to Source mode to inspect generated markdown table
     await editor.switchMode("Source");
     await expect(editor.sourceEditor).toContainText("|");
@@ -53,5 +56,44 @@ test.describe("Writing Tools & Lossless Guard", () => {
     const updatedSource = await editor.getSourceText();
     expect(updatedSource).toContain("Custom HTML Content");
     expect(updatedSource).toContain("Appended source line.");
+  });
+
+  test("Slash commands: typing /task and pressing Enter converts block to task item", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Slash Test\n\nExisting paragraph\n", "note-slash-command", false);
+
+    // Wait for Writing editor to initialize
+    await expect(editor.status).toHaveText("Ready");
+
+    // Click into the writing editor and move to end
+    await editor.writingEditor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.press("Enter");
+
+    // Type /task to trigger the slash menu
+    await page.keyboard.type("/task");
+
+    const slashMenu = editor.frame.locator(".slash-menu");
+    await expect(slashMenu).toBeVisible();
+    await expect(slashMenu.locator(".slash-command.selected")).toContainText("/task");
+
+    // Press Enter to apply the slash command
+    await page.keyboard.press("Enter");
+
+    // Task item is created with checkbox
+    const taskItem = editor.writingEditor.locator('li[data-item-type="task"]');
+    await expect(taskItem).toBeVisible();
+    const checkbox = taskItem.locator('input[type="checkbox"]');
+    await expect(checkbox).toBeVisible();
+    await expect(checkbox).not.toBeChecked();
+
+    // Type task description
+    await page.keyboard.type("Buy groceries");
+
+    // Switch to Source mode to verify generated markdown
+    await editor.switchMode("Source");
+    await expect(editor.sourceEditor).toContainText("- [ ] Buy groceries");
   });
 });

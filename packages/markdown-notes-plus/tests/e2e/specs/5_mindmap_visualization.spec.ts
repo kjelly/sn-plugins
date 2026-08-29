@@ -73,4 +73,29 @@ test.describe("Mind Map Visualization", () => {
     const sectionMapContent = await editor.mindmapSvg.innerHTML();
     expect(sectionMapContent).not.toContain("Section Beta");
   });
+
+  test("Mind Map interactive checkbox toggle updates document without folding", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    const doc = "# Tasks Plan\n\n- [ ] Deploy v1\n- [x] Write specs\n";
+    await host.goto(doc, "note-mindmap-checkbox", false);
+
+    // Switch to Mindmap mode
+    await editor.switchMode("Mindmap");
+    await expect(editor.mindmapSvg).toBeVisible();
+
+    // Wait for Mindmap SVG checkboxes to render
+    const mindmapCheckboxes = editor.mindmapSvg.locator('foreignObject svg[viewBox="0 -3 24 24"]');
+    await expect(mindmapCheckboxes).toHaveCount(2);
+
+    // Click the first checkbox in the Mindmap SVG to check it
+    await mindmapCheckboxes.nth(0).click();
+
+    // Verify in Source mode that the document was updated to [x] Deploy v1
+    await editor.switchMode("Source");
+    const sourceText = await editor.getSourceText();
+    expect(sourceText).toContain("- [x] Deploy v1");
+    expect(sourceText).toContain("- [x] Write specs");
+  });
 });
