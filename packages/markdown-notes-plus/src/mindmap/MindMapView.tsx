@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Transformer } from "markmap-lib";
 import { Markmap } from "markmap-view";
 import { projectMindmapMarkdown } from "../markdown/analysis";
+import { openExternalLink } from "../utils/linkOpener";
 
 export type MindMapFilter = "all" | "open" | "hide";
 export const MINDMAP_RENDER_DEBOUNCE_MS = 350;
@@ -58,15 +59,26 @@ export function MindMapView({
       return el?.closest('input[type="checkbox"], svg[viewBox="0 -3 24 24"]');
     };
 
-    const stopCheckboxFold = (event: MouseEvent) => {
+    const stopFold = (event: MouseEvent) => {
       const target = event.target as Element;
-      if (isTaskCheckbox(target)) {
+      if (isTaskCheckbox(target) || target.closest("a")) {
         event.stopPropagation();
       }
     };
 
-    const handleCheckboxClick = (event: MouseEvent) => {
+    const handleSvgClick = (event: MouseEvent) => {
       const target = event.target as Element;
+      const anchor = target.closest("a");
+      if (anchor) {
+        const href = anchor.getAttribute("href") || (anchor as HTMLAnchorElement).href;
+        if (href) {
+          event.preventDefault();
+          event.stopPropagation();
+          openExternalLink(href);
+          return;
+        }
+      }
+
       const taskIcon = isTaskCheckbox(target);
       if (taskIcon) {
         event.stopPropagation();
@@ -80,12 +92,12 @@ export function MindMapView({
       }
     };
 
-    svgEl.addEventListener("mousedown", stopCheckboxFold, true);
-    svgEl.addEventListener("click", handleCheckboxClick, true);
+    svgEl.addEventListener("mousedown", stopFold, true);
+    svgEl.addEventListener("click", handleSvgClick, true);
 
     return () => {
-      svgEl.removeEventListener("mousedown", stopCheckboxFold, true);
-      svgEl.removeEventListener("click", handleCheckboxClick, true);
+      svgEl.removeEventListener("mousedown", stopFold, true);
+      svgEl.removeEventListener("click", handleSvgClick, true);
     };
   }, [onToggleTask, readOnly]);
 
