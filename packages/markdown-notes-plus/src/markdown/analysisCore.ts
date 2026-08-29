@@ -1,4 +1,5 @@
 import { createTextChangeSet, type TextChange, type TextChangeSet } from "../document/PositionMap.ts";
+import { updateTaskTextForToggle } from "../tasks/RecurringTasks.ts";
 
 export type MarkdownLine = { start: number; contentEnd: number; end: number; text: string };
 export type MarkdownRange = { from: number; to: number };
@@ -352,10 +353,46 @@ export function sectionAt(analysis: SectionLookup | string, offset: number): Sec
 export function sectionByAnchor(analysis: SectionLookup | string, anchor: number): SectionInfo | undefined { const sections = typeof analysis === "string" ? analyzeMarkdown(analysis).sections : analysis.sections; return sections.find((section) => section.anchor === anchor); }
 export function sectionAnchorAt(markdown: string, offset: number): number | undefined { return sectionAt(markdown, offset)?.anchor; }
 export function remapSourceOffset(previous: string, next: string, offset: number): number { const bounded = Math.max(0, Math.min(offset, previous.length)); let prefix = 0; while (prefix < bounded && prefix < next.length && previous[prefix] === next[prefix]) prefix += 1; let suffix = 0; while (suffix < previous.length - prefix && suffix < next.length - prefix && previous[previous.length - 1 - suffix] === next[next.length - 1 - suffix]) suffix += 1; const oldChangedEnd = previous.length - suffix; const nextChangedEnd = next.length - suffix; if (bounded === prefix && oldChangedEnd === prefix) return prefix + nextChangedEnd - prefix; if (bounded <= prefix) return bounded; if (bounded >= oldChangedEnd) return Math.max(0, bounded + next.length - previous.length); return prefix; }
-export function toggleTask(markdown: string, task: TaskInfo): CommandResult { if (task.checkboxOffset < 0 || task.checkboxOffset >= markdown.length) return { markdown, changed: false }; const replacement = task.checked ? " " : "x"; return { markdown: markdown.slice(0, task.checkboxOffset) + replacement + markdown.slice(task.checkboxOffset + 1), changed: true, changeSet: createTextChangeSet(markdown.length, markdown.length, [{ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 }]) }; }
+export function toggleTask(markdown: string, task: TaskInfo, today: Date = new Date()): CommandResult {
+  if (task.checkboxOffset < 0 || task.checkboxOffset >= markdown.length) return { markdown, changed: false };
+  const lineStart = task.from;
+  const lineEnd = task.to;
+  const lineText = markdown.slice(lineStart, lineEnd);
+  const nextChecked = !task.checked;
+  const replacement = nextChecked ? "x" : " ";
+  const replacedChar = lineText.slice(0, task.checkboxOffset - lineStart) + replacement + lineText.slice(task.checkboxOffset - lineStart + 1);
+  const updatedLineText = updateTaskTextForToggle(replacedChar, nextChecked, today);
+
+  if (updatedLineText === lineText) return { markdown, changed: false };
+
+  const nextMarkdown = markdown.slice(0, lineStart) + updatedLineText + markdown.slice(lineEnd);
+  const changes: TextChange[] = updatedLineText.length === lineText.length
+    ? [{ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 }]
+    : [{ from: lineStart, to: lineEnd, insertedLength: updatedLineText.length }];
+
+  return {
+    markdown: nextMarkdown,
+    changed: true,
+    changeSet: createTextChangeSet(markdown.length, nextMarkdown.length, changes),
+  };
+}
 export function deleteTask(markdown: string, task: TaskInfo, ordinal?: number): CommandResult { const currentAnalysis = analyzeMarkdown(markdown); const currentTask = ordinal === undefined ? currentAnalysis.tasks.find((candidate) => sameTaskReference(candidate, task)) : Number.isInteger(ordinal) && ordinal >= 0 ? currentAnalysis.tasks[ordinal] : undefined; if (!currentTask || !sameTaskReference(currentTask, task)) return { markdown, changed: false }; const { itemStart, itemEnd } = currentTask; if (itemStart < 0 || itemEnd > markdown.length || itemStart >= itemEnd) return { markdown, changed: false }; return { markdown: markdown.slice(0, itemStart) + markdown.slice(itemEnd), changed: true, changeSet: createTextChangeSet(markdown.length, markdown.length - (itemEnd - itemStart), [{ from: itemStart, to: itemEnd, insertedLength: 0 }]) }; }
 function sameTaskReference(left: TaskInfo, right: TaskInfo): boolean { return left.from === right.from && left.to === right.to && left.itemStart === right.itemStart && left.itemEnd === right.itemEnd && left.checkboxOffset === right.checkboxOffset && left.checked === right.checked && left.text === right.text && left.depth === right.depth && left.headingPath.length === right.headingPath.length && left.headingPath.every((part, index) => part === right.headingPath[index]); }
-export function uncheckAll(markdown: string): CommandResult { const analysis = analyzeMarkdown(markdown); let output = markdown; let changed = false; const changes: TextChange[] = []; for (const task of analysis.tasks.filter((entry) => entry.checked).sort((a, b) => b.checkboxOffset - a.checkboxOffset)) { const result = toggleTask(output, { ...task, checkboxOffset: task.checkboxOffset }); output = result.markdown; changed = changed || result.changed; if (result.changed) changes.unshift({ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 }); } return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) }; }
+export function uncheckAll(markdown: string): CommandResult {
+  const analysis = analyzeMarkdown(markdown);
+  let output = markdown;
+  let changed = false;
+  const changes: TextChange[] = [];
+  for (const task of analysis.tasks.filter((entry) => entry.checked).sort((a, b) => b.from - a.from)) {
+    const result = toggleTask(output, task);
+    output = result.markdown;
+    changed = changed || result.changed;
+    if (result.changed && result.changeSet) {
+      changes.unshift(...result.changeSet.changes);
+    }
+  }
+  return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
+}
 export function deleteCompleted(markdown: string): CommandResult { const analysis = analyzeMarkdown(markdown); const ranges = analysis.tasks.filter((task) => task.checked).map((task) => [task.itemStart, task.itemEnd]).sort((a, b) => a[0] - b[0]); const mergedRanges: number[][] = []; for (const [from, to] of ranges) { const previous = mergedRanges[mergedRanges.length - 1]; if (previous && from <= previous[1]) previous[1] = Math.max(previous[1], to); else mergedRanges.push([from, to]); } let output = markdown; for (const [from, to] of [...mergedRanges].reverse()) output = output.slice(0, from) + output.slice(to); const changes = mergedRanges.map(([from, to]) => ({ from, to, insertedLength: 0 })); return { markdown: output, changed: mergedRanges.length > 0, ...(mergedRanges.length > 0 ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) }; }
 export function outlineText(markdown: string): string { return analyzeMarkdown(markdown).headings.map((heading) => `${"  ".repeat(Math.max(0, heading.level - 1))}- ${heading.text}`).join("\n"); }
 export function mindmapText(markdown: string, filter: MindmapFilter): string { const analysis = analyzeMarkdown(markdown); const headingLines = analysis.headings.map((heading) => ({ depth: heading.level - 1, text: heading.text })); const taskLines = filter === "hide" ? [] : analysis.tasks.filter((task) => filter !== "open" || !task.checked).map((task) => ({ depth: Math.min(5, task.depth / 2 + 1), text: `${task.checked ? "☑" : "☐"} ${task.text}` })); return [...headingLines, ...taskLines].map((line) => `${"  ".repeat(Math.max(0, Math.floor(line.depth)))}• ${line.text}`).join("\n"); }
@@ -368,11 +405,13 @@ export function checkAllInSection(markdown: string, sectionAnchor: number): Comm
   let output = markdown;
   let changed = false;
   const changes: TextChange[] = [];
-  for (const task of targetTasks.sort((a, b) => b.checkboxOffset - a.checkboxOffset)) {
-    const result = toggleTask(output, { ...task, checkboxOffset: task.checkboxOffset });
+  for (const task of targetTasks.sort((a, b) => b.from - a.from)) {
+    const result = toggleTask(output, task);
     output = result.markdown;
     changed = changed || result.changed;
-    if (result.changed) changes.unshift({ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 });
+    if (result.changed && result.changeSet) {
+      changes.unshift(...result.changeSet.changes);
+    }
   }
   return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
 }
@@ -386,11 +425,13 @@ export function uncheckAllInSection(markdown: string, sectionAnchor: number): Co
   let output = markdown;
   let changed = false;
   const changes: TextChange[] = [];
-  for (const task of targetTasks.sort((a, b) => b.checkboxOffset - a.checkboxOffset)) {
-    const result = toggleTask(output, { ...task, checkboxOffset: task.checkboxOffset });
+  for (const task of targetTasks.sort((a, b) => b.from - a.from)) {
+    const result = toggleTask(output, task);
     output = result.markdown;
     changed = changed || result.changed;
-    if (result.changed) changes.unshift({ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 });
+    if (result.changed && result.changeSet) {
+      changes.unshift(...result.changeSet.changes);
+    }
   }
   return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
 }
@@ -426,11 +467,13 @@ export function uncheckAllInHeadingPath(markdown: string, headingPath: string[])
   let output = markdown;
   let changed = false;
   const changes: TextChange[] = [];
-  for (const task of targetTasks.sort((a, b) => b.checkboxOffset - a.checkboxOffset)) {
-    const result = toggleTask(output, { ...task, checkboxOffset: task.checkboxOffset });
+  for (const task of targetTasks.sort((a, b) => b.from - a.from)) {
+    const result = toggleTask(output, task);
     output = result.markdown;
     changed = changed || result.changed;
-    if (result.changed) changes.unshift({ from: task.checkboxOffset, to: task.checkboxOffset + 1, insertedLength: 1 });
+    if (result.changed && result.changeSet) {
+      changes.unshift(...result.changeSet.changes);
+    }
   }
   return { markdown: output, changed, ...(changed ? { changeSet: createTextChangeSet(markdown.length, output.length, changes) } : {}) };
 }

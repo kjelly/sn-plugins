@@ -722,6 +722,34 @@ Deno.test("SourceLinks - detects bare url", () => {
   assertEquals(findMarkdownLinkAtOffset(line, 2), undefined);
 });
 
+Deno.test("RecurringTasks integration - toggleTask auto-appends and removes @done tag", () => {
+  const fixedDate = new Date(2026, 7, 29); // 2026-08-29
+  const source = "# Habits\n- [ ] Water plants @repeat(3d)\n- [ ] Buy milk\n";
+  const analysis1 = analyzeMarkdown(source);
+
+  // Toggle recurring task: [ ] -> [x] adds @done
+  const res1 = toggleTask(source, analysis1.tasks[0], fixedDate);
+  assertEquals(res1.changed, true);
+  assertEquals(res1.markdown, "# Habits\n- [x] Water plants @repeat(3d) @done(2026-08-29)\n- [ ] Buy milk\n");
+
+  // Toggle ordinary task: [ ] -> [x] does NOT add @done
+  const res2 = toggleTask(source, analysis1.tasks[1], fixedDate);
+  assertEquals(res2.changed, true);
+  assertEquals(res2.markdown, "# Habits\n- [ ] Water plants @repeat(3d)\n- [x] Buy milk\n");
+
+  // Toggle recurring task: [x] -> [ ] removes @done
+  const checkedSource = "# Habits\n- [x] Water plants @repeat(3d) @done(2026-08-20)\n- [x] Buy milk\n";
+  const analysis2 = analyzeMarkdown(checkedSource);
+  const res3 = toggleTask(checkedSource, analysis2.tasks[0], fixedDate);
+  assertEquals(res3.changed, true);
+  assertEquals(res3.markdown, "# Habits\n- [ ] Water plants @repeat(3d)\n- [x] Buy milk\n");
+
+  // uncheckAll removes @done from recurring tasks
+  const res4 = uncheckAll(checkedSource);
+  assertEquals(res4.changed, true);
+  assertEquals(res4.markdown, "# Habits\n- [ ] Water plants @repeat(3d)\n- [ ] Buy milk\n");
+});
+
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
