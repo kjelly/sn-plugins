@@ -31,12 +31,16 @@ export function taskOrdinalAtDocumentPosition(doc: ProseNode, position: number):
   let ordinal = 0;
   let matched: number | undefined;
   doc.descendants((node, nodePosition) => {
-    if (node.type.name !== "list_item" || node.attrs.checked == null) return true;
-    if (nodePosition === position) {
-      matched = ordinal;
-      return false;
+    if (node.type.name === "list_item" && node.attrs.checked != null) {
+      if (nodePosition === position) {
+        matched = ordinal;
+        return false;
+      }
+      if (nodePosition <= position && position < nodePosition + node.nodeSize) {
+        matched = ordinal;
+      }
+      ordinal += 1;
     }
-    ordinal += 1;
     return true;
   });
   return matched;

@@ -1,6 +1,21 @@
 export const WRITING_COMMANDS = ["heading", "heading2", "heading3", "bullet", "numbered", "task", "quote", "code", "table", "image", "link", "divider"] as const;
 export type WritingCommandName = typeof WRITING_COMMANDS[number];
 
+export const COMMAND_ALIASES: Record<WritingCommandName, readonly string[]> = {
+  heading: ["h1", "title"],
+  heading2: ["h2", "subtitle"],
+  heading3: ["h3", "subheading"],
+  bullet: ["list", "bullet-list", "ul"],
+  numbered: ["numbered-list", "ol"],
+  task: ["todo", "checkbox", "check", "task-list"],
+  quote: ["blockquote", "callout"],
+  code: ["codeblock", "pre"],
+  table: ["grid"],
+  image: ["img", "photo", "picture"],
+  link: ["url", "hyperlink"],
+  divider: ["hr", "separator", "line"],
+};
+
 export type WritingCommandPlan =
   | { kind: "set-block-type"; nodeName: "heading" | "code_block"; attrs?: Record<string, unknown>; target: "current-block" }
   | { kind: "wrap"; nodeName: "bullet_list" | "ordered_list" | "blockquote"; attrs?: Record<string, unknown>; target: "selection" }

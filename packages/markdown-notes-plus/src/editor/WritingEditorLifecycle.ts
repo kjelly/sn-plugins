@@ -62,8 +62,9 @@ export class WritingEditorChangeGate {
   }
 
   /** Tag a programmatic replacement so its serializer callback cannot become a local edit. */
-  suppressExternalUpdate(generation: number, _target?: string): WritingExternalReplacement | undefined {
+  suppressExternalUpdate(generation: number, target?: string): WritingExternalReplacement | undefined {
     if (generation !== this.generation) return undefined;
+    if (target !== undefined) this.rendered = target;
     const replacement = { kind: "external-replace" as const, generation, version: ++this.externalUpdateVersion };
     this.pendingExternalReplacement = replacement;
     return replacement;
@@ -132,7 +133,7 @@ function isCommandOutputSafe(command: WritingCommandName, markdown: string): boo
     case "table": return hasTable(markdown);
     case "code": return hasFencedCodeBlock(markdown);
     case "divider": return hasThematicBreak(markdown);
-    case "task": return /(?:^|\n) {0,3}[-+*][ \t]+\[[ xX]\][ \t]+/.test(markdown);
+    case "task": return /(?:^|\n) {0,3}[-+*][ \t]+\[[ xX]\](?:\s+|$)/.test(markdown);
     default: return isWritingLexicallySafe(markdown);
   }
 }

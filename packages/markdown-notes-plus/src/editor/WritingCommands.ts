@@ -1,11 +1,12 @@
 import { wrapIn, setBlockType } from "@milkdown/prose/commands";
 import type { Mark, Node as ProseNode } from "@milkdown/prose/model";
+import { TextSelection } from "@milkdown/prose/state";
 import type { EditorView as ProseEditorView } from "@milkdown/prose/view";
 import { getMarkRange } from "@milkdown/prose";
 import { writingCommandPlan } from "./WritingCommandPlan.ts";
 import type { WritingCommandName } from "./WritingCommandPlan.ts";
 import { structuralProvenanceForCommand, WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META } from "./WritingEditorLifecycle.ts";
-export { WRITING_COMMANDS, type WritingCommandName } from "./WritingCommandPlan.ts";
+export { WRITING_COMMANDS, COMMAND_ALIASES, type WritingCommandName } from "./WritingCommandPlan.ts";
 
 export type SlashMatch = { from: number; to: number; query: string };
 
@@ -92,6 +93,21 @@ function currentBlock(view: WritingView): { node: ProseNode; from: number; to: n
     const node = $from.node(depth);
     if (node.isBlock) return { node, from: $from.before(depth), to: $from.after(depth) };
   }
+  if (view.state.doc.childCount > 0) {
+    let offset = 0;
+    for (let i = 0; i < view.state.doc.childCount; i++) {
+      const child = view.state.doc.child(i);
+      const nextOffset = offset + child.nodeSize;
+      if ($from.pos >= offset && $from.pos <= nextOffset && child.isBlock) {
+        return { node: child, from: offset, to: nextOffset };
+      }
+      offset = nextOffset;
+    }
+    const lastChild = view.state.doc.lastChild;
+    if (lastChild && lastChild.isBlock) {
+      return { node: lastChild, from: view.state.doc.content.size - lastChild.nodeSize, to: view.state.doc.content.size };
+    }
+  }
   return undefined;
 }
 
@@ -161,24 +177,66 @@ function replaceCurrentBlock(view: WritingView, node: ProseNode, command: Writin
 }
 
 function applyTask(view: WritingView, command: WritingCommandName): boolean {
-  const itemPositions = listItemPositions(view);
-  if (itemPositions.length === 0 && !runWrap(view, "bullet_list", undefined, command)) return false;
+  const { doc, selection, schema } = view.state;
+  const { from, to } = selection;
+  const tr = view.state.tr;
 
-  const positions = itemPositions.length > 0 ? itemPositions : listItemPositions(view);
-  if (positions.length === 0) return false;
-  const transaction = view.state.tr;
-  for (const position of positions) {
-    const node = transaction.doc.nodeAt(position);
-    if (!node || node.type.name !== "list_item") continue;
-    transaction.setNodeMarkup(position, node.type, { ...node.attrs, checked: false });
+  const listItems: Array<{ pos: number; node: ProseNode }> = [];
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (node.type.name === "list_item") {
+      listItems.push({ pos, node });
+    }
+  });
+
+  if (listItems.length > 0) {
+    for (const { pos, node } of listItems) {
+      const isTask = node.attrs.checked != null;
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, checked: isTask ? null : false });
+    }
+    if (tr.docChanged) dispatchCommand(view, tr, command);
+    return true;
   }
-  if (transaction.docChanged) dispatchCommand(view, transaction, command);
-  return true;
+
+  const block = currentBlock(view);
+  if (block && schema.nodes.bullet_list && schema.nodes.list_item) {
+    const paragraph = schema.nodes.paragraph ? schema.nodes.paragraph.create(null, block.node.content) : block.node;
+    const listItem = schema.nodes.list_item.create({ checked: false }, paragraph);
+    const list = schema.nodes.bullet_list.create(null, listItem);
+    tr.replaceWith(block.from, block.to, list);
+    if (tr.docChanged) {
+      const targetPos = Math.min(block.from + 2, tr.doc.content.size);
+      try {
+        const resolved = tr.doc.resolve(targetPos);
+        tr.setSelection(TextSelection.near(resolved));
+      } catch {
+        // Safe fallback
+      }
+      dispatchCommand(view, tr, command);
+    }
+    return true;
+  }
+
+  if (schema.nodes.bullet_list && schema.nodes.list_item && schema.nodes.paragraph) {
+    const paragraph = schema.nodes.paragraph.create();
+    const listItem = schema.nodes.list_item.create({ checked: false }, paragraph);
+    const list = schema.nodes.bullet_list.create(null, listItem);
+    tr.replaceSelectionWith(list);
+    if (tr.docChanged) dispatchCommand(view, tr, command);
+    return true;
+  }
+
+  return false;
+}
+
+export function isWritingViewEditable(view: WritingView): boolean {
+  if (typeof view.editable === "boolean") return view.editable;
+  const propsEditable = (view as unknown as { props?: { editable?: (state: unknown) => boolean } }).props?.editable;
+  return typeof propsEditable === "function" ? propsEditable(view.state) : true;
 }
 
 /** Apply a toolbar or slash action as a structural ProseMirror transaction. */
 export function applyWritingCommand(view: WritingView, command: WritingCommandName, range?: SlashMatch, href?: string): boolean {
-  if (!view.editable) return false;
+  if (!isWritingViewEditable(view)) return false;
   if (command === "link" && href === undefined) return false;
 
   const plan = writingCommandPlan(command);
