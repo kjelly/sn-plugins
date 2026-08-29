@@ -40,6 +40,65 @@ function EditorNavigationControls({
   </>;
 }
 
+function StatusAndSidebar({
+  currentSection,
+  snapshot,
+  sourceFallbackText,
+  writingCapability,
+  writingVisible,
+  bridgeState,
+  sidebarOpen,
+  onToggleSidebar,
+  showSidebarToggle = true,
+}: {
+  currentSection?: { path: string[] };
+  snapshot: DocumentState;
+  sourceFallbackText?: string;
+  writingCapability: WritingRoundTripResult;
+  writingVisible: boolean;
+  bridgeState: { saveRequested: boolean };
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  showSidebarToggle?: boolean;
+}) {
+  return (
+    <div className="status-and-sidebar">
+      <span className="current-section" aria-label="Current section">
+        {currentSection?.path.length ? currentSection.path.join(" / ") : ""}
+      </span>
+      <span className="status" role="status">
+        {snapshot.locked
+          ? "Locked · read-only"
+          : sourceFallbackText !== undefined
+          ? "Source fallback · edit to apply"
+          : !writingCapability.editable && writingVisible
+          ? `Writing read-only · ${writingCapability.reason ?? "use Source mode for exact Markdown"}`
+          : snapshot.pendingRemote !== undefined
+          ? "Remote update pending"
+          : snapshot.dirty
+          ? bridgeState.saveRequested
+            ? "Edited · save requested; host confirmation unavailable"
+            : "Edited · save pending"
+          : "Ready"}
+      </span>
+      {showSidebarToggle ? (
+        <button
+          className={`sidebar-toggle-btn ${sidebarOpen ? "active" : ""}`}
+          onClick={onToggleSidebar}
+          title="Toggle sidebar (Ctrl+\)"
+          aria-label="Toggle sidebar"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <line x1="15" y1="3" x2="15" y2="21" />
+          </svg>
+          <span>Sidebar</span>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
   return <ErrorBoundaryImpl>{children}</ErrorBoundaryImpl>;
 }
@@ -66,6 +125,7 @@ export function App() {
   const [filter, setFilter] = useState<MindMapFilter>("all");
   const [mindMapScope, setMindMapScope] = useState<MindMapScope>("entire-note");
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
   const [writingCommand, setWritingCommand] = useState<WritingCommand>();
@@ -93,6 +153,30 @@ export function App() {
   const writingReadOnly = snapshot.locked || !appLifecycle.canApplyLocal() || !writingCapability.editable;
   const writingVisible = mode === "writing" || mode === "split";
   const bridgeState = bridge.getState();
+
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === "writing" || nextMode === "split") {
+      if (appLifecycle.hasFallback) {
+        if (sourceFallbackText !== undefined && sourceFallbackText !== canonical.text) {
+          canonical.applyLocal(sourceFallbackText);
+        }
+        appLifecycle.retireFallback();
+      }
+      setWritingCapability({ editable: true });
+    }
+    setMode(nextMode);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "\\") {
+        event.preventDefault();
+        setSidebarOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (mindMapScope === "current-section" && !currentSection) setMindMapScope("entire-note");
@@ -153,13 +237,35 @@ export function App() {
     const result = command(canonical.text);
     edit(result.markdown, result.changeSet);
   };
-  const deleteWritingTask = (ordinal: number, renderedMarkdown: string) => {
+  const toggleWritingTask = (ordinal: number, renderedMarkdown?: string) => {
     if (!appLifecycle.canApplyLocal()) return;
-    if (renderedMarkdown !== canonical.text) return;
-    const currentAnalysis = analyzeMarkdown(canonical.text);
+    const source = renderedMarkdown ?? canonical.text;
+    const currentAnalysis = analyzeMarkdown(source);
     const task = currentAnalysis.tasks[ordinal];
     if (!task) return;
-    const result = deleteTask(canonical.text, task, ordinal);
+    const result = toggleTask(source, task);
+    edit(result.markdown, result.changeSet);
+  };
+  const toggleMindmapTask = (ordinal: number) => {
+    if (!appLifecycle.canApplyLocal()) return;
+    const mapAnalysis = analyzeMarkdown(mapMarkdown);
+    const mapTask = mapAnalysis.tasks[ordinal];
+    if (!mapTask) return;
+    const currentAnalysis = analyzeMarkdown(canonical.text);
+    const targetTask = currentAnalysis.tasks.find(
+      (t) => t.text === mapTask.text && t.headingPath.join("/") === mapTask.headingPath.join("/") && t.checked === mapTask.checked
+    ) ?? currentAnalysis.tasks.find((t) => t.text === mapTask.text) ?? currentAnalysis.tasks[ordinal];
+    if (!targetTask) return;
+    const result = toggleTask(canonical.text, targetTask);
+    edit(result.markdown, result.changeSet);
+  };
+  const deleteWritingTask = (ordinal: number, renderedMarkdown?: string) => {
+    if (!appLifecycle.canApplyLocal()) return;
+    const source = renderedMarkdown ?? canonical.text;
+    const currentAnalysis = analyzeMarkdown(source);
+    const task = currentAnalysis.tasks[ordinal];
+    if (!task) return;
+    const result = deleteTask(source, task, ordinal);
     edit(result.markdown, result.changeSet);
   };
   const runWritingCommand = (name: WritingCommandName) => {
@@ -184,7 +290,7 @@ export function App() {
   const focusHeading = (from: number, to: number) => {
     setActiveSectionAnchor(from);
     pendingJump.current = { from, to };
-    setMode("source");
+    handleModeChange("source");
     const view = sourceViewRef.current;
     if (!view) return;
     jumpToSource(view);
@@ -195,21 +301,29 @@ export function App() {
   }, [jumpToSource, mode]);
 
   return <main className={`app-shell mode-${mode}`}>
-    <header className="app-toolbar">
-      <span className="current-section" aria-label="Current section">{currentSection?.path.length ? currentSection.path.join(" / ") : "Document"}</span>
-      <span className="status" role="status">{snapshot.locked ? "Locked · read-only" : sourceFallbackText !== undefined ? "Source fallback · edit to apply" : !writingCapability.editable && writingVisible ? `Writing read-only · ${writingCapability.reason ?? "use Source mode for exact Markdown"}` : snapshot.pendingRemote !== undefined ? "Remote update pending" : snapshot.dirty ? (bridgeState.saveRequested ? "Edited · save requested; host confirmation unavailable" : "Edited · save pending") : "Ready"}</span>
-    </header>
     {snapshot.pendingRemote !== undefined ? <aside className="conflict" role="alert"><span>Another device changed this note.</span><button onClick={() => bridge.resolveConflict("keep-local")}>Keep local</button><button onClick={() => bridge.resolveConflict("accept-remote")}>Accept remote</button></aside> : null}
-    <section className="editing-grid">
-      {/* Keep Milkdown mounted across mode changes so its selection/history stay local. */}
-      <section className="writing-pane pane" hidden={!writingVisible}><div className="pane-toolbar" role="toolbar" aria-label="Writing tools">
-        <EditorNavigationControls mode={mode} onModeChange={setMode} historyDisabled={snapshot.locked || appLifecycle.hasFallback} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} />
-        <button disabled={writingReadOnly} onClick={() => runWritingCommand("heading")}>H1</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("heading2")}>H2</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("bullet")}>Bullet</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("task")}>Task</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("quote")}>Quote</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("code")}>Code</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("table")}>Table</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("link")}>Link</button><button disabled={writingReadOnly} onClick={() => runWritingCommand("divider")}>Divider</button><span className="slash-hint">Type / for commands</span>
-      </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onDeleteTask={deleteWritingTask} command={writingCommand} onCapabilityChange={setWritingCapability} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); setMode("source"); }} /></ErrorBoundary></section>
-      {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar"><EditorNavigationControls mode={mode} onModeChange={setMode} historyDisabled={snapshot.locked || appLifecycle.hasFallback} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><span>Raw Markdown · whitespace preserved</span></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
-      {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className="pane-toolbar">{mode === "mindmap" ? <EditorNavigationControls mode={mode} onModeChange={setMode} historyDisabled={snapshot.locked || appLifecycle.hasFallback} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} /> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span></div><ErrorBoundary><MindMapView markdown={mapMarkdown} /></ErrorBoundary></section> : null}
-    </section>
-      {mode !== "mindmap" ? <section className="lower-grid"><section className="tasks-panel pane" aria-label="Completed tasks"><div className="panel-heading"><h2>Completed ({tasks.completed.length})</h2>{tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}</div>{!collapsed && tasks.completed.length ? <><ul>{tasks.completed.map((task) => <li key={`${task.from}:${task.checkboxOffset}`}><span>☑ {task.text}{task.headingPath.length ? <small className="task-breadcrumb"> · {task.headingPath.join(" / ")}</small> : null}</span><button disabled={snapshot.locked || appLifecycle.hasFallback} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button><button disabled={snapshot.locked || appLifecycle.hasFallback} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button></li>)}</ul><div className="actions"><button disabled={snapshot.locked || appLifecycle.hasFallback} onClick={() => mutate(uncheckAll)}>Uncheck all</button><button disabled={snapshot.locked || appLifecycle.hasFallback} onClick={() => mutate(deleteCompleted)}>Delete completed</button></div></> : null}</section><section className="outline-panel pane"><h2>Outline</h2>{headings.length ? <ol>{headings.map((heading) => <li key={heading.from}><button onClick={() => focusHeading(heading.from, heading.to)}>{heading.text}</button></li>)}</ol> : <p>No headings yet.</p>}</section></section> : null}
+    <div className={`workspace-layout ${sidebarOpen && mode !== "mindmap" ? "with-sidebar" : "sidebar-collapsed"}`}>
+      <section className="editing-grid">
+        {/* Keep Milkdown mounted across mode changes so its selection/history stay local. */}
+        <section className="writing-pane pane" hidden={!writingVisible}><div className={`pane-toolbar ${writingVisible ? "app-toolbar" : ""}`} role="toolbar" aria-label="Writing tools">
+          <EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} />
+          <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("heading")} title="Heading 1">H1</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("heading2")} title="Heading 2">H2</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("bullet")} title="Bullet list">Bullet</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("task")} title="Task list">Task</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("quote")} title="Blockquote">Quote</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("code")} title="Code block">Code</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("table")} title="Table">Table</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("link")} title="Link (Ctrl+K)">Link</button><button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("divider")} title="Divider">Divider</button><span className="slash-hint">Type / for commands</span>
+          {writingVisible ? <StatusAndSidebar currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} /> : null}
+        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} onCapabilityChange={setWritingCapability} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); setMode("source"); }} /></ErrorBoundary></section>
+        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><span>Raw Markdown · whitespace preserved</span><StatusAndSidebar currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
+        {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools">{mode === "mindmap" ? <EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} /> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusAndSidebar currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} showSidebarToggle={false} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} /></ErrorBoundary></section> : null}
+      </section>
+      {mode !== "mindmap" ? <aside className={`sidebar-pane pane ${sidebarOpen ? "open" : "collapsed"}`} aria-label="Sidebar inspector">
+        <section className="outline-panel pane-section">
+          <div className="panel-heading"><h2>Outline ({headings.length})</h2></div>
+          {headings.length ? <ol>{headings.map((heading) => <li key={heading.from} className={`level-${heading.level}`}><button className={currentSection?.anchor === heading.from ? "active-heading" : ""} onClick={() => focusHeading(heading.from, heading.to)}>{heading.text}</button></li>)}</ol> : <p className="empty-hint">No headings yet.</p>}
+        </section>
+        <section className="tasks-panel pane-section" aria-label="Completed tasks">
+          <div className="panel-heading"><h2>Completed ({tasks.completed.length})</h2>{tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}</div>
+          {!collapsed && tasks.completed.length ? <><ul>{tasks.completed.map((task) => <li key={`${task.from}:${task.checkboxOffset}`}><span className="task-item-label"><span className="task-done-badge">✓</span><span className="task-text-body">{task.text}</span>{task.headingPath.length ? <small className="task-breadcrumb"> · {task.headingPath.join(" / ")}</small> : null}</span><div className="task-actions"><button disabled={snapshot.locked} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button><button disabled={snapshot.locked} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button></div></li>)}</ul><div className="actions"><button disabled={snapshot.locked} onClick={() => mutate(uncheckAll)}>Uncheck all</button><button disabled={snapshot.locked} onClick={() => mutate(deleteCompleted)}>Delete completed</button></div></> : null}
+        </section>
+      </aside> : null}
+    </div>
     <footer className="note-meta">{analysis.tasks.length} task{analysis.tasks.length === 1 ? "" : "s"} · {headings.length} section{headings.length === 1 ? "" : "s"} · EditorKit markdown bridge</footer>
   </main>;
 }

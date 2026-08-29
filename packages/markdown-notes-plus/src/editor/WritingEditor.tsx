@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Ctx, MilkdownPlugin } from "@milkdown/ctx";
-import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, rootCtx, serializerCtx } from "@milkdown/core";
+import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx, rootCtx, serializerCtx, SerializerReady } from "@milkdown/core";
 import { commonmark, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
 import { gfm } from "@milkdown/preset-gfm";
 import { history } from "@milkdown/plugin-history";
@@ -11,10 +11,11 @@ import type { EditorState } from "@milkdown/prose/state";
 import { Slice, type Node as ProseNode } from "@milkdown/prose/model";
 import type { EditorView as ProseEditorView } from "@milkdown/prose/view";
 import { SlashProvider } from "@milkdown/plugin-slash";
+import { toggleMark } from "@milkdown/prose/commands";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry, writingControlIsDisabled, writingTaskIsHidden, type WritingControlState } from "./WritingTaskControls";
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
-import { applyWritingCommand, writingLinkHref, WRITING_COMMANDS, type SlashMatch, type WritingCommandName } from "./WritingCommands";
-import { isWritingLinkShortcut } from "./WritingShortcuts";
+import { applyWritingCommand, isWritingViewEditable, writingLinkHref, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
+import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -23,7 +24,8 @@ export type WritingEditorProps = {
   value: string;
   readOnly: boolean;
   onChange: (value: string) => void;
-  onDeleteTask: (ordinal: number, renderedMarkdown: string) => void;
+  onToggleTask?: (ordinal: number, renderedMarkdown?: string) => void;
+  onDeleteTask?: (ordinal: number, renderedMarkdown?: string) => void;
   command?: WritingCommand;
   onCapabilityChange?: (result: WritingRoundTripResult) => void;
   onLosslessFallback?: (value: string, result: WritingRoundTripResult) => void;
@@ -55,19 +57,23 @@ function taskListItemView(
   getPos: () => number | undefined,
   readOnlyRef: { current: boolean },
   controls: WritingControlRegistry,
-  onDeleteTask: (ordinal: number, renderedMarkdown: string) => void,
-  renderedMarkdown: () => string | undefined,
+  onToggleTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void },
+  onDeleteTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void },
+  getRenderedMarkdown: () => string | undefined,
 ) {
   const dom = document.createElement("li");
   setTaskListItemAttributes(dom, node);
+  const isReadOnly = () => readOnlyRef.current;
   let input: HTMLInputElement | undefined;
   let deleteButton: HTMLButtonElement | undefined;
   let contentDOM: HTMLElement;
 
-  const isReadOnly = () => writingControlIsDisabled(readOnlyRef.current, view.editable);
   const refresh = () => {
     const disabled = isReadOnly();
-    if (input) input.disabled = disabled;
+    if (input) {
+      input.disabled = disabled;
+      input.setAttribute("aria-label", input.checked ? "Mark task incomplete" : "Mark task complete");
+    }
     if (deleteButton) deleteButton.disabled = disabled;
   };
 
@@ -78,44 +84,45 @@ function taskListItemView(
     input.className = "task-checkbox";
     input.setAttribute("aria-label", input.checked ? "Mark task incomplete" : "Mark task complete");
     input.disabled = isReadOnly();
-    input.addEventListener("mousedown", (event) => event.preventDefault());
     input.addEventListener("click", (event) => {
-      event.preventDefault();
+      if (isReadOnly()) {
+        event.preventDefault();
+        return;
+      }
       const position = getPos();
-      if (position === undefined || isReadOnly()) return;
-      const current = view.state.doc.nodeAt(position);
-      if (!current || current.type.name !== "list_item" || current.attrs.checked == null) return;
-      view.dispatch(view.state.tr.setNodeMarkup(position, undefined, {
-        ...current.attrs,
-        checked: !current.attrs.checked,
-      }));
-      view.focus();
+      if (position === undefined) return;
+      const currentNode = view.state.doc.nodeAt(position);
+      if (!currentNode || currentNode.type.name !== "list_item") return;
+      const nextChecked = input ? input.checked : !currentNode.attrs.checked;
+      const tr = view.state.tr.setNodeMarkup(position, undefined, { ...currentNode.attrs, checked: nextChecked });
+      tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "task" });
+      view.dispatch(tr);
     });
     dom.append(input);
+    contentDOM = document.createElement("div");
+    contentDOM.className = "task-content";
+    contentDOM.dataset.taskContent = "true";
+    dom.append(contentDOM);
     deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "task-delete";
-    deleteButton.textContent = "Delete";
+    deleteButton.textContent = "×";
     deleteButton.setAttribute("aria-label", "Delete task");
     deleteButton.title = "Delete task";
     deleteButton.disabled = isReadOnly();
     deleteButton.addEventListener("mousedown", (event) => event.preventDefault());
     deleteButton.addEventListener("click", (event) => {
       event.preventDefault();
+      if (isReadOnly()) return;
       const position = getPos();
-      if (position === undefined || isReadOnly()) return;
-      const current = view.state.doc.nodeAt(position);
-      if (!current || current.type.name !== "list_item" || current.attrs.checked == null) return;
-      const ordinal = taskOrdinalAtDocumentPosition(view.state.doc, position);
-      const currentMarkdown = renderedMarkdown();
-      if (ordinal === undefined || currentMarkdown === undefined) return;
-      onDeleteTask(ordinal, currentMarkdown);
+      if (position === undefined) return;
+      const currentNode = view.state.doc.nodeAt(position);
+      if (!currentNode || currentNode.type.name !== "list_item") return;
+      const tr = view.state.tr.delete(position, position + currentNode.nodeSize);
+      tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "task" });
+      view.dispatch(tr);
     });
     dom.append(deleteButton);
-    contentDOM = document.createElement("div");
-    contentDOM.className = "task-content";
-    contentDOM.dataset.taskContent = "true";
-    dom.append(contentDOM);
   } else {
     contentDOM = dom;
   }
@@ -143,6 +150,7 @@ function taskListItemView(
 }
 
 function slashMatch(view: ProseEditorView): SlashMatch | undefined {
+  if (view.composing) return undefined;
   const { selection } = view.state;
   if (!selection.empty) return undefined;
   const beforeCursor = selection.$from.parent.textContent.slice(0, selection.$from.parentOffset);
@@ -154,8 +162,8 @@ function slashMatch(view: ProseEditorView): SlashMatch | undefined {
 
 type WritingEditability = { readOnlyRef: { current: boolean }; capabilityRef: { current: boolean } };
 
-function canApplyWritingLink(view: Pick<ProseEditorView, "editable">, editability: WritingEditability): boolean {
-  return !editability.readOnlyRef.current && editability.capabilityRef.current && view.editable;
+function canApplyWritingLink(view: ProseEditorView, editability: WritingEditability): boolean {
+  return !editability.readOnlyRef.current && editability.capabilityRef.current && isWritingViewEditable(view);
 }
 
 function promptAndApplyLink(view: ProseEditorView, editability: WritingEditability, range?: SlashMatch): boolean {
@@ -166,75 +174,180 @@ function promptAndApplyLink(view: ProseEditorView, editability: WritingEditabili
 }
 
 function slashMenuPlugin(editability: WritingEditability) {
-  return $prose(() => new Plugin({
-    key: new PluginKey("markdown-notes-plus-slash-menu"),
-    view: (initialView) => {
-      const menu = document.createElement("div");
-      menu.className = "slash-menu";
-      menu.setAttribute("role", "menu");
-      menu.hidden = true;
-      const provider = new SlashProvider({
-        content: menu,
-        root: initialView.dom.parentElement ?? undefined,
-        shouldShow: (view) => slashMatch(view) !== undefined,
+  return $prose(() => {
+    let selectedIndex = 0;
+    let currentCommands: WritingCommandName[] = [];
+    let isMenuVisible = false;
+    let currentView: ProseEditorView | undefined;
+    let menuEl: HTMLDivElement | undefined;
+    let slashProvider: SlashProvider | undefined;
+
+    const executeCommand = (command: WritingCommandName) => {
+      if (!currentView) return;
+      const range = slashMatch(currentView);
+      if (menuEl) menuEl.hidden = true;
+      isMenuVisible = false;
+      slashProvider?.hide();
+      if (command === "link") promptAndApplyLink(currentView, editability, range);
+      else applyWritingCommand(currentView, command, range);
+    };
+
+    const updateSelectionUI = () => {
+      if (!menuEl) return;
+      const buttons = menuEl.querySelectorAll<HTMLButtonElement>(".slash-command");
+      buttons.forEach((btn, idx) => {
+        btn.classList.toggle("selected", idx === selectedIndex);
+        if (idx === selectedIndex) {
+          btn.scrollIntoView({ block: "nearest" });
+        }
       });
-      let currentView = initialView;
+    };
 
-      const refresh = (view: ProseEditorView, previous?: EditorState) => {
-        currentView = view;
-        const match = slashMatch(view);
-        if (!match) {
-          menu.hidden = true;
-          provider.hide();
-          return;
-        }
-        const commands = WRITING_COMMANDS.filter((command) => command.includes(match.query));
-        menu.replaceChildren(...commands.map((command) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "slash-command";
-          button.setAttribute("role", "menuitem");
-          button.textContent = `/${command}`;
-          button.addEventListener("mousedown", (event) => event.preventDefault());
-          button.addEventListener("click", () => {
-            const range = slashMatch(currentView);
-            if (command === "link") promptAndApplyLink(currentView, editability, range);
-            else applyWritingCommand(currentView, command, range);
+    return new Plugin({
+      key: new PluginKey("markdown-notes-plus-slash-menu"),
+      view: (initialView) => {
+        const menu = document.createElement("div");
+        menuEl = menu;
+        menu.className = "slash-menu";
+        menu.setAttribute("role", "menu");
+        menu.hidden = true;
+        const provider = new SlashProvider({
+          content: menu,
+          root: initialView.dom.parentElement ?? undefined,
+          shouldShow: (view) => slashMatch(view) !== undefined,
+        });
+        slashProvider = provider;
+        currentView = initialView;
+
+        const refresh = (view: ProseEditorView, previous?: EditorState) => {
+          currentView = view;
+          const match = slashMatch(view);
+          if (!match) {
+            isMenuVisible = false;
+            menu.hidden = true;
+            provider.hide();
+            return;
+          }
+          const q = match.query;
+          currentCommands = WRITING_COMMANDS.filter((command) => {
+            if (!q) return true;
+            return command.includes(q) || COMMAND_ALIASES[command]?.some((alias) => alias.includes(q));
           });
-          return button;
-        }));
-        menu.hidden = commands.length === 0;
-        if (!menu.hidden) provider.update(view, previous);
-      };
+          if (currentCommands.length === 0) {
+            isMenuVisible = false;
+            menu.hidden = true;
+            provider.hide();
+            return;
+          }
+          if (selectedIndex >= currentCommands.length) selectedIndex = 0;
+          isMenuVisible = true;
 
-      initialView.dom.parentElement?.append(menu);
-      refresh(initialView);
-      return {
-        update(view: ProseEditorView, previous: EditorState) { refresh(view, previous); },
-        destroy() { provider.destroy(); menu.remove(); },
-      };
-    },
-    props: {
-      handleKeyDown(view, event) {
-        if (event.key === "Escape") {
-          const menu = view.dom.parentElement?.querySelector<HTMLElement>(".slash-menu");
-          if (menu) menu.hidden = true;
-        }
-        return false;
+          menu.replaceChildren(...currentCommands.map((command, idx) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `slash-command ${idx === selectedIndex ? "selected" : ""}`;
+            button.setAttribute("role", "menuitem");
+            button.textContent = `/${command}`;
+            button.addEventListener("mousedown", (event) => event.preventDefault());
+            button.addEventListener("click", () => {
+              executeCommand(command);
+            });
+            return button;
+          }));
+          menu.hidden = false;
+          provider.update(view, previous);
+        };
+
+        initialView.dom.parentElement?.append(menu);
+        refresh(initialView);
+        return {
+          update(view: ProseEditorView, previous: EditorState) { refresh(view, previous); },
+          destroy() { provider.destroy(); menu.remove(); menuEl = undefined; slashProvider = undefined; },
+        };
       },
-    },
-  }));
+      props: {
+        handleKeyDown(view, event) {
+          if (!isMenuVisible || currentCommands.length === 0) return false;
+
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            selectedIndex = (selectedIndex + 1) % currentCommands.length;
+            updateSelectionUI();
+            return true;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            selectedIndex = (selectedIndex - 1 + currentCommands.length) % currentCommands.length;
+            updateSelectionUI();
+            return true;
+          }
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const command = currentCommands[selectedIndex] ?? currentCommands[0];
+            if (command) {
+              executeCommand(command);
+              return true;
+            }
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            isMenuVisible = false;
+            if (menuEl) menuEl.hidden = true;
+            slashProvider?.hide();
+            return true;
+          }
+          return false;
+        },
+      },
+    });
+  });
 }
 
-function writingLinkShortcutPlugin(editability: WritingEditability) {
+function writingKeyboardShortcutsPlugin(editability: WritingEditability) {
   return $prose(() => new Plugin({
-    key: new PluginKey("markdown-notes-plus-writing-link-shortcut"),
+    key: new PluginKey("markdown-notes-plus-writing-shortcuts"),
     props: {
       handleKeyDown(view, event) {
-        if (!isWritingLinkShortcut(event) || !canApplyWritingLink(view, editability)) return false;
-        event.preventDefault();
-        promptAndApplyLink(view, editability);
-        return true;
+        if (view.composing || event.isComposing || !isWritingViewEditable(view) || editability.readOnlyRef.current) return false;
+        if (isWritingLinkShortcut(event)) {
+          if (!canApplyWritingLink(view, editability)) return false;
+          event.preventDefault();
+          promptAndApplyLink(view, editability);
+          return true;
+        }
+        if (isWritingBoldShortcut(event)) {
+          const type = view.state.schema.marks.strong;
+          if (type) {
+            event.preventDefault();
+            toggleMark(type)(view.state, view.dispatch);
+            return true;
+          }
+        }
+        if (isWritingItalicShortcut(event)) {
+          const type = view.state.schema.marks.em;
+          if (type) {
+            event.preventDefault();
+            toggleMark(type)(view.state, view.dispatch);
+            return true;
+          }
+        }
+        if (isWritingStrikeShortcut(event)) {
+          const type = view.state.schema.marks.strike_through;
+          if (type) {
+            event.preventDefault();
+            toggleMark(type)(view.state, view.dispatch);
+            return true;
+          }
+        }
+        if (isWritingInlineCodeShortcut(event)) {
+          const type = view.state.schema.marks.inline_code;
+          if (type) {
+            event.preventDefault();
+            toggleMark(type)(view.state, view.dispatch);
+            return true;
+          }
+        }
+        return false;
       },
     },
   }));
@@ -254,7 +367,7 @@ export function replaceAllWithOrigin(ctx: Ctx, markdown: string, origin: Writing
   const doc = ctx.get(parserCtx)(markdown);
   if (!doc) return;
   view.dispatch(view.state.tr
-    .replace(0, view.state.doc.content.size, new Slice(doc.content, 0, 0))
+    .replaceWith(0, view.state.doc.content.size, doc.content)
     .setMeta("addToHistory", false)
     .setMeta(WRITING_TRANSACTION_ORIGIN_META, origin));
 }
@@ -273,7 +386,9 @@ type WritingEditorConfiguration = {
   value: string;
   readOnlyRef: { current: boolean };
   controls: WritingControlRegistry;
-  onDeleteTaskRef: { current: (ordinal: number, renderedMarkdown: string) => void };
+  onToggleTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void };
+  onDeleteTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void };
+  serializerRef?: { current?: (doc: ProseNode) => string };
   editability: WritingEditability;
   onMarkdownUpdated: (ctx: Ctx, markdown: string) => void;
 };
@@ -284,7 +399,9 @@ export function configureWritingEditor(editor: Editor, {
   value,
   readOnlyRef,
   controls,
+  onToggleTaskRef,
   onDeleteTaskRef,
+  serializerRef,
   editability,
   onMarkdownUpdated,
 }: WritingEditorConfiguration): Editor {
@@ -292,6 +409,12 @@ export function configureWritingEditor(editor: Editor, {
     .config((ctx) => {
       ctx.set(rootCtx, host);
       ctx.set(defaultValueCtx, value);
+      ctx.update(remarkStringifyOptionsCtx, (options) => ({
+        ...options,
+        bullet: "-" as const,
+        bulletOther: "*" as const,
+        listItemIndent: "one" as const,
+      }));
       ctx.update(editorViewOptionsCtx, (options) => ({
         ...options,
         nodeViews: {
@@ -302,14 +425,24 @@ export function configureWritingEditor(editor: Editor, {
             getPos,
             readOnlyRef,
             controls,
-            (ordinal, renderedMarkdown) => onDeleteTaskRef.current?.(ordinal, renderedMarkdown),
+            onToggleTaskRef,
+            onDeleteTaskRef,
             () => {
-              try { return ctx.get(serializerCtx)(view.state.doc); } catch { return undefined; }
+              try {
+                const serialize = ctx.get(serializerCtx);
+                return serialize(view.state.doc);
+              } catch {
+                return undefined;
+              }
             },
           ),
         },
       }));
       ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, markdown));
+    })
+    .use((ctx) => async () => {
+      await ctx.wait(SerializerReady);
+      if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
     })
     .use(writingCommonmark)
     .use(gfm)
@@ -317,13 +450,13 @@ export function configureWritingEditor(editor: Editor, {
     .use(listener)
     .use($prose(() => writingOriginPlugin))
     .use(slashMenuPlugin(editability))
-    .use(writingLinkShortcutPlugin(editability));
+    .use(writingKeyboardShortcutsPlugin(editability));
 }
 
 /** Keep the Milkdown document and capability proof aligned with canonical text. */
 export function synchronizeWritingEditorValue({ gate, generation, value, replace, serialize, report }: WritingEditorValueSync): WritingRoundTripResult {
   if (gate.renderedMarkdown !== value) {
-    const origin = gate.suppressExternalUpdate(generation);
+    const origin = gate.suppressExternalUpdate(generation, value);
     if (origin) replace(value, origin);
   }
   const proof = assessWritingRoundTrip(value, serialize());
@@ -332,7 +465,7 @@ export function synchronizeWritingEditorValue({ gate, generation, value, replace
 }
 
 /** Milkdown CommonMark + GFM writing mode. Source remains the canonical owner. */
-export function WritingEditor({ value, readOnly, onChange, onDeleteTask, command, onCapabilityChange, onLosslessFallback }: WritingEditorProps) {
+export function WritingEditor({ value, readOnly, onChange, onToggleTask, onDeleteTask, command, onCapabilityChange, onLosslessFallback }: WritingEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor>();
   const gate = useRef(new WritingEditorChangeGate());
@@ -341,13 +474,16 @@ export function WritingEditor({ value, readOnly, onChange, onDeleteTask, command
   const valueRef = useRef(value);
   const readOnlyRef = useRef(readOnly);
   const controlsRef = useRef(new WritingControlRegistry());
+  const onToggleTaskRef = useRef(onToggleTask);
   const onDeleteTaskRef = useRef(onDeleteTask);
+  const serializerRef = useRef<(doc: ProseNode) => string>();
   const commandRef = useRef(command);
   const capabilityRef = useRef(false);
   const appliedCommand = useRef<number>();
   onChangeRef.current = onChange;
   valueRef.current = value;
   readOnlyRef.current = readOnly;
+  onToggleTaskRef.current = onToggleTask;
   onDeleteTaskRef.current = onDeleteTask;
   commandRef.current = command;
   const onCapabilityChangeRef = useRef(onCapabilityChange);
@@ -398,23 +534,18 @@ export function WritingEditor({ value, readOnly, onChange, onDeleteTask, command
       value,
       readOnlyRef,
       controls: controlsRef.current,
+      onToggleTaskRef,
       onDeleteTaskRef,
+      serializerRef,
       editability: { readOnlyRef, capabilityRef },
       onMarkdownUpdated: (ctx, markdown) => {
-        const originState = writingOriginPluginKey.getState(ctx.get(editorViewCtx).state) ?? { origin: "user" as const };
+        if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
+        const view = ctx.get(editorViewCtx);
+        if (view.composing) return;
+        const originState = writingOriginPluginKey.getState(view.state) ?? { origin: "user" as const };
         const origin = originState.origin;
         if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
-        const proof = assessWritingMutation(valueRef.current, markdown, origin, originState.structural?.context);
-        if (!proof.editable) {
-          reportCapability(proof);
-          // The serializer has already rendered the user's transaction.
-          // Keep that exact rendered value visible in Source mode instead of
-          // rolling it back and silently discarding the user's input. The
-          // App owns the temporary fallback buffer and decides when an
-          // explicit Source edit crosses the canonical/save boundary.
-          onLosslessFallbackRef.current?.(markdown, proof);
-          return;
-        }
+        if (markdown === valueRef.current) return;
         onChangeRef.current(markdown);
       },
     });
@@ -425,7 +556,7 @@ export function WritingEditor({ value, readOnly, onChange, onDeleteTask, command
       }
       editorRef.current = editor;
       gate.current.finish(generation, value);
-      editor.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnly }));
+      editor.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));
       synchronizeEditorValue(valueRef.current, true);
       applyPendingCommand();
     }).catch(() => { /* isolate editor initialization failure in its ErrorBoundary */ });
@@ -444,9 +575,21 @@ export function WritingEditor({ value, readOnly, onChange, onDeleteTask, command
   useEffect(() => { applyPendingCommand(); }, [command?.id]);
 
   useEffect(() => {
-    editorRef.current?.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnly }));
+    editorRef.current?.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));
     controlsRef.current.refresh();
   }, [readOnly]);
 
-  return <div className={`milkdown-writing${readOnly ? " is-readonly" : ""}`} ref={host} aria-label="Writing editor" />;
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnlyRef.current) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, a, select, textarea")) return;
+    editorRef.current?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      if (!view.hasFocus()) {
+        view.focus();
+      }
+    });
+  };
+
+  return <div className={`milkdown-writing${readOnly ? " is-readonly" : ""}`} ref={host} onClick={handleClick} aria-label="Writing editor" />;
 }

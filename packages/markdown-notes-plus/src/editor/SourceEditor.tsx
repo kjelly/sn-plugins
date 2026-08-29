@@ -80,7 +80,16 @@ export function SourceEditor({ value, resetGeneration, readOnly, onChange, onVie
     view.current?.dispatch({ effects: readOnlyCompartment.current.reconfigure(EditorView.editable.of(!readOnly)) });
   }, [readOnly]);
 
-  return <div className="cm-source" ref={host} aria-label="Markdown source" />;
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnly) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, a, select, textarea")) return;
+    if (!view.current?.hasFocus) {
+      view.current?.focus();
+    }
+  };
+
+  return <div className="cm-source" ref={host} onClick={handleClick} aria-label="Markdown source" />;
 }
 
 export function openSourceSearch(view: EditorView | undefined): void { if (view) openSearchPanel(view); }
