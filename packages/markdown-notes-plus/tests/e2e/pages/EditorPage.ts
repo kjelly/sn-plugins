@@ -40,6 +40,13 @@ export class EditorPage {
   readonly mindmapFilterSelect: Locator;
   readonly mindmapScopeSelect: Locator;
 
+  // Sidebar & Layout
+  readonly workspaceLayout: Locator;
+  readonly sidebarPane: Locator;
+  readonly sidebarToggleBtn: Locator;
+  readonly sidebarCloseBtn: Locator;
+  readonly sidebarBackdrop: Locator;
+
   // Completed Tasks panel
   readonly tasksPanel: Locator;
   readonly completedCountHeading: Locator;
@@ -90,6 +97,12 @@ export class EditorPage {
     this.mindmapSvg = this.mindmapPane.locator(".mindmap-svg");
     this.mindmapFilterSelect = this.mindmapPane.locator('label:has-text("Tasks") select');
     this.mindmapScopeSelect = this.mindmapPane.locator('label:has-text("Scope") select');
+
+    this.workspaceLayout = this.frame.locator(".workspace-layout");
+    this.sidebarPane = this.frame.locator(".sidebar-pane");
+    this.sidebarToggleBtn = this.frame.locator(".sidebar-toggle-btn");
+    this.sidebarCloseBtn = this.frame.locator(".sidebar-close-btn");
+    this.sidebarBackdrop = this.frame.locator(".sidebar-backdrop");
 
     this.tasksPanel = this.frame.locator(".tasks-panel");
     this.completedCountHeading = this.tasksPanel.locator(".panel-heading h2");

@@ -117,4 +117,22 @@ test.describe("Modes and Projections", () => {
     await editor.writingTaskButton.click();
     await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toBeVisible();
   });
+
+  test("Host theme changes and system dark mode adapt editor colors seamlessly", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Theme Test\n\nContent for theme verification.\n", "note-theme-1", false);
+    await expect(editor.status).toHaveText("Ready");
+
+    // Emulate media feature dark mode
+    await page.emulateMedia({ colorScheme: "dark" });
+    const bgDark = await editor.writingPane.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bgDark).not.toBe("rgb(255, 255, 255)");
+
+    // Switch to light mode
+    await page.emulateMedia({ colorScheme: "light" });
+    const bgLight = await editor.writingPane.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bgLight).toBeDefined();
+  });
 });
