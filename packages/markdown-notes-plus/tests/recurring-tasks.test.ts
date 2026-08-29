@@ -27,6 +27,13 @@ Deno.test("RecurringTasks - parseRepeatInterval parses units and aliases", () =>
   assertEquals(parseRepeatInterval("invalid"), undefined);
 });
 
+Deno.test("RecurringTasks - calculateNextDueDate computes future dates", () => {
+  const due = calculateNextDueDate("2026-08-20", "5d");
+  assertEquals(due?.getFullYear(), 2026);
+  assertEquals(due?.getMonth(), 7); // Aug
+  assertEquals(due?.getDate(), 25);
+});
+
 Deno.test("RecurringTasks - isRecurringTaskOverdue compares dates correctly", () => {
   // Done on 2026-08-20 with repeat(5d) -> due on 2026-08-25
   const todayEarly = new Date(2026, 7, 24); // Aug 24
