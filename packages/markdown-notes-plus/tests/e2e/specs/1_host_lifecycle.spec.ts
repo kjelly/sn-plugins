@@ -94,12 +94,13 @@ test.describe("Host Protocol & Lifecycle", () => {
     await host.goto("# Base Note\n", "note-uuid-conflict", false);
     await editor.switchMode("Source");
 
-    // Make a local edit to make it dirty
+    // Make a conflicting local edit replacing the title
     await editor.sourceEditor.click();
-    await page.keyboard.type(" [Local Modification]");
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type("# Local Conflicting Title\n");
 
     // Host sends conflicting remote update
-    await host.updateCurrentNote("# Conflicting Remote Note Content\n");
+    await host.updateCurrentNote("# Remote Conflicting Title\n");
 
     // Conflict banner appears
     await expect(editor.conflictBanner).toBeVisible();
@@ -111,4 +112,30 @@ test.describe("Host Protocol & Lifecycle", () => {
     await editor.keepLocalButton.click();
     await expect(editor.conflictBanner).toHaveCount(0);
   });
+
+  test("Remote update arrives with non-overlapping edit when dirty -> auto-merges without conflict banner", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    const initial = "# Section 1\n\nContent 1\n\n# Section 2\n\nContent 2\n";
+    await host.goto(initial, "note-uuid-auto-merge", false);
+    await editor.switchMode("Source");
+
+    // Make local edit in Section 1 title
+    await editor.sourceEditor.click();
+    await page.keyboard.press("ControlOrMeta+Home");
+    await page.keyboard.press("End");
+    await page.keyboard.type(" (Local)");
+
+    // Host sends non-overlapping update in Section 2
+    await host.updateCurrentNote("# Section 1\n\nContent 1\n\n# Section 2 (Remote)\n\nContent 2\n");
+
+    // No conflict banner
+    await expect(editor.conflictBanner).toHaveCount(0);
+    // Outline should have both merged sections
+    await expect(editor.outlineHeadings).toHaveCount(2);
+    await expect(editor.outlineHeadings.first()).toHaveText("Section 1 (Local)");
+    await expect(editor.outlineHeadings.nth(1)).toHaveText("Section 2 (Remote)");
+  });
 });
+

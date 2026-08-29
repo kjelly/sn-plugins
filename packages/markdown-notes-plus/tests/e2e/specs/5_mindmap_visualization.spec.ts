@@ -16,7 +16,7 @@ test.describe("Mind Map Visualization", () => {
 
     // Markmap debounces render by 350ms, poll for SVG content
     await expect.poll(async () => {
-      return editor.mindmapSvg.innerHTML();
+      return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).toContain("Architecture Plan");
 
     let svgContent = await editor.mindmapSvg.innerHTML();
@@ -30,7 +30,7 @@ test.describe("Mind Map Visualization", () => {
     await editor.mindmapFilterSelect.selectOption("open");
 
     await expect.poll(async () => {
-      return editor.mindmapSvg.innerHTML();
+      return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).not.toContain("API routes");
 
     svgContent = await editor.mindmapSvg.innerHTML();
@@ -40,7 +40,7 @@ test.describe("Mind Map Visualization", () => {
     await editor.mindmapFilterSelect.selectOption("hide");
 
     await expect.poll(async () => {
-      return editor.mindmapSvg.innerHTML();
+      return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).not.toContain("Database setup");
 
     svgContent = await editor.mindmapSvg.innerHTML();
@@ -67,7 +67,7 @@ test.describe("Mind Map Visualization", () => {
     await editor.mindmapScopeSelect.selectOption("current-section");
 
     await expect.poll(async () => {
-      return editor.mindmapSvg.innerHTML();
+      return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).toContain("Section Alpha");
 
     const sectionMapContent = await editor.mindmapSvg.innerHTML();

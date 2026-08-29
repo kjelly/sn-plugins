@@ -205,8 +205,8 @@ export function App() {
         setSidebarOpen((open) => !open);
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    globalThis.addEventListener("keydown", handleKeyDown);
+    return () => globalThis.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -335,7 +335,7 @@ export function App() {
   }, [jumpToSource, mode]);
 
   return <main className={`app-shell mode-${mode}`}>
-    {snapshot.pendingRemote !== undefined ? <aside className="conflict" role="alert"><span>Another device changed this note.</span><button onClick={() => bridge.resolveConflict("keep-local")}>Keep local</button><button onClick={() => bridge.resolveConflict("accept-remote")}>Accept remote</button></aside> : null}
+    {snapshot.pendingRemote !== undefined ? <aside className="conflict" role="alert"><span>Another device changed this note.</span><button onClick={() => bridge.resolveConflict("keep-local")} title="Keep local edits (Standard Notes creates a Conflicted Copy if needed)">Keep local</button><button onClick={() => bridge.resolveConflict("accept-remote")} title="Discard local changes and use remote version">Accept remote</button></aside> : null}
     <div className={`workspace-layout ${sidebarOpen && mode !== "mindmap" ? "with-sidebar" : "sidebar-collapsed"}`}>
       <section className="editing-grid">
         {/* Keep Milkdown mounted across mode changes so its selection/history stay local. */}

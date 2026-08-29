@@ -60,7 +60,7 @@ test.describe("Tasks and Completed Panel", () => {
     await expect(editor.completedCountHeading).toHaveText("Completed (0)");
 
     await editor.switchMode("Source");
-    let sourceText = await editor.getSourceText();
+    const sourceText = await editor.getSourceText();
     expect(sourceText).toContain("- [ ] Done 1");
     expect(sourceText).toContain("- [ ] Done 2");
     expect(sourceText).toContain("- [ ] Done 3");

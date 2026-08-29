@@ -15,7 +15,6 @@ import { shouldReportSourceSelection } from "../src/editor/SourceSelection.ts";
 import {
   analyzeMarkdown,
   deleteCompleted,
-  deleteTask,
   projectMindmapMarkdown,
   sectionAnchorAt,
   toggleTask,

@@ -62,14 +62,14 @@ export class MockHost {
   }
 
   async getSaves(): Promise<MockSaveItem[]> {
-    return this.page.evaluate(() => {
+    return await this.page.evaluate(() => {
       const host = (window as unknown as { __SN_MOCK_HOST__: { getSaves: () => MockSaveItem[] } }).__SN_MOCK_HOST__;
       return host.getSaves();
     });
   }
 
   async getLatestSavedText(): Promise<string | undefined> {
-    return this.page.evaluate(() => {
+    return await this.page.evaluate(() => {
       const host = (window as unknown as { __SN_MOCK_HOST__: { getLatestSavedText: () => string | undefined } }).__SN_MOCK_HOST__;
       return host.getLatestSavedText();
     });
@@ -83,7 +83,7 @@ export class MockHost {
   }
 
   async waitForNextSave(timeoutMs = 5000): Promise<unknown> {
-    return this.page.evaluate((timeoutMs) => {
+    return await this.page.evaluate((timeoutMs) => {
       const host = (window as unknown as { __SN_MOCK_HOST__: { waitForNextSave: (t: number) => Promise<unknown> } }).__SN_MOCK_HOST__;
       return host.waitForNextSave(timeoutMs);
     }, timeoutMs);

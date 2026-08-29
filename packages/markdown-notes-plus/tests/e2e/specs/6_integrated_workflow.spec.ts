@@ -37,17 +37,17 @@ test.describe("Full Integrated Workflow", () => {
 
     // Verify Mind Map renders headings
     await expect.poll(async () => {
-      return editor.mindmapSvg.innerHTML();
+      return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).toContain("Product Roadmap");
 
-    let svgHtml = await editor.mindmapSvg.innerHTML();
+    const svgHtml = await editor.mindmapSvg.innerHTML();
     expect(svgHtml).toContain("Backend Infrastructure");
     expect(svgHtml).toContain("Frontend Features");
 
     // 5. Mind Map Task Filter in Split Mode
     await editor.mindmapFilterSelect.selectOption("open");
     await expect.poll(async () => {
-      return editor.mindmapSvg.innerHTML();
+      return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).not.toContain("Configure SSL certificates");
 
     // 6. Bulk Action in Completed Tasks Panel: Uncheck All
@@ -56,7 +56,7 @@ test.describe("Full Integrated Workflow", () => {
 
     // Mind Map filter "open" now includes all previously checked tasks
     await expect.poll(async () => {
-      return editor.mindmapSvg.innerHTML();
+      return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).toContain("Configure SSL certificates");
 
     // 7. Outline Section Navigation to Source Mode

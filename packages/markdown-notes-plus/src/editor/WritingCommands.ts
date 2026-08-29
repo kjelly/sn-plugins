@@ -138,7 +138,7 @@ function runWrap(view: WritingView, nodeName: string, attrs: Record<string, unkn
   return commandFn(view.state, (transaction) => dispatchCommand(view, transaction, command));
 }
 
-function listItemPositions(view: WritingView): number[] {
+function _listItemPositions(view: WritingView): number[] {
   const positions = new Set<number>();
   const { $from, from, to } = view.state.selection;
   for (let depth = $from.depth; depth > 0; depth -= 1) {
