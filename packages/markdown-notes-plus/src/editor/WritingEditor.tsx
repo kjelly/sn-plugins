@@ -17,6 +17,7 @@ import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoun
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
+import { REPEAT_TAG_REGEX, DONE_TAG_REGEX, formatIsoDate } from "../tasks/RecurringTasks.ts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -97,6 +98,48 @@ function taskListItemView(
       const nextChecked = input ? input.checked : !currentNode.attrs.checked;
       const tr = view.state.tr.setNodeMarkup(position, undefined, { ...currentNode.attrs, checked: nextChecked });
       tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "task" });
+
+      // If task contains @repeat(...), update @done tag
+      const textContent = currentNode.textContent;
+      if (REPEAT_TAG_REGEX.test(textContent)) {
+        const todayStr = formatIsoDate(new Date());
+        if (nextChecked) {
+          if (DONE_TAG_REGEX.test(textContent)) {
+            currentNode.descendants((childNode, childOffset) => {
+              if (childNode.isText && childNode.text && DONE_TAG_REGEX.test(childNode.text)) {
+                const match = childNode.text.match(DONE_TAG_REGEX);
+                if (match && match.index !== undefined) {
+                  const start = position + 1 + childOffset + match.index;
+                  const end = start + match[0].length;
+                  tr.replaceWith(start, end, view.state.schema.text(`@done(${todayStr})`));
+                }
+                return false;
+              }
+              return true;
+            });
+          } else {
+            const firstChild = currentNode.firstChild;
+            if (firstChild) {
+              const insertPos = position + 1 + firstChild.nodeSize - 1;
+              tr.insert(insertPos, view.state.schema.text(` @done(${todayStr})`));
+            }
+          }
+        } else {
+          currentNode.descendants((childNode, childOffset) => {
+            if (childNode.isText && childNode.text && DONE_TAG_REGEX.test(childNode.text)) {
+              const fullMatch = childNode.text.match(/\s*@done\([^)]*\)/i);
+              if (fullMatch && fullMatch.index !== undefined) {
+                const start = position + 1 + childOffset + fullMatch.index;
+                const end = start + fullMatch[0].length;
+                tr.delete(start, end);
+              }
+              return false;
+            }
+            return true;
+          });
+        }
+      }
+
       view.dispatch(tr);
     });
     dom.append(input);
