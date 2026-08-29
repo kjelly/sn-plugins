@@ -181,10 +181,16 @@ export function preservesWritingStructuralContext(context: WritingStructuralCont
   return hasThematicBreak(markdown);
 }
 
+function normalizeTrailingNewlines(text: string): string {
+  return text.replace(/\n+$/, "");
+}
+
 /** Prove that the initial document survived Milkdown's actual serializer. */
 export function assessWritingRoundTrip(source: string, serialized: string): WritingRoundTripResult {
   if (!isWritingLexicallySafe(source)) return { editable: false, reason: "Writing cannot preserve this Markdown exactly; use Source mode." };
-  if (source !== serialized) return { editable: false, reason: "Writing serializer changed the source; use Source mode for exact Markdown." };
+  if (normalizeTrailingNewlines(source) !== normalizeTrailingNewlines(serialized)) {
+    return { editable: false, reason: "Writing serializer changed the source; use Source mode for exact Markdown." };
+  }
   return { editable: true };
 }
 

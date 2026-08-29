@@ -96,4 +96,22 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await editor.switchMode("Source");
     await expect(editor.sourceEditor).toContainText("- [ ] Buy groceries");
   });
+
+  test("Writing mode permits notes with multiple trailing empty lines to be edited normally", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    const docWithTrailingBlankLines = "# Notes with Blank Lines\n\nContent paragraph.\n\n\n\n\n\n";
+    await host.goto(docWithTrailingBlankLines, "note-trailing-blank-lines", false);
+
+    // Writing editor is Ready and fully editable
+    await expect(editor.status).toHaveText("Ready");
+    await expect(editor.writingH1Button).toBeEnabled();
+    await expect(editor.writingTaskButton).toBeEnabled();
+
+    // Can edit in writing mode
+    await editor.writingEditor.locator("p").click();
+    await editor.writingTaskButton.click();
+    await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toBeVisible();
+  });
 });

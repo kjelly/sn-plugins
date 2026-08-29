@@ -57,7 +57,7 @@ function EditorNavigationControls({
   mindmapSuitable?: boolean;
 }) {
   const availableModes: Mode[] = mindmapSuitable
-    ? ["writing", "split", "source", "mindmap"]
+    ? ["writing", "source", "mindmap", "split"]
     : ["writing", "source"];
 
   return <>

@@ -618,6 +618,7 @@ Deno.test("EditorKit lifecycle initializes a different note and preserves unknow
 
 Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove lossless", () => {
   assertEquals(assessWritingRoundTrip("- task", "- task").editable, true);
+  assertEquals(assessWritingRoundTrip("# Title\n\nParagraph\n\n\n\n\n\n", "# Title\n\nParagraph\n").editable, true);
   for (const source of [
     "+ task",
     "- task\r\n",
