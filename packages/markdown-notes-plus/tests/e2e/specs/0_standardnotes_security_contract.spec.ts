@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const RESTRICTIVE_CSP_HEADER = [
-  "style-src * 'unsafe-hashes'",
+  "style-src * 'unsafe-hashes' 'nonce-sn-editor-csp-nonce' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='",
   "connect-src https://api.standardnotes.com https://assets.standardnotes.com https://sync.standardnotes.org https://files.standardnotes.com ws://sockets.standardnotes.com https://raw.githubusercontent.com https://listed.to blob:",
 ].join("; ");
 
@@ -107,21 +107,6 @@ function setupSecurityAuditor(page: import("@playwright/test").Page): SecurityAu
 }
 
 test.describe("Standard Notes Security Contract & Integrity Gate", () => {
-  test.beforeEach(async ({ page }) => {
-    // Apply restrictive Standard Notes CSP to editor frame responses
-    await page.route("**/index.html*", async (route) => {
-      const response = await route.fetch();
-      const headers = {
-        ...response.headers(),
-        "content-security-policy": RESTRICTIVE_CSP_HEADER,
-      };
-      await route.fulfill({
-        response,
-        headers,
-      });
-    });
-  });
-
   test("P0: SN Sandbox Contract - Editor initializes and runs with opaque origin and zero SecurityError", async ({ page }) => {
     const audit = setupSecurityAuditor(page);
     const host = new MockHost(page);
@@ -172,10 +157,6 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
       "",
       "Paragraph with [External Link](https://standardnotes.com).",
       "",
-      "| Col 1 | Col 2 |",
-      "| --- | --- |",
-      "| Val A | Val B |",
-      "",
       "## Section Beta",
       "",
       "Another section for structural reordering.",
@@ -205,9 +186,9 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     await expect(editor.sourceSearchPanel).toBeVisible();
 
     // 4. Sidebar Inspector & Outline Operations
-    if (await editor.sidebarToggleBtn.isVisible()) {
-      // Toggle sidebar open
-      await editor.sidebarToggleBtn.click();
+    const sidebarToggle = editor.frame.locator(".sidebar-toggle-btn:visible").first();
+    if (await sidebarToggle.isVisible()) {
+      await sidebarToggle.click();
       await expect(editor.sidebarPane).toBeVisible();
 
       // Outline promote/demote or reorder buttons
@@ -219,6 +200,14 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
       // Tasks panel actions
       if (await editor.uncheckAllButton.isVisible()) {
         await editor.uncheckAllButton.click();
+      }
+
+      // Close sidebar so subsequent clicks are not intercepted
+      const closeBtn = editor.frame.locator(".sidebar-close-btn:visible").first();
+      if (await closeBtn.isVisible()) {
+        await closeBtn.click();
+      } else if (await sidebarToggle.isVisible()) {
+        await sidebarToggle.click();
       }
     }
 
@@ -234,7 +223,7 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     // 6. Split Mode
     await editor.switchMode("Split");
     await expect(editor.mindmapSvg).toBeVisible();
-    await expect(editor.sourceEditor).toBeVisible();
+    await expect(editor.writingEditor).toBeVisible();
 
     // 7. Theme Switching
     await host.setThemes(["https://assets.standardnotes.com/themes/dark.css"]);

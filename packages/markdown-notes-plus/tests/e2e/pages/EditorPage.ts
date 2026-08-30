@@ -65,28 +65,29 @@ export class EditorPage {
   constructor(readonly page: Page) {
     this.frame = page.frameLocator("#editor-frame");
 
-    this.toolbar = this.frame.locator(".app-toolbar");
-    this.status = this.frame.locator(".app-toolbar .status");
-    this.currentSection = this.frame.locator(".app-toolbar .current-section");
+    this.toolbar = this.frame.locator(".app-toolbar:visible");
+    this.status = this.frame.locator(".app-toolbar:visible .status").first();
+    this.currentSection = this.frame.locator(".app-toolbar:visible .current-section").first();
     this.conflictBanner = this.frame.locator("aside.conflict");
     this.keepLocalButton = this.conflictBanner.getByRole("button", { name: "Keep local" });
     this.acceptRemoteButton = this.conflictBanner.getByRole("button", { name: "Accept remote" });
 
-    this.modeButtons = this.frame.locator(".mode-buttons");
-    this.undoButton = this.frame.getByRole("button", { name: "Undo" });
-    this.redoButton = this.frame.getByRole("button", { name: "Redo" });
+    this.modeButtons = this.frame.locator(".mode-buttons:visible").first();
+    this.undoButton = this.frame.locator(".app-toolbar:visible").getByRole("button", { name: "Undo" }).first();
+    this.redoButton = this.frame.locator(".app-toolbar:visible").getByRole("button", { name: "Redo" }).first();
 
     this.writingPane = this.frame.locator(".writing-pane");
     this.writingEditor = this.writingPane.locator(".milkdown .editor");
-    this.writingH1Button = this.writingPane.getByRole("button", { name: "H1" });
-    this.writingH2Button = this.writingPane.getByRole("button", { name: "H2" });
-    this.writingBulletButton = this.writingPane.getByRole("button", { name: "Bullet" });
-    this.writingTaskButton = this.writingPane.getByRole("button", { name: "Task" });
-    this.writingQuoteButton = this.writingPane.getByRole("button", { name: "Quote" });
-    this.writingCodeButton = this.writingPane.getByRole("button", { name: "Code" });
-    this.writingTableButton = this.writingPane.getByRole("button", { name: "Table" });
-    this.writingLinkButton = this.writingPane.getByRole("button", { name: "Link" });
-    this.writingDividerButton = this.writingPane.getByRole("button", { name: "Divider" });
+    const writingToolbar = this.writingPane.locator(".pane-toolbar");
+    this.writingH1Button = writingToolbar.getByRole("button", { name: "H1" });
+    this.writingH2Button = writingToolbar.getByRole("button", { name: "H2" });
+    this.writingBulletButton = writingToolbar.getByRole("button", { name: "Bullet" });
+    this.writingTaskButton = writingToolbar.getByRole("button", { name: "Task", exact: true });
+    this.writingQuoteButton = writingToolbar.getByRole("button", { name: "Quote" });
+    this.writingCodeButton = writingToolbar.getByRole("button", { name: "Code" });
+    this.writingTableButton = writingToolbar.getByRole("button", { name: "Table" });
+    this.writingLinkButton = writingToolbar.getByRole("button", { name: "Link" });
+    this.writingDividerButton = writingToolbar.getByRole("button", { name: "Divider" });
 
     this.sourcePane = this.frame.locator(".source-pane");
     this.sourceEditor = this.sourcePane.locator(".cm-content");
@@ -100,7 +101,7 @@ export class EditorPage {
 
     this.workspaceLayout = this.frame.locator(".workspace-layout");
     this.sidebarPane = this.frame.locator(".sidebar-pane");
-    this.sidebarToggleBtn = this.frame.locator(".sidebar-toggle-btn");
+    this.sidebarToggleBtn = this.frame.locator(".sidebar-toggle-btn:visible").first();
     this.sidebarCloseBtn = this.frame.locator(".sidebar-close-btn");
     this.sidebarBackdrop = this.frame.locator(".sidebar-backdrop");
 
@@ -118,20 +119,20 @@ export class EditorPage {
   }
 
   get writingModeButton(): Locator {
-    return this.modeButtons.getByRole("button", { name: "Writing" });
+    return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Writing" }).first();
   }
   get splitModeButton(): Locator {
-    return this.modeButtons.getByRole("button", { name: "Split" });
+    return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Split" }).first();
   }
   get sourceModeButton(): Locator {
-    return this.modeButtons.getByRole("button", { name: "Source" });
+    return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Source" }).first();
   }
   get mindmapModeButton(): Locator {
-    return this.modeButtons.getByRole("button", { name: "Mindmap" });
+    return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Mindmap" }).first();
   }
 
   async switchMode(mode: EditorMode): Promise<void> {
-    await this.modeButtons.getByRole("button", { name: mode }).click();
+    await this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first().click();
   }
 
   async typeInSource(text: string): Promise<void> {

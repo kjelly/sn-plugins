@@ -21,7 +21,12 @@
     </style>
   </head>
   <body>
-    <iframe id="editor-frame" src="./index.html" title="Markdown Notes+"></iframe>
+    <iframe
+      id="editor-frame"
+      src="./index.html"
+      title="Markdown Notes+"
+      sandbox="allow-scripts allow-top-navigation-by-user-activation allow-popups allow-modals allow-forms allow-downloads"
+    ></iframe>
     <script>
       (function() {
         const iframe = document.getElementById("editor-frame");

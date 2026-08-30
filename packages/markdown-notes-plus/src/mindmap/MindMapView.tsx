@@ -27,10 +27,26 @@ export function MindMapView({
 
   useEffect(() => {
     if (!svg.current) return undefined;
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        m.addedNodes.forEach((node) => {
+          if (node.nodeName.toUpperCase() === "STYLE" && "setAttribute" in node) {
+            (node as HTMLElement).setAttribute("nonce", "sn-editor-csp-nonce");
+          }
+        });
+      }
+    });
+    observer.observe(svg.current, { childList: true, subtree: true });
+
     try {
       map.current = Markmap.create(svg.current, { duration: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : 180, pan: true, zoom: true });
-      return () => { map.current?.destroy(); map.current = undefined; };
+      return () => {
+        observer.disconnect();
+        map.current?.destroy();
+        map.current = undefined;
+      };
     } catch (reason) {
+      observer.disconnect();
       setError(reason instanceof Error ? reason.message : "Mind Map initialization failed");
       return undefined;
     }
@@ -42,11 +58,12 @@ export function MindMapView({
     icons.forEach((el) => {
       if (!readOnly) {
         if ("removeAttribute" in el) el.removeAttribute("disabled");
-        el.style.cursor = "pointer";
-        el.style.pointerEvents = "auto";
+        el.classList.add("task-icon-enabled");
+        el.classList.remove("task-icon-disabled");
       } else {
         if ("setAttribute" in el) el.setAttribute("disabled", "true");
-        el.style.cursor = "default";
+        el.classList.add("task-icon-disabled");
+        el.classList.remove("task-icon-enabled");
       }
     });
   };

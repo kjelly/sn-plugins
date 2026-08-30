@@ -466,7 +466,7 @@ export function TemplateManagerModal({
             </select>
             <label className="btn-file-import">
               Import JSON
-              <input type="file" accept=".json" onChange={handleImportJson} style={{ display: "none" }} />
+              <input type="file" accept=".json" onChange={handleImportJson} className="hidden-file-input" />
             </label>
             <button type="button" className="btn-secondary" onClick={handleExportJson}>Export JSON</button>
           </div>

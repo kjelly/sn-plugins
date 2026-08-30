@@ -44,6 +44,7 @@ export function SourceEditor({ value, resetGeneration, readOnly, onChange, onVie
         historyCompartment.current.of(history()),
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.lineWrapping,
+        EditorView.cspNonce.of("sn-editor-csp-nonce"),
         readOnlyCompartment.current.of(EditorView.editable.of(!readOnly)),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !applyingExternal.current) {

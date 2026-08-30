@@ -130,7 +130,6 @@ export function buildFoldingDecorations(
           decorations.push(
             Decoration.node(pos, pos + node.nodeSize, {
               class: "writing-folded-hidden",
-              style: "display: none !important;",
             }),
           );
           return false;
