@@ -14,16 +14,26 @@ import { SlashProvider } from "@milkdown/plugin-slash";
 import { toggleMark } from "@milkdown/prose/commands";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry, writingControlIsDisabled, writingTaskIsHidden, type WritingControlState } from "./WritingTaskControls";
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
-import { applyWritingCommand, isWritingViewEditable, writingLinkHref, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
+import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
 import { REPEAT_TAG_REGEX, DONE_TAG_REGEX, formatIsoDate } from "../tasks/RecurringTasks.ts";
 import { createWritingFoldingPlugin } from "./WritingFolding.ts";
 import { createWritingShortcutsPlugin } from "./WritingShortcuts.ts";
 import { createWritingSmartKeysPlugin } from "./WritingSmartKeys.ts";
+import {
+  type InsertLibrary,
+  type TemplateDefinition,
+  type SnippetDefinition,
+  resolveAllTemplates,
+  resolveAllSnippets,
+  expandTemplateVariables,
+  extractNoteTitle,
+} from "../templates/TemplateEngine.ts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
+export type InsertPayload = { id: number; markdown: string; cursorOffset?: number };
 
 export type WritingEditorProps = {
   value: string;
@@ -32,6 +42,8 @@ export type WritingEditorProps = {
   onToggleTask?: (ordinal: number, renderedMarkdown?: string) => void;
   onDeleteTask?: (ordinal: number, renderedMarkdown?: string) => void;
   command?: WritingCommand;
+  insertPayload?: InsertPayload;
+  library?: InsertLibrary;
   onCapabilityChange?: (result: WritingRoundTripResult) => void;
   onLosslessFallback?: (value: string, result: WritingRoundTripResult) => void;
 };
@@ -220,23 +232,60 @@ function promptAndApplyLink(view: ProseEditorView, editability: WritingEditabili
   return applyWritingCommand(view, "link", range, href);
 }
 
-function slashMenuPlugin(editability: WritingEditability) {
+type SlashItem =
+  | { kind: "command"; name: WritingCommandName; label: string; badge?: string }
+  | { kind: "template"; template: TemplateDefinition; label: string; badge: string }
+  | { kind: "snippet"; snippet: SnippetDefinition; label: string; badge: string };
+
+function slashMenuPlugin(
+  editability: WritingEditability,
+  libraryRef?: { current?: InsertLibrary },
+  serializerRef?: { current?: (doc: ProseNode) => string },
+  parserRef?: { current?: (markdown: string) => ProseNode | undefined },
+) {
   return $prose(() => {
     let selectedIndex = 0;
-    let currentCommands: WritingCommandName[] = [];
+    let currentItems: SlashItem[] = [];
     let isMenuVisible = false;
     let currentView: ProseEditorView | undefined;
     let menuEl: HTMLDivElement | undefined;
     let slashProvider: SlashProvider | undefined;
 
-    const executeCommand = (command: WritingCommandName) => {
+    const executeItem = (item: SlashItem) => {
       if (!currentView) return;
       const range = slashMatch(currentView);
       if (menuEl) menuEl.hidden = true;
       isMenuVisible = false;
       slashProvider?.hide();
-      if (command === "link") promptAndApplyLink(currentView, editability, range);
-      else applyWritingCommand(currentView, command, range);
+
+      if (item.kind === "command") {
+        if (item.name === "link") promptAndApplyLink(currentView, editability, range);
+        else applyWritingCommand(currentView, item.name, range);
+      } else if (item.kind === "template") {
+        const selText = currentView.state.doc.textBetween(currentView.state.selection.from, currentView.state.selection.to);
+        const noteText = serializerRef?.current ? serializerRef.current(currentView.state.doc) : "";
+        const noteTitle = extractNoteTitle(noteText);
+        const expanded = expandTemplateVariables(item.template.content, {
+          date: new Date(),
+          noteTitle,
+          selection: selText,
+        });
+        if (parserRef?.current) {
+          insertWritingMarkdown(currentView, parserRef.current, expanded.text, range, expanded.cursorOffset);
+        }
+      } else if (item.kind === "snippet") {
+        const selText = currentView.state.doc.textBetween(currentView.state.selection.from, currentView.state.selection.to);
+        const noteText = serializerRef?.current ? serializerRef.current(currentView.state.doc) : "";
+        const noteTitle = extractNoteTitle(noteText);
+        const expanded = expandTemplateVariables(item.snippet.content, {
+          date: new Date(),
+          noteTitle,
+          selection: selText,
+        });
+        if (parserRef?.current) {
+          insertWritingMarkdown(currentView, parserRef.current, expanded.text, range, expanded.cursorOffset);
+        }
+      }
     };
 
     const updateSelectionUI = () => {
@@ -275,29 +324,71 @@ function slashMenuPlugin(editability: WritingEditability) {
             provider.hide();
             return;
           }
-          const q = match.query;
-          currentCommands = WRITING_COMMANDS.filter((command) => {
+          const q = match.query.toLowerCase().trim();
+
+          const commandItems: SlashItem[] = WRITING_COMMANDS.filter((command) => {
             if (!q) return true;
             return command.includes(q) || COMMAND_ALIASES[command]?.some((alias) => alias.includes(q));
-          });
-          if (currentCommands.length === 0) {
+          }).map((command) => ({
+            kind: "command" as const,
+            name: command,
+            label: `/${command}`,
+          }));
+
+          const library = libraryRef?.current;
+          const templates = library ? resolveAllTemplates(library) : [];
+          const templateItems: SlashItem[] = templates.filter((t) => {
+            if (!q) return true;
+            return t.name.toLowerCase().includes(q) || (t.category && t.category.toLowerCase().includes(q)) || "template".includes(q);
+          }).map((t) => ({
+            kind: "template" as const,
+            template: t,
+            label: `/${t.name.toLowerCase().replace(/\s+/g, "-")}`,
+            badge: "Template",
+          }));
+
+          const snippets = library ? resolveAllSnippets(library) : [];
+          const snippetItems: SlashItem[] = snippets.filter((s) => {
+            if (!q) return true;
+            return s.trigger.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || "snippet".includes(q);
+          }).map((s) => ({
+            kind: "snippet" as const,
+            snippet: s,
+            label: `/${s.trigger}`,
+            badge: "Snippet",
+          }));
+
+          currentItems = [...commandItems, ...snippetItems, ...templateItems];
+
+          if (currentItems.length === 0) {
             isMenuVisible = false;
             menu.hidden = true;
             provider.hide();
             return;
           }
-          if (selectedIndex >= currentCommands.length) selectedIndex = 0;
+          if (selectedIndex >= currentItems.length) selectedIndex = 0;
           isMenuVisible = true;
 
-          menu.replaceChildren(...currentCommands.map((command, idx) => {
+          menu.replaceChildren(...currentItems.map((item, idx) => {
             const button = document.createElement("button");
             button.type = "button";
             button.className = `slash-command ${idx === selectedIndex ? "selected" : ""}`;
             button.setAttribute("role", "menuitem");
-            button.textContent = `/${command}`;
+
+            const labelSpan = document.createElement("span");
+            labelSpan.textContent = item.label;
+            button.appendChild(labelSpan);
+
+            if (item.badge) {
+              const badgeSpan = document.createElement("span");
+              badgeSpan.className = "slash-item-badge";
+              badgeSpan.textContent = item.badge;
+              button.appendChild(badgeSpan);
+            }
+
             button.addEventListener("mousedown", (event) => event.preventDefault());
             button.addEventListener("click", () => {
-              executeCommand(command);
+              executeItem(item);
             });
             return button;
           }));
@@ -314,25 +405,25 @@ function slashMenuPlugin(editability: WritingEditability) {
       },
       props: {
         handleKeyDown(view, event) {
-          if (!isMenuVisible || currentCommands.length === 0) return false;
+          if (!isMenuVisible || currentItems.length === 0) return false;
 
           if (event.key === "ArrowDown") {
             event.preventDefault();
-            selectedIndex = (selectedIndex + 1) % currentCommands.length;
+            selectedIndex = (selectedIndex + 1) % currentItems.length;
             updateSelectionUI();
             return true;
           }
           if (event.key === "ArrowUp") {
             event.preventDefault();
-            selectedIndex = (selectedIndex - 1 + currentCommands.length) % currentCommands.length;
+            selectedIndex = (selectedIndex - 1 + currentItems.length) % currentItems.length;
             updateSelectionUI();
             return true;
           }
           if (event.key === "Enter" || event.key === "Tab") {
             event.preventDefault();
-            const command = currentCommands[selectedIndex] ?? currentCommands[0];
-            if (command) {
-              executeCommand(command);
+            const item = currentItems[selectedIndex] ?? currentItems[0];
+            if (item) {
+              executeItem(item);
               return true;
             }
           }
@@ -458,6 +549,8 @@ type WritingEditorConfiguration = {
   onToggleTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void };
   onDeleteTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void };
   serializerRef?: { current?: (doc: ProseNode) => string };
+  parserRef?: { current?: (markdown: string) => ProseNode | undefined };
+  libraryRef?: { current?: InsertLibrary };
   editability: WritingEditability;
   onMarkdownUpdated: (ctx: Ctx, markdown: string) => void;
 };
@@ -471,6 +564,8 @@ export function configureWritingEditor(editor: Editor, {
   onToggleTaskRef,
   onDeleteTaskRef,
   serializerRef,
+  parserRef,
+  libraryRef,
   editability,
   onMarkdownUpdated,
 }: WritingEditorConfiguration): Editor {
@@ -514,17 +609,19 @@ export function configureWritingEditor(editor: Editor, {
     .use(listener)
     .config((ctx) => {
       ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, markdown));
+      if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use((ctx) => async () => {
       await ctx.wait(SerializerReady);
       if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
+      if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use($prose(() => writingOriginPlugin))
     .use($prose(() => createWritingFoldingPlugin()))
     .use($prose(() => createWritingShortcutsPlugin()))
     .use($prose(() => createWritingSmartKeysPlugin()))
     .use(writingLinkClickHandlerPlugin())
-    .use(slashMenuPlugin(editability))
+    .use(slashMenuPlugin(editability, libraryRef, serializerRef, parserRef))
     .use(writingKeyboardShortcutsPlugin(editability));
 }
 
@@ -540,7 +637,18 @@ export function synchronizeWritingEditorValue({ gate, generation, value, replace
 }
 
 /** Milkdown CommonMark + GFM writing mode. Source remains the canonical owner. */
-export function WritingEditor({ value, readOnly, onChange, onToggleTask, onDeleteTask, command, onCapabilityChange, onLosslessFallback }: WritingEditorProps) {
+export function WritingEditor({
+  value,
+  readOnly,
+  onChange,
+  onToggleTask,
+  onDeleteTask,
+  command,
+  insertPayload,
+  library,
+  onCapabilityChange,
+  onLosslessFallback,
+}: WritingEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor>();
   const gate = useRef(new WritingEditorChangeGate());
@@ -552,9 +660,15 @@ export function WritingEditor({ value, readOnly, onChange, onToggleTask, onDelet
   const onToggleTaskRef = useRef(onToggleTask);
   const onDeleteTaskRef = useRef(onDeleteTask);
   const serializerRef = useRef<(doc: ProseNode) => string>();
+  const parserRef = useRef<(markdown: string) => ProseNode | undefined>();
+  const libraryRef = useRef<InsertLibrary | undefined>(library);
+  libraryRef.current = library;
   const commandRef = useRef(command);
+  const insertPayloadRef = useRef(insertPayload);
+  insertPayloadRef.current = insertPayload;
   const capabilityRef = useRef(false);
   const appliedCommand = useRef<number>();
+  const appliedInsert = useRef<number>();
   onChangeRef.current = onChange;
   valueRef.current = value;
   readOnlyRef.current = readOnly;
@@ -598,6 +712,18 @@ export function WritingEditor({ value, readOnly, onChange, onToggleTask, onDelet
     });
   };
 
+  const applyPendingInsert = () => {
+    const editor = editorRef.current;
+    const pending = insertPayloadRef.current;
+    if (!editor || !pending || appliedInsert.current === pending.id) return;
+    appliedInsert.current = pending.id;
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const parser = (md: string) => ctx.get(parserCtx)(md);
+      insertWritingMarkdown(view, parser, pending.markdown, undefined, pending.cursorOffset);
+    });
+  };
+
   useEffect(() => {
     if (!host.current) return undefined;
     const hostElement = host.current;
@@ -612,9 +738,12 @@ export function WritingEditor({ value, readOnly, onChange, onToggleTask, onDelet
       onToggleTaskRef,
       onDeleteTaskRef,
       serializerRef,
+      parserRef,
+      libraryRef,
       editability: { readOnlyRef, capabilityRef },
       onMarkdownUpdated: (ctx, markdown) => {
         if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
+        if (parserRef) parserRef.current = (docText: string) => ctx.get(parserCtx)(docText);
         const view = ctx.get(editorViewCtx);
         if (view.composing) return;
         const originState = writingOriginPluginKey.getState(view.state) ?? { origin: "user" as const };
@@ -634,6 +763,7 @@ export function WritingEditor({ value, readOnly, onChange, onToggleTask, onDelet
       editor.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));
       synchronizeEditorValue(valueRef.current, true);
       applyPendingCommand();
+      applyPendingInsert();
     }).catch(() => { /* isolate editor initialization failure in its ErrorBoundary */ });
     return () => { cancelled = true; editorRef.current = undefined; void editor.destroy(); };
     // The editor owns its lifecycle. Content updates are handled below so a
@@ -648,6 +778,7 @@ export function WritingEditor({ value, readOnly, onChange, onToggleTask, onDelet
   }, [value]);
 
   useEffect(() => { applyPendingCommand(); }, [command?.id]);
+  useEffect(() => { applyPendingInsert(); }, [insertPayload?.id]);
 
   useEffect(() => {
     editorRef.current?.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));

@@ -286,3 +286,36 @@ export function applyWritingCommand(view: WritingView, command: WritingCommandNa
   if (applied) view.focus();
   return applied;
 }
+
+/** Insert arbitrary parsed markdown into Writing view with user origin and optional cursor placement. */
+export function insertWritingMarkdown(
+  view: ProseEditorView,
+  parser: (markdown: string) => ProseNode | undefined,
+  markdown: string,
+  range?: SlashMatch,
+  cursorOffset?: number,
+): boolean {
+  if (!isWritingViewEditable(view)) return false;
+  const parsed = parser(markdown);
+  if (!parsed) return false;
+
+  let tr = view.state.tr;
+  const from = range ? range.from : view.state.selection.from;
+  const to = range ? range.to : view.state.selection.to;
+
+  tr = tr.replaceWith(from, to, parsed.content);
+  tr = tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, "user");
+
+  if (typeof cursorOffset === "number" && cursorOffset >= 0) {
+    const targetPos = Math.min(from + cursorOffset, tr.doc.content.size);
+    try {
+      tr = tr.setSelection(TextSelection.create(tr.doc, targetPos));
+    } catch (_e) {
+      // fallback to end of inserted content
+    }
+  }
+
+  view.dispatch(tr);
+  view.focus();
+  return true;
+}

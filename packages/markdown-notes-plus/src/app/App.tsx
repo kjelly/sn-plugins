@@ -39,6 +39,15 @@ import { WritingEditor, type WritingCommand, type WritingCommandName } from "../
 import type { WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
 import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
+import { LocalPreferenceStorage } from "../standardnotes/PreferenceStorage.ts";
+import {
+  type InsertLibrary,
+  type TemplateDefinition,
+  type SnippetDefinition,
+  expandTemplateVariables,
+  extractNoteTitle,
+} from "../templates/TemplateEngine.ts";
+import { TemplateManagerModal } from "../templates/TemplateManagerModal.tsx";
 
 type Mode = "writing" | "split" | "source" | "mindmap";
 type MindMapScope = "entire-note" | "current-section";
@@ -165,6 +174,10 @@ export function App() {
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
   const [writingCommand, setWritingCommand] = useState<WritingCommand>();
+  const preferenceStorage = useRef(new LocalPreferenceStorage());
+  const [library, setLibrary] = useState<InsertLibrary>(() => preferenceStorage.current.loadLibrary());
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [insertPayload, setInsertPayload] = useState<{ id: number; markdown: string; cursorOffset?: number }>();
   const [writingResetEpoch, setWritingResetEpoch] = useState(0);
   const [writingCapability, setWritingCapability] = useState<WritingRoundTripResult>({ editable: false, reason: "Writing is checking whether this source can be preserved exactly." });
   const nextCommandId = useRef(1);
@@ -193,6 +206,57 @@ export function App() {
   const writingReadOnly = snapshot.locked || !appLifecycle.canApplyLocal() || !writingCapability.editable;
   const writingVisible = mode === "writing" || mode === "split";
   const bridgeState = bridge.getState();
+
+  const handleSaveLibrary = useCallback((next: InsertLibrary) => {
+    preferenceStorage.current.saveLibrary(next);
+    setLibrary(next);
+  }, []);
+
+  const handleInsertTemplate = useCallback((template: TemplateDefinition) => {
+    const noteTitle = extractNoteTitle(canonical.text);
+    const expanded = expandTemplateVariables(template.content, {
+      date: new Date(),
+      noteTitle,
+    });
+    if (mode === "source") {
+      const view = sourceViewRef.current;
+      if (view) {
+        const sel = view.state.selection.main;
+        view.dispatch(view.state.update({
+          changes: { from: sel.from, to: sel.to, insert: expanded.text },
+          selection: { anchor: sel.from + (expanded.cursorOffset ?? expanded.text.length) },
+        }));
+        view.focus();
+      } else {
+        canonical.applyLocal(canonical.text + "\n\n" + expanded.text);
+      }
+    } else {
+      setInsertPayload({ id: Date.now(), markdown: expanded.text, cursorOffset: expanded.cursorOffset });
+    }
+  }, [canonical, mode]);
+
+  const handleInsertSnippet = useCallback((snippet: SnippetDefinition) => {
+    const noteTitle = extractNoteTitle(canonical.text);
+    const expanded = expandTemplateVariables(snippet.content, {
+      date: new Date(),
+      noteTitle,
+    });
+    if (mode === "source") {
+      const view = sourceViewRef.current;
+      if (view) {
+        const sel = view.state.selection.main;
+        view.dispatch(view.state.update({
+          changes: { from: sel.from, to: sel.to, insert: expanded.text },
+          selection: { anchor: sel.from + (expanded.cursorOffset ?? expanded.text.length) },
+        }));
+        view.focus();
+      } else {
+        canonical.applyLocal(canonical.text + "\n\n" + expanded.text);
+      }
+    } else {
+      setInsertPayload({ id: Date.now(), markdown: expanded.text, cursorOffset: expanded.cursorOffset });
+    }
+  }, [canonical, mode]);
 
   const handleModeChange = (nextMode: Mode) => {
     if (nextMode === "writing" || nextMode === "split") {
@@ -433,10 +497,11 @@ export function App() {
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("table")} title="Table">Table</button>
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("link")} title="Link (Ctrl+K)">Link</button>
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("divider")} title="Divider">Divider</button>
+          <button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} onCapabilityChange={setWritingCapability} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); setMode("source"); }} /></ErrorBoundary></section>
-        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} /><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
+        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} onCapabilityChange={setWritingCapability} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); setMode("source"); }} /></ErrorBoundary></section>
+        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} /><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
         {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools">{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} /><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} /></ErrorBoundary></section> : null}
       </section>
       {mode !== "mindmap" ? <>
@@ -519,5 +584,15 @@ export function App() {
       </> : null}
     </div>
     <footer className="note-meta">{analysis.tasks.length} task{analysis.tasks.length === 1 ? "" : "s"} · {headings.length} section{headings.length === 1 ? "" : "s"} · EditorKit markdown bridge</footer>
+    <TemplateManagerModal
+      isOpen={templateModalOpen}
+      onClose={() => setTemplateModalOpen(false)}
+      library={library}
+      onSaveLibrary={handleSaveLibrary}
+      onInsertTemplate={handleInsertTemplate}
+      onInsertSnippet={handleInsertSnippet}
+      currentNoteMarkdown={snapshot.text}
+      currentSelectionText=""
+    />
   </main>;
 }
