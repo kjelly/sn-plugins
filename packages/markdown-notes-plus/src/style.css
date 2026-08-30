@@ -105,9 +105,43 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .milkdown-writing { flex: 1 1 auto; min-height: 0; height: calc(100% - 32px); padding: 8px 14px; overflow: auto; cursor: text; line-height: 1.42; }
 .milkdown-writing .milkdown { min-height: 100%; cursor: text; }
 .milkdown-writing .editor { outline: 0; min-height: 100%; cursor: text; }
-.milkdown-writing p { margin: 0.35em 0; line-height: 1.42; }
-.milkdown-writing :is(h1, h2, h3, h4, h5, h6) { margin: 0.5em 0 0.25em; line-height: 1.25; }
-.milkdown-writing :is(ul, ol) { margin: 0.3em 0; padding-left: 1.35em; }
+.milkdown-writing :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0.6em 0 0.25em;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--editor-fg);
+}
+.milkdown-writing h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  margin: 0.7em 0 0.3em;
+}
+.milkdown-writing h2 {
+  font-size: 1.5rem;
+  font-weight: 650;
+  margin: 0.6em 0 0.25em;
+}
+.milkdown-writing h3 {
+  font-size: 1.28rem;
+  font-weight: 600;
+  margin: 0.5em 0 0.2em;
+}
+.milkdown-writing h4 {
+  font-size: 1.12rem;
+  font-weight: 600;
+  margin: 0.4em 0 0.2em;
+}
+.milkdown-writing h5 {
+  font-size: 1.0rem;
+  font-weight: 600;
+  margin: 0.35em 0 0.15em;
+}
+.milkdown-writing h6 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--editor-muted);
+  margin: 0.3em 0 0.15em;
+}
 .milkdown-writing li { margin: 0.15em 0; line-height: 1.4; }
 .milkdown-writing :is(pre, code) { background: var(--editor-code-bg); border-radius: 5px; }
 .milkdown-writing pre { padding: 10px 12px; margin: 0.4em 0; overflow: auto; border: 1px solid var(--editor-border); line-height: 1.38; }
@@ -289,11 +323,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .writing-fold-gutter-btn {
   cursor: pointer;
   user-select: none;
-  font-size: 0.75rem;
+  font-size: 0.85em;
   color: var(--editor-muted);
   margin-right: 6px;
-  opacity: 0.5;
-  transition: opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.65;
+  vertical-align: 0.08em;
+  transition: opacity 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 .writing-fold-gutter-btn.is-expanded::before {
   content: "▾";
