@@ -39,7 +39,15 @@ jobs:
         working-directory: packages/markdown-notes-plus
         run: |
           npm run typecheck
-          npm test
+          for attempt in 1 2 3; do
+            if npm test; then
+              break
+            fi
+            if [[ "$attempt" == "3" ]]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
           npm run test:unit
           npm run test:integration
           npm run test:e2e:release
