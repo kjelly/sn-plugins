@@ -1,3 +1,5 @@
+import { scanMarkdownStructure } from "../markdown/structureScanner.ts";
+
 export type RepeatInterval = {
   amount: number;
   unit: "d" | "w" | "m" | "y";
@@ -93,10 +95,16 @@ export function evaluateRecurringTasks(markdown: string, today: Date = new Date(
   changed: boolean;
 } {
   let resetCount = 0;
-  // Match lines like: - [x] Water plants @repeat(3d) @done(2026-08-20)
-  const taskLineRegex = /^(\s*(?:[-*+]|\d+\.)\s+\[)[xX](\]\s+.*)$/gm;
+  const structure = scanMarkdownStructure(markdown);
+  const replacements: Array<{ from: number; to: number; text: string }> = [];
 
-  const updatedMarkdown = markdown.replace(taskLineRegex, (fullLine, prefix, rest) => {
+  for (let index = 0; index < structure.lines.length; index += 1) {
+    const line = structure.lines[index];
+    if (!structure.taskEligible[index] || structure.opaqueFencedRanges.some((range) => line.start >= range.from && line.start < range.to)) continue;
+    // Match lines like: - [x] Water plants @repeat(3d) @done(2026-08-20)
+    const taskLineMatch = line.text.match(/^(\s*(?:[-*+]|\d+[.)])\s+\[)[xX](\]\s+.*)$/);
+    if (!taskLineMatch) continue;
+    const [, prefix, rest] = taskLineMatch;
     const repeatMatch = rest.match(REPEAT_TAG_REGEX);
     const doneMatch = rest.match(DONE_TAG_REGEX);
 
@@ -107,11 +115,15 @@ export function evaluateRecurringTasks(markdown: string, today: Date = new Date(
         resetCount += 1;
         // Clean @done tag and switch checkbox to empty space
         const cleanedRest = rest.replace(/\s*@done\([^)]*\)/gi, "");
-        return `${prefix} ${cleanedRest}`;
+        replacements.push({ from: line.start, to: line.contentEnd, text: `${prefix} ${cleanedRest}` });
       }
     }
-    return fullLine;
-  });
+  }
+
+  let updatedMarkdown = markdown;
+  for (const replacement of replacements.reverse()) {
+    updatedMarkdown = updatedMarkdown.slice(0, replacement.from) + replacement.text + updatedMarkdown.slice(replacement.to);
+  }
 
   return {
     markdown: updatedMarkdown,

@@ -94,3 +94,40 @@ Deno.test("RecurringTasks - evaluateRecurringTasks resets overdue tasks only", (
 `,
   );
 });
+
+Deno.test("RecurringTasks - fenced task-looking examples remain byte-for-byte unchanged", () => {
+  const input = [
+    "# Notes",
+    "",
+    "```md",
+    "- [x] Backtick example @repeat(1d) @done(2020-01-01)",
+    "```",
+    "",
+    "~~~md",
+    "- [x] Tilde example @repeat(1d) @done(2020-01-01)",
+    "~~~",
+    "",
+    "```md",
+    "- [x] Unclosed example @repeat(1d) @done(2020-01-01)",
+  ].join("\n") + "\n";
+
+  const result = evaluateRecurringTasks(input, new Date(2026, 7, 30));
+  assertEquals(result.markdown, input);
+  assertEquals(result.resetCount, 0);
+  assertEquals(result.changed, false);
+});
+
+Deno.test("RecurringTasks - nested-list indented code examples remain byte-for-byte unchanged", () => {
+  const input = [
+    "- Parent\r\n",
+    "  - Child\r\n",
+    "\r\n",
+    "        - [x] Indented example @repeat(1d) @done(2020-01-01)\r\n",
+    "After the list\r\n",
+  ].join("");
+
+  const result = evaluateRecurringTasks(input, new Date(2026, 7, 30));
+  assertEquals(result.markdown, input);
+  assertEquals(result.resetCount, 0);
+  assertEquals(result.changed, false);
+});
