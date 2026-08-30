@@ -1,5 +1,7 @@
 # Markdown Notes+
 
+> 完整功能說明手冊請見 [docs/user-guide.md](docs/user-guide.md)。
+
 This package is a Vite-built React Standard Notes editor. The runtime entry is
 `src/main.tsx`; `EditorKitBridge` is the only package-owned host transport/save,
 lock, and theme notification owner and uses the pinned
