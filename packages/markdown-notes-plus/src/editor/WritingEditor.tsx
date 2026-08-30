@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Ctx, MilkdownPlugin } from "@milkdown/ctx";
 import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx, rootCtx, serializerCtx, SerializerReady } from "@milkdown/core";
 import { commonmark, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
@@ -32,6 +32,7 @@ import {
 } from "../templates/TemplateEngine.ts";
 import { calloutBlockquoteView } from "./WritingCallouts.ts";
 import { codeBlockEnhancedView } from "./WritingCodeBlock.ts";
+import { LinkDialogModal } from "./LinkDialogModal.tsx";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -222,16 +223,11 @@ function slashMatch(view: ProseEditorView): SlashMatch | undefined {
 }
 
 type WritingEditability = { readOnlyRef: { current: boolean }; capabilityRef: { current: boolean } };
+type LinkRequest = (view: ProseEditorView, range?: SlashMatch) => void;
+type WritingSelectionBookmark = ReturnType<EditorState["selection"]["getBookmark"]>;
 
 function canApplyWritingLink(view: ProseEditorView, editability: WritingEditability): boolean {
   return !editability.readOnlyRef.current && editability.capabilityRef.current && isWritingViewEditable(view);
-}
-
-function promptAndApplyLink(view: ProseEditorView, editability: WritingEditability, range?: SlashMatch): boolean {
-  if (!canApplyWritingLink(view, editability)) return false;
-  const href = window.prompt("Link URL", writingLinkHref(view) ?? "");
-  if (href === null) return false;
-  return applyWritingCommand(view, "link", range, href);
 }
 
 type SlashItem =
@@ -242,6 +238,7 @@ type SlashItem =
 
 function slashMenuPlugin(
   editability: WritingEditability,
+  onRequestLinkRef: { current?: LinkRequest },
   libraryRef?: { current?: InsertLibrary },
   serializerRef?: { current?: (doc: ProseNode) => string },
   parserRef?: { current?: (markdown: string) => ProseNode | undefined },
@@ -262,7 +259,9 @@ function slashMenuPlugin(
       slashProvider?.hide();
 
       if (item.kind === "command") {
-        if (item.name === "link") promptAndApplyLink(currentView, editability, range);
+        if (item.name === "link") {
+          if (canApplyWritingLink(currentView, editability)) onRequestLinkRef.current?.(currentView, range);
+        }
         else applyWritingCommand(currentView, item.name, range);
       } else if (item.kind === "callout") {
         if (parserRef?.current) {
@@ -466,7 +465,7 @@ function slashMenuPlugin(
   });
 }
 
-function writingKeyboardShortcutsPlugin(editability: WritingEditability) {
+function writingKeyboardShortcutsPlugin(editability: WritingEditability, onRequestLinkRef: { current?: LinkRequest }) {
   return $prose(() => new Plugin({
     key: new PluginKey("markdown-notes-plus-writing-shortcuts"),
     props: {
@@ -475,7 +474,7 @@ function writingKeyboardShortcutsPlugin(editability: WritingEditability) {
         if (isWritingLinkShortcut(event)) {
           if (!canApplyWritingLink(view, editability)) return false;
           event.preventDefault();
-          promptAndApplyLink(view, editability);
+          onRequestLinkRef.current?.(view);
           return true;
         }
         if (isWritingBoldShortcut(event)) {
@@ -577,7 +576,16 @@ type WritingEditorConfiguration = {
   parserRef?: { current?: (markdown: string) => ProseNode | undefined };
   libraryRef?: { current?: InsertLibrary };
   editability: WritingEditability;
+  onRequestLinkRef: { current?: LinkRequest };
   onMarkdownUpdated: (ctx: Ctx, markdown: string) => void;
+};
+
+type PendingLinkDialog = {
+  initialValue: string;
+  bookmark: WritingSelectionBookmark;
+  range?: SlashMatch;
+  generation: number;
+  documentGeneration: number;
 };
 
 /** Own the complete pre-create Writing editor composition. */
@@ -592,6 +600,7 @@ export function configureWritingEditor(editor: Editor, {
   parserRef,
   libraryRef,
   editability,
+  onRequestLinkRef,
   onMarkdownUpdated,
 }: WritingEditorConfiguration): Editor {
   return editor
@@ -649,8 +658,8 @@ export function configureWritingEditor(editor: Editor, {
     .use($prose(() => createWritingShortcutsPlugin()))
     .use($prose(() => createWritingSmartKeysPlugin()))
     .use(writingLinkClickHandlerPlugin())
-    .use(slashMenuPlugin(editability, libraryRef, serializerRef, parserRef))
-    .use(writingKeyboardShortcutsPlugin(editability));
+    .use(slashMenuPlugin(editability, onRequestLinkRef, libraryRef, serializerRef, parserRef))
+    .use(writingKeyboardShortcutsPlugin(editability, onRequestLinkRef));
 }
 
 /** Keep the Milkdown document and capability proof aligned with canonical text. */
@@ -695,6 +704,9 @@ export function WritingEditor({
   const insertPayloadRef = useRef(insertPayload);
   insertPayloadRef.current = insertPayload;
   const capabilityRef = useRef(false);
+  const documentGenerationRef = useRef(0);
+  const onRequestLinkRef = useRef<LinkRequest>();
+  const [linkDialog, setLinkDialog] = useState<PendingLinkDialog>();
   const appliedCommand = useRef<number>();
   const appliedInsert = useRef<number>();
   onChangeRef.current = onChange;
@@ -708,6 +720,20 @@ export function WritingEditor({
   const onLosslessFallbackRef = useRef(onLosslessFallback);
   onLosslessFallbackRef.current = onLosslessFallback;
 
+  const cancelLinkDialog = useCallback(() => setLinkDialog(undefined), []);
+  const requestLink = useCallback((view: ProseEditorView, range?: SlashMatch) => {
+    if (!canApplyWritingLink(view, { readOnlyRef, capabilityRef })) return;
+    if (range && (range.from < 0 || range.to < range.from || range.to > view.state.doc.content.size)) return;
+    setLinkDialog({
+      initialValue: writingLinkHref(view) ?? "",
+      bookmark: view.state.selection.getBookmark(),
+      range,
+      generation: generationRef.current,
+      documentGeneration: documentGenerationRef.current,
+    });
+  }, []);
+  onRequestLinkRef.current = requestLink;
+
   const reportCapability = (result: WritingRoundTripResult, force = false) => {
     const next = result.editable;
     if (!force && capabilityRef.current === next) return;
@@ -718,6 +744,7 @@ export function WritingEditor({
   const synchronizeEditorValue = (target: string, forceReport = false) => {
     const editor = editorRef.current;
     if (!editor) return;
+    if (gate.current.renderedMarkdown !== target) documentGenerationRef.current += 1;
     synchronizeWritingEditorValue({
       gate: gate.current,
       generation: generationRef.current,
@@ -735,7 +762,7 @@ export function WritingEditor({
     appliedCommand.current = pending.id;
     editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
-      if (pending.name === "link") promptAndApplyLink(view, { readOnlyRef, capabilityRef });
+      if (pending.name === "link") onRequestLinkRef.current?.(view);
       else applyWritingCommand(view, pending.name);
     });
   };
@@ -769,11 +796,13 @@ export function WritingEditor({
       parserRef,
       libraryRef,
       editability: { readOnlyRef, capabilityRef },
+      onRequestLinkRef,
       onMarkdownUpdated: (ctx, markdown) => {
         if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
         if (parserRef) parserRef.current = (docText: string) => ctx.get(parserCtx)(docText);
         const view = ctx.get(editorViewCtx);
         if (view.composing) return;
+        if (gate.current.renderedMarkdown !== markdown) documentGenerationRef.current += 1;
         const originState = writingOriginPluginKey.getState(view.state) ?? { origin: "user" as const };
         const origin = originState.origin;
         if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
@@ -825,5 +854,34 @@ export function WritingEditor({
     });
   };
 
-  return <div className={`milkdown-writing${readOnly ? " is-readonly" : ""}`} ref={host} onClick={handleClick} aria-label="Writing editor" />;
+  return <>
+    <div className={`milkdown-writing${readOnly ? " is-readonly" : ""}`} ref={host} onClick={handleClick} aria-label="Writing editor" />
+    <LinkDialogModal
+      isOpen={linkDialog !== undefined}
+      initialValue={linkDialog?.initialValue ?? ""}
+      onConfirm={(href) => {
+        const pending = linkDialog;
+        setLinkDialog(undefined);
+        if (!pending || pending.generation !== generationRef.current || pending.documentGeneration !== documentGenerationRef.current) return;
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          if (!canApplyWritingLink(view, { readOnlyRef, capabilityRef })) return;
+          let selection;
+          try {
+            selection = pending.bookmark.resolve(view.state.doc);
+          } catch {
+            return;
+          }
+          if (pending.range && (pending.range.from < 0 || pending.range.to < pending.range.from || pending.range.to > view.state.doc.content.size)) return;
+          if (view.state.selection.from !== selection.from || view.state.selection.to !== selection.to) {
+            view.dispatch(view.state.tr.setSelection(selection));
+          }
+          applyWritingCommand(view, "link", pending.range, href);
+        });
+      }}
+      onCancel={cancelLinkDialog}
+    />
+  </>;
 }

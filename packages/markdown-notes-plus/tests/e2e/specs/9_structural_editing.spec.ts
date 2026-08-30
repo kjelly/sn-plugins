@@ -130,6 +130,9 @@ test.describe("Structural Editing & Outline Controls", () => {
     await expect(banner).toContainText("Topic A");
 
     // Click Reset button in banner
+    // On a compact viewport the outline is a drawer above the editing area;
+    // close it before interacting with the banner behind it.
+    await editor.closeSidebar();
     const resetBtn = banner.locator("button.exit-focus-btn");
     await resetBtn.click();
 

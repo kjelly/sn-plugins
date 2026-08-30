@@ -68,7 +68,12 @@ test.describe("Full Integrated Workflow", () => {
 
     // 7. Outline Section Navigation to Source Mode
     await editor.openOutlineTab();
-    await editor.outlineHeadings.nth(2).click(); // Frontend Features
+    // The coarse-pointer layout deliberately enlarges the adjacent structural
+    // controls. Invoke the heading button directly so pointer hover cannot
+    // shift those controls under the intended selection target.
+    await editor.outlineHeadings.nth(2).locator("..").evaluate((button) => {
+      (button as HTMLButtonElement).click();
+    }); // Frontend Features
     await expect(editor.sourcePane).toBeVisible();
     await expect(editor.currentSection).toContainText("Frontend Features");
 

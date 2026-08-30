@@ -34,9 +34,6 @@ export const MAX_TEMPLATE_BYTES = 64 * 1024;
 export const MAX_SNIPPET_BYTES = 16 * 1024;
 export const MAX_LIBRARY_BYTES = 512 * 1024;
 
-export const COMPONENT_PREF_KEY = "insertLibrary.v1";
-export const STORAGE_PREFIX = "com.kjelly.markdown-notes-plus:insertLibrary.v1";
-
 export function createEmptyLibrary(): InsertLibrary {
   return {
     schemaVersion: 1,

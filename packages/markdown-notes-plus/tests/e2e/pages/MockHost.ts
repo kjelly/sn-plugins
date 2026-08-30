@@ -18,14 +18,6 @@ export class MockHost {
   constructor(private readonly page: Page) {}
 
   async goto(initialText?: string, uuid = "default-note-uuid", locked = false): Promise<void> {
-    await this.page.addInitScript(() => {
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch {
-        // Ignore in restricted environments
-      }
-    });
     await this.page.goto("/test-host.html");
     await this.page.waitForFunction(() => typeof (window as unknown as { __SN_MOCK_HOST__?: unknown }).__SN_MOCK_HOST__ !== "undefined");
     if (initialText !== undefined) {
