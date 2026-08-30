@@ -1,4 +1,4 @@
-import type { FrameLocator, Locator, Page } from "@playwright/test";
+import { expect, type FrameLocator, type Locator, type Page } from "@playwright/test";
 
 export type EditorMode = "Writing" | "Split" | "Source" | "Mindmap";
 
@@ -113,9 +113,42 @@ export class EditorPage {
     this.deleteCompletedButton = this.tasksPanel.getByRole("button", { name: "Delete completed" });
 
     this.outlinePanel = this.frame.locator(".outline-panel");
-    this.outlineHeadings = this.outlinePanel.locator("ol li .outline-heading-btn");
+    this.outlineHeadings = this.outlinePanel.locator(".outline-heading-text");
 
     this.footerMeta = this.frame.locator("footer.note-meta");
+  }
+
+  get outlineTabBtn(): Locator {
+    return this.frame.locator('.sidebar-tab-btn:has-text("Outline")').first();
+  }
+  get reviewTabBtn(): Locator {
+    return this.frame.locator('.sidebar-tab-btn:has-text("Review")').first();
+  }
+  get tasksTabBtn(): Locator {
+    return this.frame.locator('.sidebar-tab-btn:has-text("Tasks")').first();
+  }
+
+  async openSidebar(): Promise<void> {
+    if (!(await this.frame.locator(".sidebar-pane.open").isVisible())) {
+      const toggle = this.frame.locator('.sidebar-toggle-btn:visible').first();
+      await toggle.click();
+      await expect(this.frame.locator(".sidebar-pane.open")).toBeVisible();
+    }
+  }
+
+  async openTasksTab(): Promise<void> {
+    await this.openSidebar();
+    await this.tasksTabBtn.click();
+  }
+
+  async openOutlineTab(): Promise<void> {
+    await this.openSidebar();
+    await this.outlineTabBtn.click();
+  }
+
+  async openReviewTab(): Promise<void> {
+    await this.openSidebar();
+    await this.reviewTabBtn.click();
   }
 
   get writingModeButton(): Locator {
