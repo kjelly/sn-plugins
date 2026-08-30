@@ -46,6 +46,8 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --prefix packages/markdown-notes-plus
+          npx --prefix packages/markdown-notes-plus playwright install --with-deps chromium firefox
+          npm run --prefix packages/markdown-notes-plus test:e2e:release
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           BASE_URL="${{ vars.PAGES_BASE_URL }}"
           if [[ -z "${BASE_URL}" ]]; then
