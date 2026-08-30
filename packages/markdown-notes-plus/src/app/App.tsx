@@ -22,6 +22,16 @@ import type { TextChangeSet } from "../document/PositionMap.ts";
 import { reconcileSectionAnchor } from "../document/SectionAnchor.ts";
 import { groupTasksByHeading, taskIndex } from "../tasks/TaskIndex";
 import { outlineIndex } from "../outline/OutlineIndex";
+import { OutlinePanel } from "../outline/OutlinePanel.tsx";
+import { getAllCollapsibleAnchors, reconcileOutlineAnchors } from "../outline/OutlineProjection.ts";
+import {
+  moveSubtree,
+  moveSubtreeBefore,
+  moveSubtreeAfter,
+  promoteSubtree,
+  demoteSubtree,
+  duplicateSubtree,
+} from "../markdown/structuralEditing.ts";
 import { installThemeBridge } from "../theme/theme";
 import { SourceEditor, openSourceSearch } from "../editor/SourceEditor";
 import { WritingEditor, type WritingCommand, type WritingCommandName } from "../editor/WritingEditor";
@@ -148,6 +158,7 @@ export function App() {
   const [filter, setFilter] = useState<MindMapFilter>("all");
   const [mindMapScope, setMindMapScope] = useState<MindMapScope>("entire-note");
   const [collapsed, setCollapsed] = useState(false);
+  const [collapsedOutlineAnchors, setCollapsedOutlineAnchors] = useState<Set<number>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" ? window.innerWidth > 900 : true);
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
@@ -222,6 +233,10 @@ export function App() {
       if (previous !== next.text) {
         setActiveSectionAnchor((anchor) => {
           return reconcileSectionAnchor(next.text, transition?.changeSet, anchor);
+        });
+        setCollapsedOutlineAnchors((anchors) => {
+          const nextAnalysis = analyzeMarkdown(next.text);
+          return reconcileOutlineAnchors(anchors, transition?.changeSet, nextAnalysis);
         });
       }
       rerender(next);
@@ -330,6 +345,39 @@ export function App() {
     jumpToSource(view);
   };
 
+  const handleToggleOutlineFold = (anchor: number) => {
+    setCollapsedOutlineAnchors((prev) => {
+      const next = new Set(prev);
+      if (next.has(anchor)) next.delete(anchor);
+      else next.add(anchor);
+      return next;
+    });
+  };
+  const handleCollapseAllOutline = () => {
+    setCollapsedOutlineAnchors(new Set(getAllCollapsibleAnchors(analysis)));
+  };
+  const handleExpandAllOutline = () => {
+    setCollapsedOutlineAnchors(new Set());
+  };
+  const handleMoveSubtree = (anchor: number, direction: "up" | "down") => {
+    mutate((text) => moveSubtree(text, anchor, direction));
+  };
+  const handleMoveSubtreeBefore = (sourceAnchor: number, targetAnchor: number) => {
+    mutate((text) => moveSubtreeBefore(text, sourceAnchor, targetAnchor));
+  };
+  const handleMoveSubtreeAfter = (sourceAnchor: number, targetAnchor: number) => {
+    mutate((text) => moveSubtreeAfter(text, sourceAnchor, targetAnchor));
+  };
+  const handlePromoteSubtree = (anchor: number) => {
+    mutate((text) => promoteSubtree(text, anchor));
+  };
+  const handleDemoteSubtree = (anchor: number) => {
+    mutate((text) => demoteSubtree(text, anchor));
+  };
+  const handleDuplicateSubtree = (anchor: number) => {
+    mutate((text) => duplicateSubtree(text, anchor));
+  };
+
   useEffect(() => {
     if (mode === "source") jumpToSource(sourceViewRef.current);
   }, [jumpToSource, mode]);
@@ -361,79 +409,25 @@ export function App() {
         {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" /> : null}
         <aside className={`sidebar-pane pane ${sidebarOpen ? "open" : "collapsed"}`} aria-label="Sidebar inspector">
           <div className="sidebar-header"><span className="sidebar-title">Inspector</span><button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">✕</button></div>
-          <section className="outline-panel pane-section">
-            <div className="panel-heading"><h2>Outline ({headings.length})</h2></div>
-            {headings.length ? (
-              <ol>
-                {headings.map((heading) => {
-                  const section = analysis.sections.find((s) => s.anchor === heading.from);
-                  const secFrom = section ? section.from : heading.from;
-                  const secTo = section ? section.to : heading.to;
-                  const secTasks = analysis.tasks.filter((t) => t.itemStart >= secFrom && t.itemEnd <= secTo);
-                  const secCompleted = secTasks.filter((t) => t.checked);
-                  const secOpen = secTasks.filter((t) => !t.checked);
-                  return (
-                    <li key={heading.from} className={`level-${heading.level}`}>
-                      <button
-                        className={`outline-heading-btn ${currentSection?.anchor === heading.from ? "active-heading" : ""}`}
-                        onClick={() => focusHeading(heading.from, heading.to)}
-                      >
-                        <span className="outline-heading-text">{heading.text}</span>
-                        {secTasks.length ? (
-                          <span className="section-task-badge" title={`${secCompleted.length} of ${secTasks.length} tasks completed`}>
-                            {secCompleted.length}/{secTasks.length}
-                          </span>
-                        ) : null}
-                      </button>
-                      {secTasks.length ? (
-                        <div className="section-task-actions" role="group" aria-label={`Tasks in ${heading.text}`}>
-                          {secOpen.length ? (
-                            <button
-                              title="Check all in this section"
-                              disabled={snapshot.locked}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                mutate((text) => checkAllInSection(text, heading.from));
-                              }}
-                            >
-                              ☑
-                            </button>
-                          ) : null}
-                          {secCompleted.length ? (
-                            <>
-                              <button
-                                title="Uncheck all in this section"
-                                disabled={snapshot.locked}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  mutate((text) => uncheckAllInSection(text, heading.from));
-                                }}
-                              >
-                                ☐
-                              </button>
-                              <button
-                                className="delete-btn"
-                                title="Delete completed in this section"
-                                disabled={snapshot.locked}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  mutate((text) => deleteCompletedInSection(text, heading.from));
-                                }}
-                              >
-                                🗑
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ol>
-            ) : (
-              <p className="empty-hint">No headings yet.</p>
-            )}
-          </section>
+          <OutlinePanel
+            analysis={analysis}
+            activeSectionAnchor={activeSectionAnchor}
+            collapsedAnchors={collapsedOutlineAnchors}
+            readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}
+            onToggleFold={handleToggleOutlineFold}
+            onCollapseAll={handleCollapseAllOutline}
+            onExpandAll={handleExpandAllOutline}
+            onSelectHeading={focusHeading}
+            onMoveSubtree={handleMoveSubtree}
+            onMoveSubtreeBefore={handleMoveSubtreeBefore}
+            onMoveSubtreeAfter={handleMoveSubtreeAfter}
+            onPromoteSubtree={handlePromoteSubtree}
+            onDemoteSubtree={handleDemoteSubtree}
+            onDuplicateSubtree={handleDuplicateSubtree}
+            onCheckAllTasks={(anchor) => mutate((text) => checkAllInSection(text, anchor))}
+            onUncheckAllTasks={(anchor) => mutate((text) => uncheckAllInSection(text, anchor))}
+            onDeleteCompletedTasks={(anchor) => mutate((text) => deleteCompletedInSection(text, anchor))}
+          />
           <section className="tasks-panel pane-section" aria-label="Completed tasks">
             <div className="panel-heading">
               <h2>Completed ({tasks.completed.length})</h2>
