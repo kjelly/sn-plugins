@@ -140,8 +140,8 @@ coarse pointers).
 - New `LinkDialogModal` (in `src/editor/`): single URL text input prefilled
   with the existing href (when editing), confirm/cancel buttons, backdrop
   click closes, Esc closes.
-- Reuses the `TemplateManagerModal` styling pattern
-  (`.modal-backdrop`/`.template-modal-content`) narrowed to `max-width: 420px`.
+- Reuses the existing modal styling pattern
+  (`.modal-backdrop`/`.modal-content`) narrowed to `max-width: 420px`.
 - Input: `font-size: 16px` (prevents iOS zoom), `enterkeyhint="done"`.
   The input autofocuses when the dialog opens (all platforms); on
   coarse-pointer devices this pulls the OS keyboard immediately, which is
@@ -198,7 +198,6 @@ cancel state machine if extracted to a pure helper.
 | `src/app/hooks/useVisualViewport.ts` (new) | keyboard-aware height variable |
 | `src/editor/WritingEditor.tsx` | `promptAndApplyLink` → LinkDialogModal flow |
 | `src/editor/LinkDialogModal.tsx` (new) | URL input modal |
-| `src/templates/TemplateManagerModal.tsx` | 16px input font (CSS-level) |
 | `src/outline/OutlineRow.tsx` | pointer drag, remove HTML5 DnD |
 | `tests/e2e/specs/7_mobile_viewport_and_touch.spec.ts` | new cases |
 
