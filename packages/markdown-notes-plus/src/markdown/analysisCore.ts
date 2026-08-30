@@ -3,8 +3,29 @@ import { updateTaskTextForToggle } from "../tasks/RecurringTasks.ts";
 
 export type MarkdownLine = { start: number; contentEnd: number; end: number; text: string };
 export type MarkdownRange = { from: number; to: number };
-export type HeadingInfo = { level: number; text: string; from: number; to: number; path: string[] };
-export type SectionInfo = { anchor: number; level: number; text: string; from: number; to: number; path: string[] };
+export type HeadingSyntax = "atx" | "setext";
+export type HeadingInfo = {
+  level: number;
+  text: string;
+  from: number;
+  to: number;
+  path: string[];
+  syntax: HeadingSyntax;
+  headingFrom: number;
+  headingTo: number;
+  markerFrom?: number;
+  markerTo?: number;
+};
+export type SectionInfo = {
+  anchor: number;
+  level: number;
+  text: string;
+  from: number;
+  to: number;
+  path: string[];
+  headingIndex: number;
+  parentAnchor?: number;
+};
 export type TaskInfo = { from: number; to: number; itemStart: number; itemEnd: number; checkboxOffset: number; checked: boolean; text: string; depth: number; headingPath: string[] };
 export type MarkdownStructure = { lines: MarkdownLine[]; opaqueFencedRanges: MarkdownRange[]; taskEligible: boolean[] };
 export type MarkdownAnalysis = {
@@ -327,10 +348,49 @@ export function analyzeMarkdown(markdown: string): MarkdownAnalysis {
     if (isTableDelimiter(line.text) || (lines[index + 1] && line.text.includes("|") && isTableDelimiter(lines[index + 1].text))) { tableActive = true; continue; }
     if (tableActive) { if (trimmed === "") tableActive = false; else if (line.text.includes("|")) continue; else tableActive = false; }
     if (isTableLiteral(line.text)) continue;
-    const heading = line.text.match(/^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
-    if (heading) { const level = heading[1].length; const text = heading[2].trim(); headingStack.splice(level - 1); headingStack.push(text); headings.push({ level, text, from: line.start, to: line.contentEnd, path: headingStack.slice() }); continue; }
+    const heading = line.text.match(/^([ \t]{0,3})(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      const level = heading[2].length;
+      const text = heading[3].trim();
+      headingStack.splice(level - 1);
+      headingStack.push(text);
+      const leadingSpaces = heading[1].length;
+      const markerFrom = line.start + leadingSpaces;
+      const markerTo = markerFrom + level;
+      headings.push({
+        level,
+        text,
+        from: line.start,
+        to: line.contentEnd,
+        path: headingStack.slice(),
+        syntax: "atx",
+        headingFrom: line.start,
+        headingTo: line.end,
+        markerFrom,
+        markerTo,
+      });
+      continue;
+    }
     const setextLevel = lines[index + 1] && line.text.trim() !== "" && !listItemMatch(line.text) ? setextHeadingLevel(lines[index + 1].text) : undefined;
-    if (setextLevel !== undefined) { const text = line.text.trim(); headingStack.splice(setextLevel - 1); headingStack.push(text); headings.push({ level: setextLevel, text, from: line.start, to: line.contentEnd, path: headingStack.slice() }); skipSetextUnderline = true; continue; }
+    if (setextLevel !== undefined) {
+      const text = line.text.trim();
+      headingStack.splice(setextLevel - 1);
+      headingStack.push(text);
+      headings.push({
+        level: setextLevel,
+        text,
+        from: line.start,
+        to: line.contentEnd,
+        path: headingStack.slice(),
+        syntax: "setext",
+        headingFrom: line.start,
+        headingTo: lines[index + 1].end,
+        markerFrom: undefined,
+        markerTo: undefined,
+      });
+      skipSetextUnderline = true;
+      continue;
+    }
     const item = listItemMatch(line.text);
     const depth = indentation(line.text);
     const match = taskMatch(line.text);
@@ -343,9 +403,70 @@ export function analyzeMarkdown(markdown: string): MarkdownAnalysis {
     for (let child = index + 1; child < lines.length; child += 1) { const next = lines[child]; const nextList = listItemMatch(next.text); const nextIndent = indentation(next.text); if (nextList && nextIndent <= depth) break; if (!nextList && next.text.trim() !== "" && nextIndent <= depth) break; itemEnd = next.end; }
     tasks.push({ from: line.start, to: line.contentEnd, itemStart: line.start, itemEnd, checkboxOffset: line.start + markerOffset + 1, checked: match[2].toLowerCase() === "x", text: match[3].trim(), depth, headingPath: headingStack.slice() });
   }
-  const sections: SectionInfo[] = headings.map((heading, index) => { let to = markdown.length; for (let next = index + 1; next < headings.length; next += 1) { if (headings[next].level <= heading.level) { to = headings[next].from; break; } } return { ...heading, anchor: heading.from, from: heading.from, to }; });
+  const sections: SectionInfo[] = headings.map((heading, index) => {
+    let to = markdown.length;
+    for (let next = index + 1; next < headings.length; next += 1) {
+      if (headings[next].level <= heading.level) {
+        to = headings[next].from;
+        break;
+      }
+    }
+    let parentAnchor: number | undefined = undefined;
+    for (let prev = index - 1; prev >= 0; prev -= 1) {
+      if (headings[prev].level < heading.level) {
+        parentAnchor = headings[prev].from;
+        break;
+      }
+    }
+    return {
+      ...heading,
+      anchor: heading.from,
+      from: heading.from,
+      to,
+      headingIndex: index,
+      parentAnchor,
+    };
+  });
   const analysis: MarkdownAnalysis = { headings, tasks, sections, opaqueFencedRanges: structure.opaqueFencedRanges, sectionAt: (offset) => sectionAt(analysis, offset), sectionByAnchor: (anchor) => sectionByAnchor(analysis, anchor) };
   return analysis;
+}
+
+export function headingIndexByAnchor(analysis: MarkdownAnalysis, anchor: number): number | undefined {
+  return analysis.sectionByAnchor(anchor)?.headingIndex;
+}
+
+export function parentSection(analysis: MarkdownAnalysis, anchor: number): SectionInfo | undefined {
+  const section = analysis.sectionByAnchor(anchor);
+  if (!section || section.parentAnchor === undefined) return undefined;
+  return analysis.sectionByAnchor(section.parentAnchor);
+}
+
+export function siblingSections(analysis: MarkdownAnalysis, anchor: number): SectionInfo[] {
+  const section = analysis.sectionByAnchor(anchor);
+  if (!section) return [];
+  return analysis.sections.filter(
+    (candidate) => candidate.level === section.level && candidate.parentAnchor === section.parentAnchor,
+  );
+}
+
+export function previousSiblingSection(analysis: MarkdownAnalysis, anchor: number): SectionInfo | undefined {
+  const siblings = siblingSections(analysis, anchor);
+  const index = siblings.findIndex((s) => s.anchor === anchor);
+  if (index <= 0) return undefined;
+  return siblings[index - 1];
+}
+
+export function nextSiblingSection(analysis: MarkdownAnalysis, anchor: number): SectionInfo | undefined {
+  const siblings = siblingSections(analysis, anchor);
+  const index = siblings.findIndex((s) => s.anchor === anchor);
+  if (index < 0 || index >= siblings.length - 1) return undefined;
+  return siblings[index + 1];
+}
+
+export function headingsInSection(analysis: MarkdownAnalysis, anchor: number): HeadingInfo[] {
+  const section = analysis.sectionByAnchor(anchor);
+  if (!section) return [];
+  return analysis.headings.filter((h) => h.from >= section.from && h.to <= section.to);
 }
 
 type SectionLookup = Pick<MarkdownAnalysis, "sections">;
