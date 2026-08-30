@@ -1,3 +1,7 @@
-import { analyzeMarkdown, type HeadingInfo } from "../markdown/analysis";
+import { analyzeMarkdown, type HeadingInfo } from "../markdown/analysis.ts";
 
-export function outlineIndex(markdown: string): HeadingInfo[] { return analyzeMarkdown(markdown).headings; }
+export type OutlineHeading = HeadingInfo;
+
+export function outlineIndex(markdown: string): HeadingInfo[] {
+  return analyzeMarkdown(markdown).headings;
+}

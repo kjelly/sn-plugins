@@ -19,6 +19,8 @@ import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShor
 import { openExternalLink } from "../utils/linkOpener.ts";
 import { REPEAT_TAG_REGEX, DONE_TAG_REGEX, formatIsoDate } from "../tasks/RecurringTasks.ts";
 import { createWritingFoldingPlugin } from "./WritingFolding.ts";
+import { createWritingShortcutsPlugin } from "./WritingShortcuts.ts";
+import { createWritingSmartKeysPlugin } from "./WritingSmartKeys.ts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -517,6 +519,8 @@ export function configureWritingEditor(editor: Editor, {
     .use(listener)
     .use($prose(() => writingOriginPlugin))
     .use($prose(() => createWritingFoldingPlugin()))
+    .use($prose(() => createWritingShortcutsPlugin()))
+    .use($prose(() => createWritingSmartKeysPlugin()))
     .use(writingLinkClickHandlerPlugin())
     .use(slashMenuPlugin(editability))
     .use(writingKeyboardShortcutsPlugin(editability));

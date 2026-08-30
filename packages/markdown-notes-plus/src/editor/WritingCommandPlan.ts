@@ -1,10 +1,30 @@
-export const WRITING_COMMANDS = ["heading", "heading2", "heading3", "bullet", "numbered", "task", "quote", "code", "table", "image", "link", "divider"] as const;
+export const WRITING_COMMANDS = [
+  "heading",
+  "heading2",
+  "heading3",
+  "heading4",
+  "heading5",
+  "heading6",
+  "bullet",
+  "numbered",
+  "task",
+  "quote",
+  "code",
+  "table",
+  "image",
+  "link",
+  "divider",
+] as const;
+
 export type WritingCommandName = typeof WRITING_COMMANDS[number];
 
 export const COMMAND_ALIASES: Record<WritingCommandName, readonly string[]> = {
   heading: ["h1", "title"],
   heading2: ["h2", "subtitle"],
   heading3: ["h3", "subheading"],
+  heading4: ["h4"],
+  heading5: ["h5"],
+  heading6: ["h6"],
   bullet: ["list", "bullet-list", "ul"],
   numbered: ["numbered-list", "ol"],
   task: ["todo", "checkbox", "check", "task-list"],
@@ -30,6 +50,9 @@ export function writingCommandPlan(command: WritingCommandName): WritingCommandP
     case "heading": return { kind: "set-block-type", nodeName: "heading", attrs: { level: 1 }, target: "current-block" };
     case "heading2": return { kind: "set-block-type", nodeName: "heading", attrs: { level: 2 }, target: "current-block" };
     case "heading3": return { kind: "set-block-type", nodeName: "heading", attrs: { level: 3 }, target: "current-block" };
+    case "heading4": return { kind: "set-block-type", nodeName: "heading", attrs: { level: 4 }, target: "current-block" };
+    case "heading5": return { kind: "set-block-type", nodeName: "heading", attrs: { level: 5 }, target: "current-block" };
+    case "heading6": return { kind: "set-block-type", nodeName: "heading", attrs: { level: 6 }, target: "current-block" };
     case "bullet": return { kind: "wrap", nodeName: "bullet_list", target: "selection" };
     case "numbered": return { kind: "wrap", nodeName: "ordered_list", attrs: { order: 1 }, target: "selection" };
     case "task": return { kind: "task-list", target: "selection" };
