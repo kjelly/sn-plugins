@@ -14,15 +14,7 @@
 ```text
 Current Working Note (Canonical Markdown)
     │
-    ├── [待實作 1] Templates & Snippets 系統 (Component Preferences 同步)
-    │       ├── 內建 5 套標準筆記模板
-    │       ├── 自訂模板管理 (CRUD / 儲存當前筆記為模板)
-    │       ├── 自訂 Snippets 快捷片段 (Trigger / 儲存選取文字)
-    │       ├── 動態變數展開 ({{date}}, {{time}}, {{cursor}}, {{selection}}, {{noteTitle}})
-    │       ├── Slash Command 動態選單整合
-    │       └── JSON 檔案匯入 / 匯出與衝突解決
-    │
-    ├── [待實作 2] Note Health & Review 診斷面板 (當前筆記健康度檢查)
+    ├── [待實作 1] Note Health & Review 診斷面板 (當前筆記健康度檢查)
     │       ├── 結構診斷 (無 H1、多個 H1、跳級標題 H2→H4、空標題/章節、重複錨點)
     │       ├── 任務診斷 (未完成數、完成數、空白任務項目)
     │       ├── 內部連結診斷 (驗證目前筆記中的 #heading 本地錨點有效性)
@@ -31,113 +23,29 @@ Current Working Note (Canonical Markdown)
     │       ├── 最大章節分析 (Largest Sections Analysis)
     │       └── Safe Auto Fix (單步 Undo 局部安全修復)
     │
-    ├── [待實作 3] GitHub-Style Callout 區塊視覺渲染
+    ├── [待實作 2] GitHub-Style Callout 區塊視覺渲染
     │       ├── NOTE, TIP, IMPORTANT, WARNING, CAUTION 五種語義卡片
     │       └── Writing 模式視覺渲染 + Source / Roundtrip 保持原生 Markdown
     │
-    ├── [待實作 4] Code Block 輔助工具
+    ├── [待實作 3] Code Block 輔助工具
     │       ├── 語言標籤 (Language label)
     │       ├── 一鍵複製按鈕 (Copy code)
     │       └── 自動換行切換 (Wrap / No-wrap toggle)
     │
-    ├── [待實作 5] Smart Paste 剪貼簿智慧清洗
+    ├── [待實作 4] Smart Paste 剪貼簿智慧清洗
     │       ├── 外部 HTML / Rich Text 貼上轉為乾淨語義 Markdown
     │       └── 移除追蹤碼、內聯樣式與雜訊標籤
     │
-    ├── [待實作 6] Navigation Palette 當前筆記快速導航盤
+    ├── [待實作 5] Navigation Palette 當前筆記快速導航盤
     │       └── 快捷鍵呼叫快速跳轉標題、任務、章節
     │
-    └── [待實作 7] UI Preferences 偏好設定跨裝置同步
+    └── [待實作 6] UI Preferences 偏好設定跨裝置同步
             └── 透過 Component Preferences 同步介面偏好 (Sidebar、過濾條件等)
 ```
 
 ---
 
-# 模組一：Templates & Snippets 系統 (模板與快捷片段)
-
-## 1.1 儲存機制與識別碼
-- 使用 Standard Notes **Component Preferences** 儲存使用者自訂 Library。
-- Production Identifier: `com.kjelly.markdown-notes-plus`
-- Storage Key: `insertLibrary.v1`
-- 隨 Standard Notes 帳號 UserPrefs 跨 Web、Desktop、Mobile 同步。
-
-## 1.2 資料模型 (Data Models)
-```ts
-export interface InsertLibrary {
-  schemaVersion: 1;
-  templates: TemplateDefinition[];
-  snippets: SnippetDefinition[];
-  hiddenBuiltins?: string[];
-}
-
-export interface TemplateDefinition {
-  id: string;
-  name: string;
-  description?: string;
-  category?: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SnippetDefinition {
-  id: string;
-  name: string;
-  description?: string;
-  category?: string;
-  trigger: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
-```
-
-## 1.3 容量管理政策 (Quota Policy)
-- 單一 Template: `< 64 KB`
-- 單一 Snippet: `< 16 KB`
-- 總 Library: `< 512 KB`
-- 超出限制時顯示容量警示，禁止直接截斷資料；禁止儲存 Base64 圖片或二進位附件。
-
-## 1.4 內建模板 (Built-in Templates)
-預先提供 5 套標準 Markdown 模板（可隱藏、可複製為自訂模板，但不可直接覆蓋唯讀定義）：
-1. **Project**（專案規劃：目標、階段、里程碑、任務清單、風險）
-2. **Knowledge**（知識筆記：核心概念、關聯主題、詳細摘要、參考資源）
-3. **Research**（調研報告：背景問題、評估方案、比較矩陣、建議結論）
-4. **Troubleshooting**（問題排查：現象描述、環境資訊、復現步驟、根本原因、解決方案）
-5. **Weekly Plan**（週計畫：本週重點目標、每日任務劃分、回顧與待跟進事項）
-
-## 1.5 自訂模板管理器 (Template Manager)
-- 支援功能：Create, Edit, Delete, Duplicate, Rename, Categorize
-- 支援「**Save Current Note as Template**」（將目前筆記 Markdown 複製為新模板，不建立 live binding）
-- 插入時支援單步 Undo。
-
-## 1.6 自訂 Snippets 快捷片段
-- 支援功能：Create, Edit, Delete, Duplicate, Trigger 設定
-- 支援「**Save Selection as Snippet**」（將目前編輯器選取文字存為新 Snippet）
-- 支援透過輸入 `/trigger` 或 Slash Menu 快速觸發（例如 `/decision`, `/reference`, `/command`）。
-
-## 1.7 模板動態變數 (Template Variables)
-在插入 Template 或 Snippet 時即時展開動態變數（Insertion-time expansion，不保留內部持久標籤）：
-- `{{date}}`：當前日期（YYYY-MM-DD）
-- `{{time}}`：當前時間（HH:mm）
-- `{{datetime}}`：當前日期時間（YYYY-MM-DD HH:mm）
-- `{{noteTitle}}`：當前筆記的第一個 H1 標題或預設名稱
-- `{{selection}}`：插入前所選取的文字內容
-- `{{cursor}}`：插入後游標最終停留位置
-
-## 1.8 匯入與匯出 (Import / Export)
-- 支援匯出為標準 JSON 檔案（`markdown-notes-plus-library.json`）。
-- 匯入時提供衝突解決選項：
-  1. **Keep Existing**（保留現有項目）
-  2. **Replace All**（完全覆蓋現有庫）
-  3. **Import as Copy**（自動重新編號並另存為副本）
-
-## 1.9 Slash Command 動態整合
-- 鍵入 `/` 時，Slash Menu 動態列出可用 Templates 與 Snippets，並支援即時文字過濾。
-
----
-
-# 模組二：Note Health & Review 診斷面板 (筆記健康度檢查)
+# 模組一：Note Health & Review 診斷面板 (筆記健康度檢查)
 
 在 Sidebar 新增獨立 Review 診斷面板，對當前 Note 提供即時 AST 健康度分析與安全修復：
 
@@ -172,7 +80,7 @@ export interface SnippetDefinition {
 
 ---
 
-# 模組三：GitHub-Style Callouts 視覺渲染
+# 模組二：GitHub-Style Callouts 視覺渲染
 
 ## 3.1 語法規格
 支援 GitHub Flavored Markdown 標準 Callout 語法：
@@ -202,7 +110,7 @@ export interface SnippetDefinition {
 
 ---
 
-# 模組四：Code Block 輔助工具
+# 模組三：Code Block 輔助工具
 
 ## 4.1 Writing 模式增強
 在 Writing 模式下的 Fenced Code Block（` ```lang ... ``` `）上方或浮動列提供：
@@ -215,7 +123,7 @@ export interface SnippetDefinition {
 
 ---
 
-# 模組五：Smart Paste 剪貼簿智慧清洗
+# 模組四：Smart Paste 剪貼簿智慧清洗
 
 ## 5.1 貼上處理流程
 當使用者從網頁或外部應用貼上 HTML / 富文字（Rich Text）時：
@@ -231,7 +139,7 @@ export interface SnippetDefinition {
 
 ---
 
-# 模組六：Navigation Palette 當前筆記快速導航盤
+# 模組五：Navigation Palette 當前筆記快速導航盤
 
 ## 6.1 快速呼叫與導航
 - 提供快捷鍵（如 `Ctrl/Cmd + P` 或自訂不與 Host 衝突之快捷鍵）呼叫全屏/置中快速導航彈窗。
@@ -243,7 +151,7 @@ export interface SnippetDefinition {
 
 ---
 
-# 模組七：UI Preferences 偏好設定跨裝置同步
+# 模組六：UI Preferences 偏好設定跨裝置同步
 
 ## 7.1 同步項目
 透過 Component Preferences（Key: `uiPreferences.v1`）記錄並同步使用者的編輯器介面習慣：
@@ -261,7 +169,7 @@ export interface SnippetDefinition {
 1. **零 Host 依賴原則**：只依賴 `@standardnotes/editor-kit`，不得假設存在跨筆記 API。
 2. **單一資料真相 (Canonical Data)**：`note.content.text` 永遠是唯一權威儲存，禁止建立 sidecar 檔案。
 3. **無損 Round-trip (Non-destructive)**：非使用者主動修改時，禁止自動全篇格式化、trim 或重排。
-4. **唯讀保護 (Note Locked State)**：筆記處於 Locked 狀態時，所有模板插入、修復動作與寫入指令必須自動 Disable。
+4. **唯讀保護 (Note Locked State)**：筆記處於 Locked 狀態時，所有修復動作與寫入指令必須自動 Disable。
 5. **完整測試覆蓋 (Test Driven)**：
    - 新增功能需提供單元測試（AST / Parser / Reducer / Pure Mutations）。
    - 提供整合與 Playwright E2E 測試，確保跨模式切換與 Standard Notes Bridge 生命週期運作正常。

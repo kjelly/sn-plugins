@@ -11,12 +11,11 @@ Markdown Notes+ 是 Standard Notes 的 Markdown 編輯器：以「單一筆記�
 5. [Split 模式與 Mind Map（心智圖）](#5-split-模式與-mind-map心智圖)
 6. [側邊欄 Inspector](#6-側邊欄-inspector)
 7. [任務系統](#7-任務系統)
-8. [模板與片段](#8-模板與片段)
-9. [多裝置同步與衝突處理](#9-多裝置同步與衝突處理)
-10. [注意事項與限制](#10-注意事項與限制)
-11. [附錄 A：快捷鍵總表](#附錄-a快捷鍵總表)
-12. [附錄 B：Markdown 語法速查](#附錄-bmarkdown-語法速查)
-13. [附錄 C：狀態列訊息一覽](#附錄-c狀態列訊息一覽)
+8. [多裝置同步與衝突處理](#8-多裝置同步與衝突處理)
+9. [注意事項與限制](#9-注意事項與限制)
+10. [附錄 A：快捷鍵總表](#附錄-a快捷鍵總表)
+11. [附錄 B：Markdown 語法速查](#附錄-bmarkdown-語法速查)
+12. [附錄 C：狀態列訊息一覽](#附錄-c狀態列訊息一覽)
 
 ---
 
@@ -73,7 +72,7 @@ Markdown Notes+（Standard Notes 外掛識別碼 `markdown-notes-plus`）安裝�
 
 ### 2.4 唯讀（Locked）狀態
 
-筆記在 Standard Notes 中被設為保護（locked）時：所有編輯按鈕停用、任務 checkbox 與刪除鈕停用、大綱結構操作停用、心智圖 checkbox 鎖定、模板插入停用。解鎖後自動恢復。
+筆記在 Standard Notes 中被設為保護（locked）時：所有編輯按鈕停用、任務 checkbox 與刪除鈕停用、大綱結構操作停用、心智圖 checkbox 鎖定。解鎖後自動恢復。
 
 ### 2.5 外觀主題
 
@@ -97,13 +96,12 @@ Writing 模式以所見即所得方式編輯：標題變大、清單有符號、
 | `Table` | 在目前位置插入表格 |
 | `Link` | 插入連結（彈出 URL 輸入框，同 `Ctrl/Cmd+K`） |
 | `Divider` | 插入水平分隔線 `---` |
-| `Templates` | 開啟模板與片段管理員（見第 8 章） |
 
 H3–H6、有序清單、圖片沒有專屬按鈕，請用 Slash 選單插入。
 
 ### 3.2 Slash 選單
 
-在行首或空格之後輸入 `/`（可接續字母），會彈出命令選單，即時過濾匹配的**命令、片段、模板**（後兩者以 `Snippet` / `Template` 徽章標示）。
+在行首或空格之後輸入 `/`（可接續字母），會彈出命令選單，即時過濾匹配的命令。
 
 **操作方式**
 1. 輸入 `/` 或 `/` + 關鍵字（如 `/tab`）。
@@ -367,109 +365,23 @@ Writing 模式只會在「呈現結果能逐字還原成原始 Markdown」時才
 
 ---
 
-## 8. 模板與片段
-
-模板（Template）是完整的筆記骨架；片段（Snippet）是可重複插入的小段內容，有短觸發詞（trigger）。兩者都支援動態變數，插入時即時展開、不在筆記裡留下變數標籤。
-
-### 8.1 內建模板（5 套）
-
-| 名稱 | 分類 | 用途 |
-|------|------|------|
-| Project Plan | Project | 專案規劃：目標、里程碑、任務、風險 |
-| Knowledge Note | Knowledge | 知識筆記：摘要、核心概念、詳細筆記、參考 |
-| Research & Evaluation | Research | 調研報告：問題、方案比較矩陣、建議 |
-| Troubleshooting & Incident | Operations | 問題排查/事件報告：症狀、環境、根因、解決 |
-| Weekly Plan & Review | Planning | 週計畫：本週目標、每日任務、回顧 |
-
-### 8.2 內建片段（3 個）
-
-| 名稱 | 觸發詞 | 用途 |
-|------|--------|------|
-| Decision Record | `/decision` | 架構決策記錄（Context / Decision / Consequences） |
-| Citation / Reference | `/reference` | 引用出處（引文 + 來源連結 + 日期） |
-| CLI Command Block | `/command` | bash fenced code block（註解 + 指令） |
-
-### 8.3 Template Manager（模板與片段管理員）
-
-點任一模式工具列的 `Templates` 按鈕開啟彈窗：
-
-- **分頁**：`Templates (N)` / `Snippets (N)`，各有數量顯示。
-- **搜尋框**：依名稱／分類／描述即時過濾。
-- **新增**：`+ New Template` / `+ New Snippet` 開編輯表單（名稱、分類、描述、內容、片段另有 Trigger Shortcut）。
-- **Save Current Note**：把目前筆記的完整 Markdown 帶進「新增模板」表單，命名儲存即成為自訂模板。
-- **卡片動作**：
-  - `Insert`：插入到筆記（並關閉彈窗）。
-  - `Edit`：編輯自訂項（內建項唯讀，不可 Edit）。
-  - `Duplicate`：複製一份為自訂項（含內建項——想改內建就先 Duplicate）。
-  - `Delete`：刪除自訂項；內建項顯示為 `Hide`（隱藏不會真的刪除定義）。
-
-### 8.4 動態變數
-
-插入模板或片段時，以下變數會即時展開：
-
-| 變數 | 展開為 | 範例 |
-|------|--------|------|
-| `{{date}}` | 今天日期 `YYYY-MM-DD` | `2026-08-30` |
-| `{{time}}` | 現在時間 `HH:mm` | `14:05` |
-| `{{datetime}}` | 日期時間 `YYYY-MM-DD HH:mm` | `2026-08-30 14:05` |
-| `{{noteTitle}}` | 目前筆記第一個 H1 標題（無則 `Untitled`） | `我的專案` |
-| `{{selection}}` | 插入前選取的文字 | — |
-| `{{cursor}}` | 插入後游標停留位置 | — |
-
-### 8.5 插入方式
-
-- **Slash 選單**：Writing 模式輸入 `/` 即列出全部命令、片段（以 trigger 匹配）與模板（以名稱連字號匹配），可再輸入關鍵字過濾。
-- **Manager 內 `Insert`**：直接插入到游標位置。
-- **Source 模式插入**：內容插在游標處；`{{cursor}}` 位置會成為新的游標點。
-
-### 8.6 匯入與匯出
-
-- **匯出**：`Export JSON` 下載 `markdown-notes-plus-library.json`（含你的自訂模板、片段與隱藏內建清單）。
-- **匯入**：先在下拉選單選衝突策略，再點 `Import JSON` 選檔案：
-
-| 策略 | 行為 |
-|------|------|
-| `Keep existing` | 跳過同 ID 的項目，只新增目前沒有的 |
-| `Import as copy` | 衝突項目自動重新編號為複本（名稱加 `(Copy)`） |
-| `Replace all` | 用匯入檔**整份取代**現有庫（內建項不受影響） |
-
-### 8.7 容量限制
-
-| 項目 | 上限 |
-|------|------|
-| 單一模板內容 | 64 KB |
-| 單一片段內容 | 16 KB |
-| 整個庫 | 512 KB |
-
-管理員底部顯示 `Library size: X KB / 512 KB`。超過限制時會顯示錯誤訊息、不會截斷你的資料。
-
-### 8.8 儲存位置
-
-模板庫儲存在**瀏覽器的 localStorage**——換瀏覽器或換裝置**不會**自動同步。要搬到另一台裝置，請用 Export JSON → Import JSON。
-
-**注意事項**
-- 模板只是插入當下的複本：插入後的內容與模板再無關聯（沒有 live binding）。
-- Snippets 分頁的 `Save Selection` 按鈕目前尚未啟用（處於停用狀態），請見第 10 章。
-
----
-
-## 9. 多裝置同步與衝突處理
+## 8. 多裝置同步與衝突處理
 
 Markdown Notes+ 透過 Standard Notes 的同步機制儲存筆記，多裝置同時編輯時有自動合併與衝突處理。
 
-### 9.1 自動存檔時機
+### 8.1 自動存檔時機
 
 - 打字停止約 **300 毫秒**後自動存檔。
 - 以下情況會**立刻**強制存檔：點擊編輯器以外的位置（blur）、切到其他瀏覽器分頁（page hidden）、關閉/離開頁面（unload）。
 
-### 9.2 自動合併（3-way merge）
+### 8.2 自動合併（3-way merge）
 
 當另一台裝置的修改經 Standard Notes 同步送達時，編輯器會把「本機版本、遠端版本、共同基底」做行級三方合併：
 
 - **兩邊改在不同行** → 自動合併成功，兩邊的修改都保留，並自動存檔。你不需要做任何事。
 - **兩邊改了同一行** → 無法自動合併，進入 9.3 的衝突處理。
 
-### 9.3 衝突橫幅
+### 8.3 衝突橫幅
 
 無法自動合併時，畫面頂端出現紅色橫幅 **`Another device changed this note.`**，附兩個選擇：
 
@@ -484,26 +396,25 @@ Markdown Notes+ 透過 Standard Notes 的同步機制儲存筆記，多裝置同
 
 ---
 
-## 10. 注意事項與限制
+## 9. 注意事項與限制
 
-### 10.1 Markdown 支援範圍
+### 9.1 Markdown 支援範圍
 
 投影（任務、大綱、心智圖）與 Writing 模式支援常用的 GFM 子集：標題（`#` 與底線式）、清單、任務清單、表格、fenced code block、引用區塊等。它**不是完整的 CommonMark/GFM 解析器**——不支援的語法會原樣保留在筆記中，可以在 Source 模式編輯，但不會出現在大綱、任務或心智圖投影裡。
 
-### 10.2 Writing 模式的無損邊界
+### 9.2 Writing 模式的無損邊界
 
 Writing 模式只編輯「它能逐字還原」的內容。特殊內容會以 `Writing read-only` 呈現（唯讀顯示），或在你修改後自動切到 Source fallback（見第 4.3 節）。這是為了保證**永遠不破壞你的原始字元**——寧可退回 Source，也不偷改你的 Markdown。
 
-### 10.3 已知未啟用/未提供的功能
+### 9.3 已知未啟用/未提供的功能
 
 | 項目 | 狀態 |
 |------|------|
-| Snippet 管理員的 `Save Selection` 按鈕 | 顯示但停用（未接線），無法使用 |
-| 模板庫跨裝置同步 | 僅存瀏覽器 localStorage；請用 JSON 匯出/匯出搬移（見 8.8） |
 | 筆記健康度診斷面板（Review） | 尚未提供 |
 | Callout 卡片（`> [!NOTE]` 語意渲染） | 尚未提供 |
 | Smart Paste（HTML 貼上清洗） | 尚未提供 |
 | 快速導航盤（Navigation Palette） | 尚未提供 |
+| UI Preferences 跨裝置同步 | 尚未提供 |
 
 ---
 
