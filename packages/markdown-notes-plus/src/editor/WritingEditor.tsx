@@ -30,6 +30,8 @@ import {
   expandTemplateVariables,
   extractNoteTitle,
 } from "../templates/TemplateEngine.ts";
+import { calloutBlockquoteView } from "./WritingCallouts.ts";
+import { codeBlockEnhancedView } from "./WritingCodeBlock.ts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -234,6 +236,7 @@ function promptAndApplyLink(view: ProseEditorView, editability: WritingEditabili
 
 type SlashItem =
   | { kind: "command"; name: WritingCommandName; label: string; badge?: string }
+  | { kind: "callout"; calloutType: "note" | "tip" | "important" | "warning" | "caution"; label: string; badge: string }
   | { kind: "template"; template: TemplateDefinition; label: string; badge: string }
   | { kind: "snippet"; snippet: SnippetDefinition; label: string; badge: string };
 
@@ -261,6 +264,11 @@ function slashMenuPlugin(
       if (item.kind === "command") {
         if (item.name === "link") promptAndApplyLink(currentView, editability, range);
         else applyWritingCommand(currentView, item.name, range);
+      } else if (item.kind === "callout") {
+        if (parserRef?.current) {
+          const calloutText = `> [!${item.calloutType.toUpperCase()}]\n> `;
+          insertWritingMarkdown(currentView, parserRef.current, calloutText, range);
+        }
       } else if (item.kind === "template") {
         const selText = currentView.state.doc.textBetween(currentView.state.selection.from, currentView.state.selection.to);
         const noteText = serializerRef?.current ? serializerRef.current(currentView.state.doc) : "";
@@ -335,6 +343,23 @@ function slashMenuPlugin(
             label: `/${command}`,
           }));
 
+          const calloutCandidates: Array<{ calloutType: "note" | "tip" | "important" | "warning" | "caution"; label: string }> = [
+            { calloutType: "note", label: "/note" },
+            { calloutType: "tip", label: "/tip" },
+            { calloutType: "important", label: "/important" },
+            { calloutType: "warning", label: "/warning" },
+            { calloutType: "caution", label: "/caution" },
+          ];
+          const calloutItems: SlashItem[] = calloutCandidates.filter((c) => {
+            if (!q) return true;
+            return c.calloutType.includes(q) || c.label.includes(q) || "callout".includes(q);
+          }).map((c) => ({
+            kind: "callout" as const,
+            calloutType: c.calloutType,
+            label: c.label,
+            badge: "Callout",
+          }));
+
           const library = libraryRef?.current;
           const templates = library ? resolveAllTemplates(library) : [];
           const templateItems: SlashItem[] = templates.filter((t) => {
@@ -358,7 +383,7 @@ function slashMenuPlugin(
             badge: "Snippet",
           }));
 
-          currentItems = [...commandItems, ...snippetItems, ...templateItems];
+          currentItems = [...commandItems, ...calloutItems, ...snippetItems, ...templateItems];
 
           if (currentItems.length === 0) {
             isMenuVisible = false;
@@ -600,6 +625,9 @@ export function configureWritingEditor(editor: Editor, {
               }
             },
           ),
+          blockquote: (node, view, getPos) => calloutBlockquoteView(node, view, getPos),
+          code_block: (node, view, getPos) => codeBlockEnhancedView(node, view, getPos),
+          fence: (node, view, getPos) => codeBlockEnhancedView(node, view, getPos),
         },
       }));
     })
