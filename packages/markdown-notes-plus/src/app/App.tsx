@@ -54,6 +54,8 @@ import {
   applyAllSafeAutoFixes,
 } from "../review/ReviewDiagnostics.ts";
 import { ReviewPanel } from "../review/ReviewPanel.tsx";
+import { loadUIPreferences, saveUIPreferences } from "../preferences/UIPreferences.ts";
+import { NavigationPaletteModal } from "../navigation/NavigationPaletteModal.tsx";
 
 type Mode = "writing" | "split" | "source" | "mindmap";
 type MindMapScope = "entire-note" | "current-section";
@@ -170,17 +172,20 @@ export function App() {
     undefined,
     () => writingHistoryResetRef.current(),
   ), [canonical]);
-  const [mode, setMode] = useState<Mode>("writing");
-  const [filter, setFilter] = useState<MindMapFilter>("all");
-  const [mindMapScope, setMindMapScope] = useState<MindMapScope>("entire-note");
+  const preferenceStorage = useRef(new LocalPreferenceStorage());
+  const initialPrefs = useMemo(() => loadUIPreferences(preferenceStorage.current), []);
+  const [mode, setMode] = useState<Mode>(() => initialPrefs.mode);
+  const [filter, setFilter] = useState<MindMapFilter>(() => initialPrefs.mindmapFilter);
+  const [mindMapScope, setMindMapScope] = useState<MindMapScope>(() => initialPrefs.mindmapScope);
   const [collapsed, setCollapsed] = useState(false);
   const [collapsedOutlineAnchors, setCollapsedOutlineAnchors] = useState<Set<number>>(new Set());
   const [focusedSectionAnchor, setFocusedSectionAnchor] = useState<number>();
-  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" ? window.innerWidth > 900 : true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" && window.innerWidth < 900 ? false : initialPrefs.sidebarOpen);
+  const [sidebarTab, setSidebarTab] = useState<"outline" | "review" | "tasks">(() => initialPrefs.sidebarTab);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
   const [writingCommand, setWritingCommand] = useState<WritingCommand>();
-  const preferenceStorage = useRef(new LocalPreferenceStorage());
   const [library, setLibrary] = useState<InsertLibrary>(() => preferenceStorage.current.loadLibrary());
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [insertPayload, setInsertPayload] = useState<{ id: number; markdown: string; cursorOffset?: number }>();
@@ -212,8 +217,29 @@ export function App() {
   const writingReadOnly = snapshot.locked || !appLifecycle.canApplyLocal() || !writingCapability.editable;
   const writingVisible = mode === "writing" || mode === "split";
   const bridgeState = bridge.getState();
+  useEffect(() => {
+    saveUIPreferences({
+      version: 1,
+      mode,
+      sidebarOpen,
+      sidebarTab,
+      mindmapFilter: filter,
+      mindmapScope: mindMapScope,
+      wordWrap: true,
+    }, preferenceStorage.current);
+  }, [mode, sidebarOpen, sidebarTab, filter, mindMapScope]);
 
-  const [sidebarTab, setSidebarTab] = useState<"outline" | "review" | "tasks">("outline");
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      }
+    };
+    self.addEventListener("keydown", handleGlobalKeyDown);
+    return () => self.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
+
   const reviewReport = useMemo(() => analyzeNoteHealth(snapshot.text, analysis), [snapshot.text, analysis]);
 
   const handleSaveLibrary = useCallback((next: InsertLibrary) => {
@@ -513,11 +539,12 @@ export function App() {
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("link")} title="Link (Ctrl+K)">Link</button>
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("divider")} title="Divider">Divider</button>
           <button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button>
+          <button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
         </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} onCapabilityChange={setWritingCapability} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); setMode("source"); }} /></ErrorBoundary></section>
-        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} /><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
-        {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools">{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} /><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} /></ErrorBoundary></section> : null}
+        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} /><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
+        {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools">{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} /><EditorNavigationControls mode={mode} onModeChange={handleModeChange} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} /></ErrorBoundary></section> : null}
       </section>
       {mode !== "mindmap" ? <>
         {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" /> : null}
@@ -646,6 +673,19 @@ export function App() {
       onInsertSnippet={handleInsertSnippet}
       currentNoteMarkdown={snapshot.text}
       currentSelectionText=""
+    />
+    <NavigationPaletteModal
+      isOpen={paletteOpen}
+      onClose={() => setPaletteOpen(false)}
+      analysis={analysis}
+      onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
+      onSetMode={setMode}
+      onToggleSidebar={() => setSidebarOpen((open) => !open)}
+      onOpenTemplates={() => setTemplateModalOpen(true)}
+      onFixAllIssues={handleFixAll}
+      library={library}
+      onInsertTemplate={handleInsertTemplate}
+      onInsertSnippet={handleInsertSnippet}
     />
   </main>;
 }
