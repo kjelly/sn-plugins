@@ -221,6 +221,85 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .error-box { padding: 8px; color: #b13d3d; border: 1px solid #b13d3d; border-radius: 6px; }
 .empty-hint { color: var(--editor-muted); font-size: 0.82rem; margin: 4px 0 0; font-style: italic; }
 
+/* Section Focus Banner */
+.section-focus-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: color-mix(in srgb, var(--editor-accent) 12%, var(--editor-bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--editor-accent) 30%, transparent);
+  font-size: 0.8rem;
+}
+.focus-badge {
+  font-weight: 600;
+  color: var(--editor-accent);
+  flex-shrink: 0;
+}
+.focus-breadcrumbs {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  color: var(--editor-muted);
+}
+.breadcrumb-btn {
+  border: 0;
+  background: transparent;
+  color: var(--editor-fg);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.breadcrumb-btn:hover {
+  background: color-mix(in srgb, var(--editor-accent) 15%, transparent);
+  color: var(--editor-accent);
+}
+.breadcrumb-btn.current-crumb {
+  font-weight: 600;
+  color: var(--editor-accent);
+}
+.exit-focus-btn {
+  margin-left: auto;
+  min-height: 22px;
+  padding: 1px 8px;
+  font-size: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--editor-accent) 40%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--editor-accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.exit-focus-btn:hover {
+  background: var(--editor-accent);
+  color: var(--editor-bg);
+}
+
+/* Writing Fold Gutter Button */
+.writing-fold-gutter-btn {
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.75rem;
+  color: var(--editor-muted);
+  margin-right: 6px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+.writing-fold-gutter-btn:hover {
+  opacity: 1;
+  color: var(--editor-accent);
+}
+
 @media (prefers-contrast: more) { :root { --editor-border: var(--editor-fg); } button:focus-visible { outline-width: 3px; } }
 
 @media (pointer: coarse) {

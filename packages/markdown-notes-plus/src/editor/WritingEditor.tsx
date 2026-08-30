@@ -18,6 +18,7 @@ import { applyWritingCommand, isWritingViewEditable, writingLinkHref, WRITING_CO
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
 import { REPEAT_TAG_REGEX, DONE_TAG_REGEX, formatIsoDate } from "../tasks/RecurringTasks.ts";
+import { createWritingFoldingPlugin } from "./WritingFolding.ts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -515,6 +516,7 @@ export function configureWritingEditor(editor: Editor, {
     .use(history)
     .use(listener)
     .use($prose(() => writingOriginPlugin))
+    .use($prose(() => createWritingFoldingPlugin()))
     .use(writingLinkClickHandlerPlugin())
     .use(slashMenuPlugin(editability))
     .use(writingKeyboardShortcutsPlugin(editability));

@@ -24,6 +24,7 @@ import { groupTasksByHeading, taskIndex } from "../tasks/TaskIndex";
 import { outlineIndex } from "../outline/OutlineIndex";
 import { OutlinePanel } from "../outline/OutlinePanel.tsx";
 import { getAllCollapsibleAnchors, reconcileOutlineAnchors } from "../outline/OutlineProjection.ts";
+import { computeSectionBreadcrumbs } from "../editor/WritingFolding.ts";
 import {
   moveSubtree,
   moveSubtreeBefore,
@@ -159,6 +160,7 @@ export function App() {
   const [mindMapScope, setMindMapScope] = useState<MindMapScope>("entire-note");
   const [collapsed, setCollapsed] = useState(false);
   const [collapsedOutlineAnchors, setCollapsedOutlineAnchors] = useState<Set<number>>(new Set());
+  const [focusedSectionAnchor, setFocusedSectionAnchor] = useState<number>();
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" ? window.innerWidth > 900 : true);
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
@@ -178,6 +180,8 @@ export function App() {
   const analysis = analyzeMarkdown(snapshot.text);
   const mindmapSuitable = isMindmapSuitable(snapshot.text, analysis);
   const currentSection = activeSectionAnchor === undefined ? undefined : analysis.sectionByAnchor(activeSectionAnchor);
+  const focusedSection = focusedSectionAnchor === undefined ? undefined : analysis.sectionByAnchor(focusedSectionAnchor);
+  const breadcrumbs = useMemo(() => focusedSection ? computeSectionBreadcrumbs(analysis, focusedSection.anchor) : [], [analysis, focusedSection]);
   const mapMarkdown = projectMindmapMarkdown(
     snapshot.text,
     filter,
@@ -232,6 +236,9 @@ export function App() {
       appLifecycle.observeCanonicalTransition(previous, next, transition);
       if (previous !== next.text) {
         setActiveSectionAnchor((anchor) => {
+          return reconcileSectionAnchor(next.text, transition?.changeSet, anchor);
+        });
+        setFocusedSectionAnchor((anchor) => {
           return reconcileSectionAnchor(next.text, transition?.changeSet, anchor);
         });
         setCollapsedOutlineAnchors((anchors) => {
@@ -385,6 +392,33 @@ export function App() {
   return <main className={`app-shell mode-${mode}`}>
     {snapshot.pendingRemote !== undefined ? <aside className="conflict" role="alert"><span>Another device changed this note.</span><button onClick={() => bridge.resolveConflict("keep-local")} title="Keep local edits (Standard Notes creates a Conflicted Copy if needed)">Keep local</button><button onClick={() => bridge.resolveConflict("accept-remote")} title="Discard local changes and use remote version">Accept remote</button></aside> : null}
     <div className={`workspace-layout ${sidebarOpen && mode !== "mindmap" ? "with-sidebar" : "sidebar-collapsed"}`}>
+      {focusedSection ? (
+        <div className="section-focus-banner" role="region" aria-label="Focused section">
+          <span className="focus-badge">Focused:</span>
+          <span className="focus-breadcrumbs">
+            {breadcrumbs.map((crumb, index) => (
+              <span key={crumb.anchor} className="breadcrumb-item">
+                {index > 0 ? " › " : ""}
+                <button
+                  type="button"
+                  className={`breadcrumb-btn ${crumb.anchor === focusedSection.anchor ? "current-crumb" : ""}`}
+                  onClick={() => setFocusedSectionAnchor(crumb.anchor)}
+                >
+                  {crumb.text}
+                </button>
+              </span>
+            ))}
+          </span>
+          <button
+            type="button"
+            className="exit-focus-btn"
+            onClick={() => setFocusedSectionAnchor(undefined)}
+            title="Exit section focus"
+          >
+            ✕ Exit Focus
+          </button>
+        </div>
+      ) : null}
       <section className="editing-grid">
         {/* Keep Milkdown mounted across mode changes so its selection/history stay local. */}
         <section className="writing-pane pane" hidden={!writingVisible}><div className={`pane-toolbar ${writingVisible ? "app-toolbar" : ""}`} role="toolbar" aria-label="Writing tools">
@@ -412,6 +446,7 @@ export function App() {
           <OutlinePanel
             analysis={analysis}
             activeSectionAnchor={activeSectionAnchor}
+            focusedSectionAnchor={focusedSectionAnchor}
             collapsedAnchors={collapsedOutlineAnchors}
             readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}
             onToggleFold={handleToggleOutlineFold}
@@ -424,6 +459,7 @@ export function App() {
             onPromoteSubtree={handlePromoteSubtree}
             onDemoteSubtree={handleDemoteSubtree}
             onDuplicateSubtree={handleDuplicateSubtree}
+            onFocusSection={(anchor) => setFocusedSectionAnchor((prev) => prev === anchor ? undefined : anchor)}
             onCheckAllTasks={(anchor) => mutate((text) => checkAllInSection(text, anchor))}
             onUncheckAllTasks={(anchor) => mutate((text) => uncheckAllInSection(text, anchor))}
             onDeleteCompletedTasks={(anchor) => mutate((text) => deleteCompletedInSection(text, anchor))}
