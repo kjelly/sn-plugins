@@ -299,3 +299,154 @@ Writing 模式只會在「呈現結果能逐字還原成原始 Markdown」時才
 **注意事項**
 - 筆記為唯讀時，所有操作按鈕停用。
 - 在 Writing 模式打勾的任務會「消失」到這個面板——這是第 3.8 節隱藏列的配套設計。
+
+---
+
+## 7. 任務系統
+
+任務使用 GitHub Flavored Markdown（GFM）的 task list 語法，所有模式共享同一份任務資料。
+
+### 7.1 基礎語法
+
+```markdown
+- [ ] 未完成的任務
+- [x] 已完成的任務
+  - [ ] 巢狀子任務（縮排即巢狀）
+1. [x] 有序清單也能做任務
+```
+
+**操作方式（任一種都同步同一份內容）**
+
+| 位置 | 操作 |
+|------|------|
+| Writing 模式 | 點擊任務的 checkbox |
+| Source 模式 | 直接把 `[ ]` 改成 `[x]`（或反向） |
+| Mind Map | 點擊圖上任務節點的 checkbox |
+| 側邊欄 | 大綱列的 `☑` `☐`（整個區段）；Completed 面板的 `Uncheck`（取消勾選） |
+
+### 7.2 循環任務（Recurring Tasks）
+
+在任務文字中加上 `@repeat(...)` 標籤，即可讓任務變成循環任務。語法相容 Obsidian / TaskPaper 慣例。
+
+**支援的間隔寫法**（大小寫不敏感）：
+
+| 寫法 | 意義 |
+|------|------|
+| `@repeat(3d)`、`@repeat(5 days)` | 每 3 天、每 5 天 |
+| `@repeat(1w)`、`@repeat(2 weeks)` | 每週、每 2 週 |
+| `@repeat(1m)`、`@repeat(monthly)` | 每月 |
+| `@repeat(1y)`、`@repeat(yearly)` | 每年 |
+| `@repeat(daily)`、`@repeat(weekly)` | 每天、每週 |
+
+**行為規則**
+
+1. **打勾自動標記**：勾選含 `@repeat` 的任務時，自動在文字尾端附加 `@done(YYYY-MM-DD)`（今天的日期）。普通任務打勾後保持乾淨的 `- [x]`，不會加標籤。
+2. **取消自動清除**：取消勾選時，自動移除 `@done(...)` 標籤。
+3. **逾期自動重置**：每次開啟筆記時，檢查所有已完成的循環任務——若「今天 ≥ `@done` 日期 + 重複間隔」，該任務自動變回未勾選、清除 `@done`、**保留** `@repeat`。
+
+**日期計算範例**
+
+```markdown
+- [x] 澆花 @repeat(3d) @done(2026-08-20)
+```
+
+`@done` 是 8 月 20 日，間隔 3 天 → 下次到期日為 8 月 23 日。從 8 月 23 日（含）之後打開這份筆記，任務會自動重置為：
+
+```markdown
+- [ ] 澆花 @repeat(3d)
+```
+
+**完整範例**
+
+```markdown
+- [ ] 澆花 @repeat(3d)
+- [x] 每週備份 @repeat(1w) @done(2026-08-22)
+- [ ] 月度結算 @repeat(monthly)
+- [x] 普通一次性任務
+```
+
+---
+
+## 8. 模板與片段
+
+模板（Template）是完整的筆記骨架；片段（Snippet）是可重複插入的小段內容，有短觸發詞（trigger）。兩者都支援動態變數，插入時即時展開、不在筆記裡留下變數標籤。
+
+### 8.1 內建模板（5 套）
+
+| 名稱 | 分類 | 用途 |
+|------|------|------|
+| Project Plan | Project | 專案規劃：目標、里程碑、任務、風險 |
+| Knowledge Note | Knowledge | 知識筆記：摘要、核心概念、詳細筆記、參考 |
+| Research & Evaluation | Research | 調研報告：問題、方案比較矩陣、建議 |
+| Troubleshooting & Incident | Operations | 問題排查/事件報告：症狀、環境、根因、解決 |
+| Weekly Plan & Review | Planning | 週計畫：本週目標、每日任務、回顧 |
+
+### 8.2 內建片段（3 個）
+
+| 名稱 | 觸發詞 | 用途 |
+|------|--------|------|
+| Decision Record | `/decision` | 架構決策記錄（Context / Decision / Consequences） |
+| Citation / Reference | `/reference` | 引用出處（引文 + 來源連結 + 日期） |
+| CLI Command Block | `/command` | bash fenced code block（註解 + 指令） |
+
+### 8.3 Template Manager（模板與片段管理員）
+
+點任一模式工具列的 `Templates` 按鈕開啟彈窗：
+
+- **分頁**：`Templates (N)` / `Snippets (N)`，各有數量顯示。
+- **搜尋框**：依名稱／分類／描述即時過濾。
+- **新增**：`+ New Template` / `+ New Snippet` 開編輯表單（名稱、分類、描述、內容、片段另有 Trigger Shortcut）。
+- **Save Current Note**：把目前筆記的完整 Markdown 帶進「新增模板」表單，命名儲存即成為自訂模板。
+- **卡片動作**：
+  - `Insert`：插入到筆記（並關閉彈窗）。
+  - `Edit`：編輯自訂項（內建項唯讀，不可 Edit）。
+  - `Duplicate`：複製一份為自訂項（含內建項——想改內建就先 Duplicate）。
+  - `Delete`：刪除自訂項；內建項顯示為 `Hide`（隱藏不會真的刪除定義）。
+
+### 8.4 動態變數
+
+插入模板或片段時，以下變數會即時展開：
+
+| 變數 | 展開為 | 範例 |
+|------|--------|------|
+| `{{date}}` | 今天日期 `YYYY-MM-DD` | `2026-08-30` |
+| `{{time}}` | 現在時間 `HH:mm` | `14:05` |
+| `{{datetime}}` | 日期時間 `YYYY-MM-DD HH:mm` | `2026-08-30 14:05` |
+| `{{noteTitle}}` | 目前筆記第一個 H1 標題（無則 `Untitled`） | `我的專案` |
+| `{{selection}}` | 插入前選取的文字 | — |
+| `{{cursor}}` | 插入後游標停留位置 | — |
+
+### 8.5 插入方式
+
+- **Slash 選單**：Writing 模式輸入 `/` 即列出全部命令、片段（以 trigger 匹配）與模板（以名稱連字號匹配），可再輸入關鍵字過濾。
+- **Manager 內 `Insert`**：直接插入到游標位置。
+- **Source 模式插入**：內容插在游標處；`{{cursor}}` 位置會成為新的游標點。
+
+### 8.6 匯入與匯出
+
+- **匯出**：`Export JSON` 下載 `markdown-notes-plus-library.json`（含你的自訂模板、片段與隱藏內建清單）。
+- **匯入**：先在下拉選單選衝突策略，再點 `Import JSON` 選檔案：
+
+| 策略 | 行為 |
+|------|------|
+| `Keep existing` | 跳過同 ID 的項目，只新增目前沒有的 |
+| `Import as copy` | 衝突項目自動重新編號為複本（名稱加 `(Copy)`） |
+| `Replace all` | 用匯入檔**整份取代**現有庫（內建項不受影響） |
+
+### 8.7 容量限制
+
+| 項目 | 上限 |
+|------|------|
+| 單一模板內容 | 64 KB |
+| 單一片段內容 | 16 KB |
+| 整個庫 | 512 KB |
+
+管理員底部顯示 `Library size: X KB / 512 KB`。超過限制時會顯示錯誤訊息、不會截斷你的資料。
+
+### 8.8 儲存位置
+
+模板庫儲存在**瀏覽器的 localStorage**——換瀏覽器或換裝置**不會**自動同步。要搬到另一台裝置，請用 Export JSON → Import JSON。
+
+**注意事項**
+- 模板只是插入當下的複本：插入後的內容與模板再無關聯（沒有 live binding）。
+- Snippets 分頁的 `Save Selection` 按鈕目前尚未啟用（處於停用狀態），請見第 10 章。
