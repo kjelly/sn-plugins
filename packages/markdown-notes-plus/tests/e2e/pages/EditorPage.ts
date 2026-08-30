@@ -138,17 +138,35 @@ export class EditorPage {
 
   async openTasksTab(): Promise<void> {
     await this.openSidebar();
+    await expect(this.tasksTabBtn).toBeVisible();
     await this.tasksTabBtn.click();
   }
 
   async openOutlineTab(): Promise<void> {
     await this.openSidebar();
-    await this.outlineTabBtn.click();
+    // Desktop keeps Outline as the only visible sidebar panel. The tab switcher
+    // is intentionally compact-layout-only, so there is nothing to click.
+    if (await this.outlineTabBtn.isVisible()) {
+      await this.outlineTabBtn.click();
+    }
   }
 
   async openReviewTab(): Promise<void> {
     await this.openSidebar();
+    await expect(this.reviewTabBtn).toBeVisible();
     await this.reviewTabBtn.click();
+  }
+
+  async closeSidebar(): Promise<void> {
+    if (!(await this.frame.locator(".sidebar-pane.open").isVisible())) return;
+
+    const closeButton = this.frame.locator(".sidebar-close-btn:visible").first();
+    if (await closeButton.isVisible()) {
+      await closeButton.click();
+    } else {
+      await this.sidebarToggleBtn.click();
+    }
+    await expect(this.frame.locator(".sidebar-pane.open")).not.toBeVisible();
   }
 
   get writingModeButton(): Locator {
@@ -165,6 +183,10 @@ export class EditorPage {
   }
 
   async switchMode(mode: EditorMode): Promise<void> {
+    // On compact layouts the open drawer/backdrop covers the mode controls.
+    // Closing it models the real user interaction and avoids force-clicking
+    // through an overlay that Standard Notes users cannot bypass.
+    await this.closeSidebar();
     await this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first().click();
   }
 

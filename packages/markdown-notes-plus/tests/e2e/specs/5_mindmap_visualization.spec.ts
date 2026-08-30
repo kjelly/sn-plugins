@@ -56,6 +56,7 @@ test.describe("Mind Map Visualization", () => {
     await host.goto(doc, "note-mindmap-scope", false);
 
     // In Outline panel, click Section Alpha
+    await editor.openOutlineTab();
     await editor.outlineHeadings.nth(1).click();
     await expect(editor.currentSection).toContainText("Section Alpha");
 

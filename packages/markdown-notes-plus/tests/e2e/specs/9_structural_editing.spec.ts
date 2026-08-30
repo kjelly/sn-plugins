@@ -10,6 +10,7 @@ test.describe("Structural Editing & Outline Controls", () => {
     await host.goto("# Section 1\n\n## Section 2\n\nBody content\n", "doc-1", false);
 
     // Find row for Section 2
+    await editor.openOutlineTab();
     const rows = editor.outlinePanel.locator(".outline-row");
     await expect(rows).toHaveCount(2);
 
@@ -45,6 +46,7 @@ test.describe("Structural Editing & Outline Controls", () => {
 
     await host.goto("# Alpha\n\nContent A\n\n# Beta\n\nContent B\n", "doc-2", false);
 
+    await editor.openOutlineTab();
     const rows = editor.outlinePanel.locator(".outline-row");
     await expect(rows).toHaveCount(2);
 
@@ -67,6 +69,7 @@ test.describe("Structural Editing & Outline Controls", () => {
 
     await host.goto("# Item A\n\nDetails of A\n\n# Item B\n", "doc-3", false);
 
+    await editor.openOutlineTab();
     const rows = editor.outlinePanel.locator(".outline-row");
     const itemARow = rows.first();
     await itemARow.hover();
@@ -85,6 +88,7 @@ test.describe("Structural Editing & Outline Controls", () => {
 
     await host.goto("# Parent\n\n## Child 1\n\n## Child 2\n\n# Sibling\n", "doc-4", false);
 
+    await editor.openOutlineTab();
     const rows = editor.outlinePanel.locator(".outline-row");
     await expect(rows).toHaveCount(4);
 
@@ -110,6 +114,7 @@ test.describe("Structural Editing & Outline Controls", () => {
 
     await host.goto("# Chapter 1\n\n## Topic A\n\nTopic A content\n\n# Chapter 2\n", "doc-5", false);
 
+    await editor.openOutlineTab();
     const rows = editor.outlinePanel.locator(".outline-row");
     const topicARow = rows.nth(1);
     await topicARow.hover();

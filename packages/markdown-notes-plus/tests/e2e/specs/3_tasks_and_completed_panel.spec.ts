@@ -3,6 +3,8 @@ import { MockHost } from "../pages/MockHost.ts";
 import { EditorPage } from "../pages/EditorPage.ts";
 
 test.describe("Tasks and Completed Panel", () => {
+  test.use({ viewport: { width: 700, height: 900 }, hasTouch: true });
+
   test("Completed panel accurately tracks completed tasks and supports Uncheck and Delete", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
@@ -36,6 +38,7 @@ test.describe("Tasks and Completed Panel", () => {
 
     // Switch back to Writing and delete the second completed item
     await editor.switchMode("Writing");
+    await editor.openTasksTab();
     const deleteRemaining = editor.completedTaskList.first().getByRole("button", { name: "Delete" });
     await deleteRemaining.click();
 
@@ -76,6 +79,7 @@ test.describe("Tasks and Completed Panel", () => {
     await page.keyboard.press("Backspace");
     await page.keyboard.insertText("# Tasks\n\n- [ ] Todo\n- [x] Done 1\n- [x] Done 2\n");
 
+    await editor.openTasksTab();
     await expect(editor.completedCountHeading).toHaveText("Completed (2)");
 
     // Test Delete completed
@@ -116,8 +120,6 @@ test.describe("Tasks and Completed Panel", () => {
 
     await host.goto("# Project\n\nBuy milk\n", "note-task-writing", false);
 
-    await editor.openTasksTab();
-
     // Click into paragraph
     await editor.writingEditor.locator("p").click();
 
@@ -131,6 +133,7 @@ test.describe("Tasks and Completed Panel", () => {
     await checkbox.click();
 
     // Completed tasks panel detects the checked task
+    await editor.openTasksTab();
     await expect(editor.completedCountHeading).toHaveText("Completed (1)");
     // In Writing editor, completed task remains visible with checked state
     await expect(taskItem).toHaveAttribute("data-checked", "true");
@@ -148,6 +151,7 @@ test.describe("Tasks and Completed Panel", () => {
 
     // Uncheck task in Writing pane within Split mode
     await checkbox.click();
+    await editor.openTasksTab();
     await expect(editor.completedCountHeading).toHaveText("Completed (0)");
     await expect(taskItem).toHaveAttribute("data-checked", "false");
     await expect(checkbox).not.toBeChecked();

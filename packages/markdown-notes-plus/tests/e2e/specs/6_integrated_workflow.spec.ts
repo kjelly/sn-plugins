@@ -3,6 +3,8 @@ import { MockHost } from "../pages/MockHost.ts";
 import { EditorPage } from "../pages/EditorPage.ts";
 
 test.describe("Full Integrated Workflow", () => {
+  test.use({ viewport: { width: 700, height: 900 }, hasTouch: true });
+
   test("Complete multi-mode workflow: rich editing, task lifecycle, split projection, mindmap filtering, and debounced host sync", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
@@ -13,10 +15,13 @@ test.describe("Full Integrated Workflow", () => {
     // 1. Initial verification in Writing Mode
     await expect(editor.status).toHaveText("Ready");
     await expect(editor.writingPane).toBeVisible();
+    await editor.openOutlineTab();
     await expect(editor.outlineHeadings).toHaveCount(4);
+    await editor.openTasksTab();
     await expect(editor.completedCountHeading).toHaveText("Completed (2)");
     await expect(editor.footerMeta).toContainText("4 tasks");
     await expect(editor.footerMeta).toContainText("4 sections");
+    await editor.closeSidebar();
 
     // 2. Rich writing tools: Add quote in Writing Mode
     await editor.writingEditor.locator("p").last().click();
@@ -27,6 +32,7 @@ test.describe("Full Integrated Workflow", () => {
     const taskItems = editor.writingEditor.locator('li[data-item-type="task"]');
     const firstCheckbox = taskItems.first().locator('input[type="checkbox"]');
     await firstCheckbox.click();
+    await editor.openTasksTab();
     await expect(editor.completedCountHeading).toHaveText("Completed (3)");
 
     // 4. Switch to Split Mode (Writing + Mindmap)
@@ -51,6 +57,7 @@ test.describe("Full Integrated Workflow", () => {
     }, { timeout: 5000 }).not.toContain("Configure SSL certificates");
 
     // 6. Bulk Action in Completed Tasks Panel: Uncheck All
+    await editor.openTasksTab();
     await editor.uncheckAllButton.click();
     await expect(editor.completedCountHeading).toHaveText("Completed (0)");
 
@@ -60,6 +67,7 @@ test.describe("Full Integrated Workflow", () => {
     }, { timeout: 5000 }).toContain("Configure SSL certificates");
 
     // 7. Outline Section Navigation to Source Mode
+    await editor.openOutlineTab();
     await editor.outlineHeadings.nth(2).click(); // Frontend Features
     await expect(editor.sourcePane).toBeVisible();
     await expect(editor.currentSection).toContainText("Frontend Features");

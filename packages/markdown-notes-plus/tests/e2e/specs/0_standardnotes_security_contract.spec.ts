@@ -333,7 +333,18 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     // without coupling the network gate to external Standard Notes hosting.
     const themeUrl = new URL("/e2e-theme.css", page.url()).href;
     await host.setThemes([themeUrl]);
+    const themeLink = editor.frame.locator(`link.custom-theme[href="${themeUrl}"]`);
+    await expect(themeLink).toHaveCount(1);
+    await themeLink.evaluate((link) => new Promise<void>((resolve, reject) => {
+      if ((link as HTMLLinkElement).sheet) {
+        resolve();
+        return;
+      }
+      link.addEventListener("load", () => resolve(), { once: true });
+      link.addEventListener("error", () => reject(new Error("Test theme stylesheet failed to load")), { once: true });
+    }));
     await host.setThemes([]);
+    await expect(themeLink).toHaveCount(0);
 
     // 9. Debounced Save Cycle & Verification
     await editor.switchMode("Writing");

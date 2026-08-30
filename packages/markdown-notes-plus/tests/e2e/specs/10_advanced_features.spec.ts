@@ -38,19 +38,15 @@ test.describe("Advanced Features: Templates, Review, Palette, Callouts & Code Bl
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
+    // Review is a compact-sidebar tab. Exercise its actual drawer contract
+    // instead of interacting with desktop-only hidden tab controls.
+    await page.setViewportSize({ width: 700, height: 900 });
+
     // Note with heading jump and empty heading
     const markdownWithIssues = `# Project Title\n\n## Overview\n\n#### Direct H4 Jump\nBody content\n`;
     await host.goto(markdownWithIssues, "doc-diag-1", false);
 
-    // Ensure sidebar is open
-    const sidebar = editor.sidebarPane;
-    if (!(await sidebar.isVisible())) {
-      await editor.sidebarToggleBtn.click();
-    }
-
-    // Switch to Review tab in sidebar
-    const reviewTabBtn = editor.frame.locator('.sidebar-tab-btn:has-text("Review")');
-    await reviewTabBtn.click();
+    await editor.openReviewTab();
 
     // Verify Review Panel rendered
     const reviewPanel = editor.frame.locator(".review-panel");

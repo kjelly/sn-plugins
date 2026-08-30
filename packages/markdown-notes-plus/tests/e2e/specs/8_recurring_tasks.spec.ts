@@ -10,9 +10,9 @@ test.describe("Recurring Tasks with @repeat and @done", () => {
     await host.goto("# Habits\n\n- [ ] Morning run @repeat(daily)\n- [ ] Read book\n", "habits-1");
 
     const checkbox = editor.writingPane.locator(".task-checkbox").first();
+    const savePromise = host.waitForNextSave();
     await checkbox.click();
-
-    await page.waitForTimeout(500);
+    await savePromise;
     const saved = await host.getLatestSavedText();
     expect(saved).toMatch(/- \[x\] Morning run @repeat\(daily\) @done\(\d{4}-\d{2}-\d{2}\)/);
     expect(saved).toContain("- [ ] Read book");
@@ -25,9 +25,9 @@ test.describe("Recurring Tasks with @repeat and @done", () => {
     await host.goto("# Habits\n\n- [x] Morning run @repeat(7d) @done(2026-08-29)\n- [x] Read book\n", "habits-2");
 
     const checkbox = editor.writingPane.locator(".task-checkbox").first();
+    const savePromise = host.waitForNextSave();
     await checkbox.click();
-
-    await page.waitForTimeout(500);
+    await savePromise;
     const saved = await host.getLatestSavedText();
     expect(saved).toContain("- [ ] Morning run @repeat(7d)");
     expect(saved).not.toContain("@done");
@@ -67,9 +67,9 @@ test.describe("Recurring Tasks with @repeat and @done", () => {
 
     const checkbox = editor.mindmapSvg.locator('foreignObject svg[viewBox="0 -3 24 24"]').first();
     await expect(checkbox).toBeVisible();
+    const savePromise = host.waitForNextSave();
     await checkbox.click();
-
-    await page.waitForTimeout(500);
+    await savePromise;
     const saved = await host.getLatestSavedText();
     expect(saved).toMatch(/- \[x\] Weekly review @repeat\(1w\) @done\(\d{4}-\d{2}-\d{2}\)/);
   });
