@@ -450,3 +450,112 @@ Writing 模式只會在「呈現結果能逐字還原成原始 Markdown」時才
 **注意事項**
 - 模板只是插入當下的複本：插入後的內容與模板再無關聯（沒有 live binding）。
 - Snippets 分頁的 `Save Selection` 按鈕目前尚未啟用（處於停用狀態），請見第 10 章。
+
+---
+
+## 9. 多裝置同步與衝突處理
+
+Markdown Notes+ 透過 Standard Notes 的同步機制儲存筆記，多裝置同時編輯時有自動合併與衝突處理。
+
+### 9.1 自動存檔時機
+
+- 打字停止約 **300 毫秒**後自動存檔。
+- 以下情況會**立刻**強制存檔：點擊編輯器以外的位置（blur）、切到其他瀏覽器分頁（page hidden）、關閉/離開頁面（unload）。
+
+### 9.2 自動合併（3-way merge）
+
+當另一台裝置的修改經 Standard Notes 同步送達時，編輯器會把「本機版本、遠端版本、共同基底」做行級三方合併：
+
+- **兩邊改在不同行** → 自動合併成功，兩邊的修改都保留，並自動存檔。你不需要做任何事。
+- **兩邊改了同一行** → 無法自動合併，進入 9.3 的衝突處理。
+
+### 9.3 衝突橫幅
+
+無法自動合併時，畫面頂端出現紅色橫幅 **`Another device changed this note.`**，附兩個選擇：
+
+| 選項 | 後果 |
+|------|------|
+| `Keep local` | 保留本機的編輯。必要時 Standard Notes 會為遠端版建立「Conflicted Copy（衝突副本）」筆記，兩邊內容都不會遺失 |
+| `Accept remote` | 捨棄本機未存的修改，採用另一台裝置的版本 |
+
+**注意事項**
+- 處理衝突前，狀態列會顯示 `Remote update pending`。
+- 建議在訊號穩定的環境讓同步完成再離開頁面，減少衝突機率。
+
+---
+
+## 10. 注意事項與限制
+
+### 10.1 Markdown 支援範圍
+
+投影（任務、大綱、心智圖）與 Writing 模式支援常用的 GFM 子集：標題（`#` 與底線式）、清單、任務清單、表格、fenced code block、引用區塊等。它**不是完整的 CommonMark/GFM 解析器**——不支援的語法會原樣保留在筆記中，可以在 Source 模式編輯，但不會出現在大綱、任務或心智圖投影裡。
+
+### 10.2 Writing 模式的無損邊界
+
+Writing 模式只編輯「它能逐字還原」的內容。特殊內容會以 `Writing read-only` 呈現（唯讀顯示），或在你修改後自動切到 Source fallback（見第 4.3 節）。這是為了保證**永遠不破壞你的原始字元**——寧可退回 Source，也不偷改你的 Markdown。
+
+### 10.3 已知未啟用/未提供的功能
+
+| 項目 | 狀態 |
+|------|------|
+| Snippet 管理員的 `Save Selection` 按鈕 | 顯示但停用（未接線），無法使用 |
+| 模板庫跨裝置同步 | 僅存瀏覽器 localStorage；請用 JSON 匯出/匯出搬移（見 8.8） |
+| 筆記健康度診斷面板（Review） | 尚未提供 |
+| Callout 卡片（`> [!NOTE]` 語意渲染） | 尚未提供 |
+| Smart Paste（HTML 貼上清洗） | 尚未提供 |
+| 快速導航盤（Navigation Palette） | 尚未提供 |
+
+---
+
+## 附錄 A：快捷鍵總表
+
+| 快捷鍵 | 作用 | 適用範圍 |
+|--------|------|----------|
+| `Ctrl/Cmd+\` | 開關側邊欄 | 全域 |
+| `Ctrl/Cmd+B` | 粗體 | Writing |
+| `Ctrl/Cmd+I` | 斜體 | Writing |
+| `Ctrl/Cmd+E` | 行內程式碼 | Writing |
+| `Ctrl/Cmd+Shift+X` | 刪除線 | Writing |
+| `Ctrl/Cmd+K` | 插入/編輯連結（彈 URL 輸入框） | Writing |
+| `Alt+↑` / `Alt+↓` | 移動清單項目／表格列 | Writing |
+| `Alt+←` / `Alt+→` | 標題升級／降級 | Writing |
+| `Tab` / `Shift+Tab` | 清單縮排／表格導航 | Writing |
+| `Ctrl/Cmd+Click` | 開啟 Markdown 連結（新分頁） | Source |
+| `/` 後 `↑` `↓` | Slash 選單上下移動 | Writing |
+| `/` 後 `Enter` / `Tab` | 執行選取的命令 | Writing |
+| `/` 後 `Esc` | 關閉 Slash 選單 | Writing |
+
+（在 Writing 中直接點擊連結也會開新分頁；在 Mind Map 上點擊連結同樣開新分頁。）
+
+## 附錄 B：Markdown 語法速查
+
+| 語法 | 效果 |
+|------|------|
+| `# 標題` ~ `###### 標題` | 一~六級標題 |
+| `標題`（下一行 `===` 或 `---`） | 底線式一/二級標題 |
+| `**粗體**` | **粗體** |
+| `*斜體*` | *斜體* |
+| `~~刪除線~~` | ~~刪除線~~ |
+| `` `行內程式碼` `` | 行內程式碼 |
+| `- 項目` / `* 項目` / `1. 項目` | 無序/有序清單 |
+| `- [ ] 任務` / `- [x] 任務` | 未完成/已完成任務 |
+| `> 引用` | 引用區塊 |
+| ` ```lang ` … ` ``` ` | fenced code block |
+| `\| 表頭 \| 表頭 \|` + 分隔行 | 表格 |
+| `[文字](url)` | 連結 |
+| `![替代文字](url)` | 圖片 |
+| `---` | 水平分隔線 |
+| `@repeat(3d)` | 循環任務間隔（支援 `Nd/Nw/Nm/Ny/daily/weekly/monthly/yearly`，見 7.2） |
+| `@done(YYYY-MM-DD)` | 循環任務完成日期（打勾時自動加上） |
+
+## 附錄 C：狀態列訊息一覽
+
+| 訊息 | 意義 |
+|------|------|
+| `Ready` | 內容已同步，無待存變更 |
+| `Edited · save pending` | 有未存變更，等待自動存檔 |
+| `Edited · save requested; host confirmation unavailable` | 已送出存檔請求（Standard Notes 主機端不回報確認） |
+| `Remote update pending` | 另一裝置的更新正在套用中 |
+| `Writing read-only · …` | Writing 無法無損呈現此內容（附原因），請用 Source |
+| `Source fallback · edit to apply` | 修改在 Source 暫存中；在 Source 編輯一次即套用 |
+| `Locked · read-only` | 筆記已鎖定，全部唯讀 |
