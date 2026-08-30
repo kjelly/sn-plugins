@@ -22,14 +22,14 @@ test.describe("Recurring Tasks with @repeat and @done", () => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
-    await host.goto("# Habits\n\n- [x] Morning run @repeat(daily) @done(2026-08-29)\n- [x] Read book\n", "habits-2");
+    await host.goto("# Habits\n\n- [x] Morning run @repeat(7d) @done(2026-08-29)\n- [x] Read book\n", "habits-2");
 
     const checkbox = editor.writingPane.locator(".task-checkbox").first();
     await checkbox.click();
 
     await page.waitForTimeout(500);
     const saved = await host.getLatestSavedText();
-    expect(saved).toContain("- [ ] Morning run @repeat(daily)");
+    expect(saved).toContain("- [ ] Morning run @repeat(7d)");
     expect(saved).not.toContain("@done");
     expect(saved).toContain("- [x] Read book");
   });

@@ -148,7 +148,6 @@ export function buildFoldingDecorations(
         Decoration.widget(pos + 1, (view: EditorView) => {
           const btn = document.createElement("span");
           btn.className = `writing-fold-gutter-btn ${isFolded ? "is-folded" : "is-expanded"}`;
-          btn.textContent = isFolded ? "▸" : "▾";
           btn.title = isFolded ? "Expand section" : "Collapse section";
           btn.contentEditable = "false";
           btn.addEventListener("mousedown", (e) => {

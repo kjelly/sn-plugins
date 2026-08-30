@@ -507,16 +507,18 @@ export function configureWritingEditor(editor: Editor, {
           ),
         },
       }));
+    })
+    .use(writingCommonmark)
+    .use(gfm)
+    .use(history)
+    .use(listener)
+    .config((ctx) => {
       ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, markdown));
     })
     .use((ctx) => async () => {
       await ctx.wait(SerializerReady);
       if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
     })
-    .use(writingCommonmark)
-    .use(gfm)
-    .use(history)
-    .use(listener)
     .use($prose(() => writingOriginPlugin))
     .use($prose(() => createWritingFoldingPlugin()))
     .use($prose(() => createWritingShortcutsPlugin()))

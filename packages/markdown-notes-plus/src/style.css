@@ -295,6 +295,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   opacity: 0.5;
   transition: opacity 0.15s ease;
 }
+.writing-fold-gutter-btn.is-expanded::before {
+  content: "▾";
+}
+.writing-fold-gutter-btn.is-folded::before {
+  content: "▸";
+}
 .writing-fold-gutter-btn:hover {
   opacity: 1;
   color: var(--editor-accent);
