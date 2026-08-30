@@ -61,3 +61,7 @@ jobs:
           python3 scripts/build.py \
             --owner test-owner \
             --base-url https://example.invalid/sn-plugins
+
+      - name: Verify production editor artifacts
+        working-directory: packages/markdown-notes-plus
+        run: npm run test:artifacts

@@ -1,20 +1,28 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
+import { EDITOR_CSP_POLICY } from "./src/security/csp";
 
-const RESTRICTIVE_CSP_HEADER =
-  "style-src * 'unsafe-hashes' 'nonce-sn-editor-csp-nonce' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='; connect-src https://api.standardnotes.com https://assets.standardnotes.com https://sync.standardnotes.org https://files.standardnotes.com ws://sockets.standardnotes.com https://raw.githubusercontent.com https://listed.to blob:;";
+const editorCspMeta = `<meta http-equiv="Content-Security-Policy" content="${EDITOR_CSP_POLICY}">`;
+
+const editorCspMetaPlugin = {
+  name: "editor-csp-meta",
+  transformIndexHtml(html: string, context: { filename?: string }) {
+    if (context.filename && !context.filename.endsWith("/index.html") && context.filename !== "index.html") return html;
+    return html.replace("<head>", `<head>\n    ${editorCspMeta}`);
+  },
+};
 
 export default defineConfig({
   root: "src",
   base: "./",
-  plugins: [react()],
+  plugins: [react(), editorCspMetaPlugin],
   server: {
     cors: true,
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Private-Network": "true",
-      "Content-Security-Policy": RESTRICTIVE_CSP_HEADER,
+      "Content-Security-Policy": EDITOR_CSP_POLICY,
     },
   },
   preview: {
@@ -22,7 +30,7 @@ export default defineConfig({
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Private-Network": "true",
-      "Content-Security-Policy": RESTRICTIVE_CSP_HEADER,
+      "Content-Security-Policy": EDITOR_CSP_POLICY,
     },
   },
   build: {
@@ -36,4 +44,3 @@ export default defineConfig({
     },
   },
 });
-

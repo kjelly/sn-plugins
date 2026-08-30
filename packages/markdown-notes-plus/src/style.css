@@ -456,6 +456,16 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .close-btn:hover {
   color: var(--editor-fg);
 }
+.session-only-warning {
+  margin: 10px 16px 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, #d29922 35%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, #d29922 10%, var(--editor-bg));
+  color: var(--editor-fg);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
 .template-error-banner {
   background: color-mix(in srgb, #b13d3d 15%, var(--editor-bg));
   color: #b13d3d;
