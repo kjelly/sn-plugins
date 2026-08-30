@@ -585,7 +585,7 @@ type PendingLinkDialog = {
   bookmark: WritingSelectionBookmark;
   range?: SlashMatch;
   generation: number;
-  documentGeneration: number;
+  documentText: string;
 };
 
 /** Own the complete pre-create Writing editor composition. */
@@ -729,7 +729,7 @@ export function WritingEditor({
       bookmark: view.state.selection.getBookmark(),
       range,
       generation: generationRef.current,
-      documentGeneration: documentGenerationRef.current,
+      documentText: view.state.doc.textContent,
     });
   }, []);
   onRequestLinkRef.current = requestLink;
@@ -862,12 +862,13 @@ export function WritingEditor({
       onConfirm={(href) => {
         const pending = linkDialog;
         setLinkDialog(undefined);
-        if (!pending || pending.generation !== generationRef.current || pending.documentGeneration !== documentGenerationRef.current) return;
+        if (!pending || pending.generation !== generationRef.current) return;
         const editor = editorRef.current;
         if (!editor) return;
         editor.action((ctx) => {
           const view = ctx.get(editorViewCtx);
           if (!canApplyWritingLink(view, { readOnlyRef, capabilityRef })) return;
+          if (view.state.doc.textContent !== pending.documentText) return;
           let selection;
           try {
             selection = pending.bookmark.resolve(view.state.doc);

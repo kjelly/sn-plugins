@@ -156,8 +156,10 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await editor.writingLinkButton.click();
     await expect(dialog).toBeVisible();
     await input.fill("https://confirm.example/selected");
+    const savePromise = host.waitForNextSave(4000);
     await dialog.getByRole("button", { name: "Done", exact: true }).click();
     await expect(dialog).not.toBeVisible();
+    await savePromise;
     await editor.switchMode("Source");
     await expect(editor.sourceEditor).toContainText("[Selected text](https://confirm.example/selected)");
   });
