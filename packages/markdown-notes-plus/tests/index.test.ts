@@ -10,7 +10,11 @@ function assertEquals<T>(actual: T, expected: T, message = "values are not equal
 
 /// <reference lib="deno.ns" />
 
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
+declare const Deno: {
+  test(name: string, fn: () => void | Promise<void>): void;
+  readDir(path: string | URL): AsyncIterable<{ isFile: boolean; isDirectory: boolean; name: string }>;
+  readTextFile(path: string | URL): Promise<string>;
+};
 
 import {
   analyzeMarkdown,
@@ -980,4 +984,3 @@ Deno.test("CanonicalDocument - flags conflict on overlapping remote update when 
   assertEquals(doc.pendingRemote, "# Header\n\nSection A (remote)\n");
   assertEquals(doc.text, "# Header\n\nSection A (local)\n");
 });
-

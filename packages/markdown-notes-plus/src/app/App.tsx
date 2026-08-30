@@ -48,6 +48,12 @@ import {
   extractNoteTitle,
 } from "../templates/TemplateEngine.ts";
 import { TemplateManagerModal } from "../templates/TemplateManagerModal.tsx";
+import {
+  analyzeNoteHealth,
+  applyDiagnosticAutoFix,
+  applyAllSafeAutoFixes,
+} from "../review/ReviewDiagnostics.ts";
+import { ReviewPanel } from "../review/ReviewPanel.tsx";
 
 type Mode = "writing" | "split" | "source" | "mindmap";
 type MindMapScope = "entire-note" | "current-section";
@@ -207,6 +213,9 @@ export function App() {
   const writingVisible = mode === "writing" || mode === "split";
   const bridgeState = bridge.getState();
 
+  const [sidebarTab, setSidebarTab] = useState<"outline" | "review" | "tasks">("outline");
+  const reviewReport = useMemo(() => analyzeNoteHealth(snapshot.text, analysis), [snapshot.text, analysis]);
+
   const handleSaveLibrary = useCallback((next: InsertLibrary) => {
     preferenceStorage.current.saveLibrary(next);
     setLibrary(next);
@@ -354,6 +363,12 @@ export function App() {
     const result = command(canonical.text);
     edit(result.markdown, result.changeSet);
   };
+  const handleAutoFix = useCallback((issueId: string) => {
+    mutate((text) => applyDiagnosticAutoFix(text, issueId));
+  }, []);
+  const handleFixAll = useCallback(() => {
+    mutate((text) => applyAllSafeAutoFixes(text));
+  }, []);
   const toggleWritingTask = (ordinal: number, renderedMarkdown?: string) => {
     if (!appLifecycle.canApplyLocal()) return;
     const source = renderedMarkdown ?? canonical.text;
@@ -507,79 +522,117 @@ export function App() {
       {mode !== "mindmap" ? <>
         {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" /> : null}
         <aside className={`sidebar-pane pane ${sidebarOpen ? "open" : "collapsed"}`} aria-label="Sidebar inspector">
-          <div className="sidebar-header"><span className="sidebar-title">Inspector</span><button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">✕</button></div>
-          <OutlinePanel
-            analysis={analysis}
-            activeSectionAnchor={activeSectionAnchor}
-            focusedSectionAnchor={focusedSectionAnchor}
-            collapsedAnchors={collapsedOutlineAnchors}
-            readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}
-            onToggleFold={handleToggleOutlineFold}
-            onCollapseAll={handleCollapseAllOutline}
-            onExpandAll={handleExpandAllOutline}
-            onSelectHeading={focusHeading}
-            onMoveSubtree={handleMoveSubtree}
-            onMoveSubtreeBefore={handleMoveSubtreeBefore}
-            onMoveSubtreeAfter={handleMoveSubtreeAfter}
-            onPromoteSubtree={handlePromoteSubtree}
-            onDemoteSubtree={handleDemoteSubtree}
-            onDuplicateSubtree={handleDuplicateSubtree}
-            onFocusSection={(anchor) => setFocusedSectionAnchor((prev) => prev === anchor ? undefined : anchor)}
-            onCheckAllTasks={(anchor) => mutate((text) => checkAllInSection(text, anchor))}
-            onUncheckAllTasks={(anchor) => mutate((text) => uncheckAllInSection(text, anchor))}
-            onDeleteCompletedTasks={(anchor) => mutate((text) => deleteCompletedInSection(text, anchor))}
-          />
-          <section className="tasks-panel pane-section" aria-label="Completed tasks">
-            <div className="panel-heading">
-              <h2>Completed ({tasks.completed.length})</h2>
-              {tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}
+          <div className="sidebar-header">
+            <div className="sidebar-tab-switcher">
+              <button
+                type="button"
+                className={`sidebar-tab-btn ${sidebarTab === "outline" ? "active" : ""}`}
+                onClick={() => setSidebarTab("outline")}
+              >
+                Outline
+              </button>
+              <button
+                type="button"
+                className={`sidebar-tab-btn ${sidebarTab === "review" ? "active" : ""}`}
+                onClick={() => setSidebarTab("review")}
+              >
+                Review {reviewReport.issues.length > 0 ? `(${reviewReport.issues.length})` : ""}
+              </button>
+              <button
+                type="button"
+                className={`sidebar-tab-btn ${sidebarTab === "tasks" ? "active" : ""}`}
+                onClick={() => setSidebarTab("tasks")}
+              >
+                Tasks {tasks.completed.length > 0 ? `(${tasks.completed.length})` : ""}
+              </button>
             </div>
-            {!collapsed && tasks.completed.length ? (
-              <>
-                {completedGroups.map((group) => (
-                  <div key={group.title} className="task-group">
-                    <div className="task-group-header">
-                      <span className="task-group-title">📁 {group.title} ({group.tasks.length})</span>
-                      <div className="task-group-actions">
-                        <button
-                          disabled={snapshot.locked}
-                          title="Uncheck all in this group"
-                          onClick={() => mutate((text) => uncheckAllInHeadingPath(text, group.headingPath))}
-                        >
-                          Uncheck
-                        </button>
-                        <button
-                          disabled={snapshot.locked}
-                          title="Delete all in this group"
-                          onClick={() => mutate((text) => deleteCompletedInHeadingPath(text, group.headingPath))}
-                        >
-                          Delete
-                        </button>
+            <button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">✕</button>
+          </div>
+          {sidebarTab === "outline" ? (
+            <OutlinePanel
+              analysis={analysis}
+              activeSectionAnchor={activeSectionAnchor}
+              focusedSectionAnchor={focusedSectionAnchor}
+              collapsedAnchors={collapsedOutlineAnchors}
+              readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}
+              onToggleFold={handleToggleOutlineFold}
+              onCollapseAll={handleCollapseAllOutline}
+              onExpandAll={handleExpandAllOutline}
+              onSelectHeading={focusHeading}
+              onMoveSubtree={handleMoveSubtree}
+              onMoveSubtreeBefore={handleMoveSubtreeBefore}
+              onMoveSubtreeAfter={handleMoveSubtreeAfter}
+              onPromoteSubtree={handlePromoteSubtree}
+              onDemoteSubtree={handleDemoteSubtree}
+              onDuplicateSubtree={handleDuplicateSubtree}
+              onFocusSection={(anchor) => setFocusedSectionAnchor((prev) => prev === anchor ? undefined : anchor)}
+              onCheckAllTasks={(anchor) => mutate((text) => checkAllInSection(text, anchor))}
+              onUncheckAllTasks={(anchor) => mutate((text) => uncheckAllInSection(text, anchor))}
+              onDeleteCompletedTasks={(anchor) => mutate((text) => deleteCompletedInSection(text, anchor))}
+            />
+          ) : null}
+          {sidebarTab === "review" ? (
+            <ReviewPanel
+              report={reviewReport}
+              readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}
+              onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
+              onAutoFix={handleAutoFix}
+              onFixAll={handleFixAll}
+            />
+          ) : null}
+          {sidebarTab === "tasks" ? (
+            <section className="tasks-panel pane-section" aria-label="Completed tasks">
+              <div className="panel-heading">
+                <h2>Completed ({tasks.completed.length})</h2>
+                {tasks.completed.length ? <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>{collapsed ? "Show" : "Hide"}</button> : null}
+              </div>
+              {!collapsed && tasks.completed.length ? (
+                <>
+                  {completedGroups.map((group) => (
+                    <div key={group.title} className="task-group">
+                      <div className="task-group-header">
+                        <span className="task-group-title">📁 {group.title} ({group.tasks.length})</span>
+                        <div className="task-group-actions">
+                          <button
+                            disabled={snapshot.locked}
+                            title="Uncheck all in this group"
+                            onClick={() => mutate((text) => uncheckAllInHeadingPath(text, group.headingPath))}
+                          >
+                            Uncheck
+                          </button>
+                          <button
+                            disabled={snapshot.locked}
+                            title="Delete all in this group"
+                            onClick={() => mutate((text) => deleteCompletedInHeadingPath(text, group.headingPath))}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
+                      <ul className="task-group-list">
+                        {group.tasks.map((task) => (
+                          <li key={`${task.from}:${task.checkboxOffset}`}>
+                            <span className="task-item-label">
+                              <span className="task-done-badge">✓</span>
+                              <span className="task-text-body">{task.text}</span>
+                            </span>
+                            <div className="task-actions">
+                              <button disabled={snapshot.locked} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button>
+                              <button disabled={snapshot.locked} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <ul className="task-group-list">
-                      {group.tasks.map((task) => (
-                        <li key={`${task.from}:${task.checkboxOffset}`}>
-                          <span className="task-item-label">
-                            <span className="task-done-badge">✓</span>
-                            <span className="task-text-body">{task.text}</span>
-                          </span>
-                          <div className="task-actions">
-                            <button disabled={snapshot.locked} onClick={() => mutate((text) => toggleTask(text, task))}>Uncheck</button>
-                            <button disabled={snapshot.locked} onClick={() => mutate((text) => deleteTask(text, task))}>Delete</button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                  ))}
+                  <div className="actions">
+                    <button disabled={snapshot.locked} onClick={() => mutate(uncheckAll)}>Uncheck all</button>
+                    <button disabled={snapshot.locked} onClick={() => mutate(deleteCompleted)}>Delete completed</button>
                   </div>
-                ))}
-                <div className="actions">
-                  <button disabled={snapshot.locked} onClick={() => mutate(uncheckAll)}>Uncheck all</button>
-                  <button disabled={snapshot.locked} onClick={() => mutate(deleteCompleted)}>Delete completed</button>
-                </div>
-              </>
-            ) : null}
-          </section>
+                </>
+              ) : null}
+            </section>
+          ) : null}
         </aside>
       </> : null}
     </div>
