@@ -1,13 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { MockHost } from "../pages/MockHost.ts";
 import { EditorPage } from "../pages/EditorPage.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
-
-const RESTRICTIVE_CSP_HEADER = [
-  "style-src * 'unsafe-hashes' 'nonce-sn-editor-csp-nonce' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='",
-  "connect-src https://api.standardnotes.com https://assets.standardnotes.com https://sync.standardnotes.org https://files.standardnotes.com ws://sockets.standardnotes.com https://raw.githubusercontent.com https://listed.to blob:",
-].join("; ");
 
 interface SecurityAudit {
   editorPageErrors: string[];
@@ -20,16 +15,82 @@ interface SecurityAudit {
     url: string;
     failureText: string;
   }>;
-  hostErrors: string[];
+  editorCspHeaders: string[];
 }
 
-function setupSecurityAuditor(page: import("@playwright/test").Page): SecurityAudit {
+function isEditorFrameUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname;
+    return pathname.endsWith("/index.html") || pathname.includes("/assets/") || pathname.endsWith("/main.tsx");
+  } catch {
+    return false;
+  }
+}
+
+function isEditorFrame(frame: import("@playwright/test").Frame): boolean {
+  return frame.parentFrame() !== null && isEditorFrameUrl(frame.url());
+}
+
+async function setupSecurityAuditor(page: Page): Promise<SecurityAudit> {
   const audit: SecurityAudit = {
     editorPageErrors: [],
     editorCspViolations: [],
     editorFailedRequests: [],
-    hostErrors: [],
+    editorCspHeaders: [],
   };
+
+  // pageerror does not expose a Frame. Record errors inside the child frame
+  // before app code runs so host-frame failures cannot be attributed to the
+  // editor by accident.
+  await page.exposeBinding("__snEditorSecurityEvent", (source, event: {
+    type: "error" | "unhandledrejection" | "csp";
+    message?: string;
+    blockedURI?: string;
+    violatedDirective?: string;
+    originalPolicy?: string;
+  }) => {
+    if (!isEditorFrame(source.frame)) return;
+
+    if (event.type === "csp") {
+      audit.editorCspViolations.push({
+        blockedURI: event.blockedURI ?? "",
+        violatedDirective: event.violatedDirective ?? "",
+        originalPolicy: event.originalPolicy ?? "",
+      });
+      return;
+    }
+    audit.editorPageErrors.push(event.message ?? event.type);
+  });
+
+  await page.addInitScript(() => {
+    if (self.parent === self) return;
+
+    const report = (event: Record<string, string>) => {
+      void (self as unknown as { __snEditorSecurityEvent?: (value: Record<string, string>) => Promise<void> })
+        .__snEditorSecurityEvent?.(event);
+    };
+
+    self.addEventListener("error", (event) => {
+      report({
+        type: "error",
+        message: event.error instanceof Error ? (event.error.stack ?? event.error.message) : event.message,
+      });
+    });
+    self.addEventListener("unhandledrejection", (event) => {
+      report({
+        type: "unhandledrejection",
+        message: event.reason instanceof Error ? (event.reason.stack ?? event.reason.message) : String(event.reason),
+      });
+    });
+    self.addEventListener("securitypolicyviolation", (event) => {
+      report({
+        type: "csp",
+        blockedURI: event.blockedURI,
+        violatedDirective: event.violatedDirective,
+        originalPolicy: event.originalPolicy,
+      });
+    });
+  });
 
   page.on("pageerror", (error) => {
     const message = error.message || String(error);
@@ -43,8 +104,6 @@ function setupSecurityAuditor(page: import("@playwright/test").Page): SecurityAu
 
     if (isEditor) {
       audit.editorPageErrors.push(message);
-    } else {
-      audit.hostErrors.push(message);
     }
   });
 
@@ -53,24 +112,9 @@ function setupSecurityAuditor(page: import("@playwright/test").Page): SecurityAu
     const type = msg.type();
     const location = msg.location();
 
-    const isCsp =
-      text.includes("Content Security Policy") ||
-      text.includes("violates the following Content Security Policy") ||
-      text.includes("Refused to apply inline style") ||
-      text.includes("Refused to connect to");
+    const isEditorLocation = isEditorFrameUrl(location.url);
 
-    const isEditorLocation =
-      location.url.includes("index.html") ||
-      location.url.includes("/src/") ||
-      location.url.includes("/assets/");
-
-    if (isCsp && isEditorLocation) {
-      audit.editorCspViolations.push({
-        blockedURI: location.url,
-        violatedDirective: text,
-        originalPolicy: RESTRICTIVE_CSP_HEADER,
-      });
-    } else if (type === "error" && isEditorLocation) {
+    if (type === "error" && isEditorLocation) {
       // Catch SecurityError or storage access errors in console
       if (text.includes("SecurityError") || text.includes("localStorage") || text.includes("sessionStorage")) {
         audit.editorPageErrors.push(text);
@@ -88,14 +132,7 @@ function setupSecurityAuditor(page: import("@playwright/test").Page): SecurityAu
       return;
     }
 
-    const isEditorResource =
-      url.includes("/src/") ||
-      url.includes("/assets/") ||
-      url.includes("index.html") ||
-      url.startsWith("data:") ||
-      url.startsWith("blob:");
-
-    if (isEditorResource) {
+    if (isEditorFrame(request.frame())) {
       audit.editorFailedRequests.push({
         url,
         failureText: errorText,
@@ -103,12 +140,31 @@ function setupSecurityAuditor(page: import("@playwright/test").Page): SecurityAu
     }
   });
 
+  page.on("response", (response) => {
+    // The mock host is test-host.html, so its sole index.html response is the
+    // editor document. At response time Playwright may still report the
+    // frame's prior URL, hence URL attribution is deliberately used here.
+    if (new URL(response.url()).pathname.endsWith("/index.html")) {
+      const csp = response.headers()["content-security-policy"];
+      if (csp) audit.editorCspHeaders.push(csp);
+    }
+  });
+
   return audit;
+}
+
+async function expectSecurityAuditClean(audit: SecurityAudit): Promise<void> {
+  // Allow events forwarded from the sandboxed frame to reach Playwright before
+  // asserting. This keeps the gate deterministic without observing host noise.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(audit.editorPageErrors, "editor frame must have no uncaught errors").toEqual([]);
+  expect(audit.editorCspViolations, "editor frame must have no CSP violations").toEqual([]);
+  expect(audit.editorFailedRequests, "editor frame must have no failed requests").toEqual([]);
 }
 
 test.describe("Standard Notes Security Contract & Integrity Gate", () => {
   test("P0: SN Sandbox Contract - Editor initializes and runs with opaque origin and zero SecurityError", async ({ page }) => {
-    const audit = setupSecurityAuditor(page);
+    const audit = await setupSecurityAuditor(page);
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
@@ -132,16 +188,18 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
       }
       return { threw, hasApp: Boolean(document.getElementById("app")) };
     });
+    expect(storageTestResult.threw).toBe(true);
     expect(storageTestResult.hasApp).toBe(true);
 
-    // Assert zero editor errors
-    expect(audit.editorPageErrors).toHaveLength(0);
-    expect(audit.editorCspViolations).toHaveLength(0);
-    expect(audit.editorFailedRequests).toHaveLength(0);
+    expect(audit.editorCspHeaders).toHaveLength(1);
+    expect(audit.editorCspHeaders[0]).toContain("style-src");
+    expect(audit.editorCspHeaders[0]).toContain("connect-src");
+    expect(audit.editorCspHeaders[0]).not.toContain("unsafe-inline");
+    await expectSecurityAuditClean(audit);
   });
 
   test("P0: CSP Runtime Test - Full feature activation with zero CSP violations and zero page errors", async ({ page }) => {
-    const audit = setupSecurityAuditor(page);
+    const audit = await setupSecurityAuditor(page);
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
@@ -166,7 +224,52 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     await host.goto(initialMarkdown, "sec-full-activation", false);
     await expect(editor.status).toHaveText("Ready");
 
-    // 2. Writing Mode - Formatting commands & typing
+    // 2. Template manager - create, edit, import, and export while storage
+    // APIs are denied by the opaque-origin sandbox.
+    const templatesButton = editor.frame.getByRole("button", { name: "Templates" });
+    await templatesButton.click();
+    const templateModal = editor.frame.locator(".modal-backdrop");
+    await expect(templateModal).toBeVisible();
+    await templateModal.getByRole("button", { name: "+ New Template" }).click();
+    const templateForm = templateModal.locator(".template-edit-form");
+    await templateForm.locator('input[type="text"]').nth(0).fill("Sandbox Template");
+    await templateForm.locator("textarea").fill("# Sandbox template\n\n{{cursor}}");
+    await templateForm.getByRole("button", { name: "Save Template" }).click();
+
+    const customTemplateCard = templateModal.locator(".template-card").filter({ hasText: "Sandbox Template" });
+    await expect(customTemplateCard).toBeVisible();
+    await customTemplateCard.getByRole("button", { name: "Edit" }).click();
+    await templateForm.locator('input[type="text"]').nth(0).fill("Edited Sandbox Template");
+    await templateForm.getByRole("button", { name: "Save Template" }).click();
+    await expect(templateModal.getByText("Edited Sandbox Template", { exact: true })).toBeVisible();
+
+    const importedLibrary = JSON.stringify({
+      schemaVersion: 1,
+      templates: [{
+        id: "imported-sandbox-template",
+        name: "Imported Sandbox Template",
+        category: "Security",
+        content: "Imported content",
+        createdAt: "2026-08-30T00:00:00.000Z",
+        updatedAt: "2026-08-30T00:00:00.000Z",
+      }],
+      snippets: [],
+      hiddenBuiltins: [],
+    });
+    await templateModal.locator('input[type="file"]').setInputFiles({
+      name: "sandbox-library.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(importedLibrary),
+    });
+    await expect(templateModal.getByText("Imported Sandbox Template", { exact: true })).toBeVisible();
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      templateModal.getByRole("button", { name: "Export JSON" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe("markdown-notes-plus-library.json");
+    await templateModal.getByRole("button", { name: "Close modal" }).click();
+
+    // 3. Writing Mode - Formatting commands & typing
     await editor.writingEditor.click();
     await page.keyboard.press("End");
     await page.keyboard.type("\n\nAppended writing text.");
@@ -177,7 +280,7 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     await editor.writingCodeButton.click();
     await editor.writingDividerButton.click();
 
-    // 3. Source Mode - CM6 editor & search panel
+    // 4. Source Mode - CM6 editor & search panel
     await editor.switchMode("Source");
     await expect(editor.sourceEditor).toBeVisible();
     await editor.sourceEditor.click();
@@ -185,7 +288,7 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     await editor.sourceSearchButton.click();
     await expect(editor.sourceSearchPanel).toBeVisible();
 
-    // 4. Sidebar Inspector & Outline Operations
+    // 5. Sidebar Inspector & Outline Operations
     const sidebarToggle = editor.frame.locator(".sidebar-toggle-btn:visible").first();
     if (await sidebarToggle.isVisible()) {
       await sidebarToggle.click();
@@ -211,7 +314,7 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
       }
     }
 
-    // 5. Mind Map Mode - Rendering, filters, scopes, and interactive task toggle
+    // 6. Mind Map Mode - Rendering, filters, scopes, and interactive task toggle
     await editor.switchMode("Mindmap");
     await expect(editor.mindmapSvg).toBeVisible();
     // Exercise filter change
@@ -220,16 +323,19 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     // Exercise scope change
     await editor.mindmapScopeSelect.selectOption("entire-note");
 
-    // 6. Split Mode
+    // 7. Split Mode
     await editor.switchMode("Split");
     await expect(editor.mindmapSvg).toBeVisible();
     await expect(editor.writingEditor).toBeVisible();
 
-    // 7. Theme Switching
-    await host.setThemes(["https://assets.standardnotes.com/themes/dark.css"]);
+    // 8. Theme Switching
+    // Use a local stylesheet fixture so this test verifies the theme lifecycle
+    // without coupling the network gate to external Standard Notes hosting.
+    const themeUrl = new URL("/e2e-theme.css", page.url()).href;
+    await host.setThemes([themeUrl]);
     await host.setThemes([]);
 
-    // 8. Debounced Save Cycle & Verification
+    // 9. Debounced Save Cycle & Verification
     await editor.switchMode("Writing");
     const savePromise = host.waitForNextSave(4000);
     await editor.writingEditor.click();
@@ -239,10 +345,14 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     const latestSaved = await host.getLatestSavedText();
     expect(latestSaved).toContain("Final verified text.");
 
-    // 9. Assert strict zero violations
-    expect(audit.editorPageErrors).toEqual([]);
-    expect(audit.editorCspViolations).toEqual([]);
-    expect(audit.editorFailedRequests).toEqual([]);
+    // Code-block copy uses a temporary textarea when Clipboard API is not
+    // available. Exercise that CSP-sensitive fallback with a loaded block.
+    await host.setNote("# Copy fallback\n\n```ts\nconst securityContract = true;\n```\n", "sec-code-copy", false);
+    const codeCopyButton = editor.writingEditor.locator(".btn-code-copy");
+    await expect(codeCopyButton).toBeVisible();
+    await codeCopyButton.click();
+
+    await expectSecurityAuditClean(audit);
   });
 
   test("P0: Production Bundle Static Security Audit - No WASM, octet-stream, or localStorage leaks", () => {

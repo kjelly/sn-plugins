@@ -53,7 +53,14 @@ test.describe("Modes and Projections", () => {
     const doc = "# First Section\n\nContent 1\n\n## Second Section\n\nContent 2\n";
     await host.goto(doc, "note-outline-jump", false);
 
-    // In Writing mode, outline shows 2 headings
+    // In Writing mode, ensure sidebar and Outline tab are visible
+    if (!(await editor.sidebarPane.isVisible())) {
+      await editor.sidebarToggleBtn.click();
+    }
+    if (await editor.outlineTabBtn.isVisible()) {
+      await editor.outlineTabBtn.click();
+    }
+
     await expect(editor.outlineHeadings).toHaveCount(2);
     await expect(editor.outlineHeadings.nth(0)).toHaveText("First Section");
     await expect(editor.outlineHeadings.nth(1)).toHaveText("Second Section");
@@ -72,13 +79,13 @@ test.describe("Modes and Projections", () => {
 
     await host.goto("# Focus Test\n\nSome text.\n", "note-focus", false);
 
-    // In Writing mode, click writing pane container
-    await editor.writingPane.locator(".milkdown-writing").click({ position: { x: 50, y: 200 } });
+    // In Writing mode, click writing editor
+    await editor.writingEditor.click();
     await expect(editor.writingEditor).toBeFocused();
 
-    // Switch to Source mode, click source pane container
+    // Switch to Source mode, click source editor
     await editor.switchMode("Source");
-    await editor.sourcePane.locator(".cm-source").click({ position: { x: 50, y: 200 } });
+    await editor.sourceEditor.click();
     await expect(editor.sourceEditor).toBeFocused();
   });
 

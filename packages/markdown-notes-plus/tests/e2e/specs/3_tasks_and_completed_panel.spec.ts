@@ -10,6 +10,9 @@ test.describe("Tasks and Completed Panel", () => {
     const doc = "# Task List\n\n- [ ] Pending item\n- [x] Finished item 1\n- [x] Finished item 2\n";
     await host.goto(doc, "note-tasks-1", false);
 
+    // Switch to Tasks tab
+    await editor.openTasksTab();
+
     // Verify initial Completed count
     await expect(editor.completedCountHeading).toHaveText("Completed (2)");
     await expect(editor.completedTaskList).toHaveCount(2);
@@ -53,6 +56,8 @@ test.describe("Tasks and Completed Panel", () => {
     const doc = "# Tasks\n\n- [ ] Todo\n- [x] Done 1\n- [x] Done 2\n- [x] Done 3\n";
     await host.goto(doc, "note-tasks-bulk", false);
 
+    await editor.openTasksTab();
+
     await expect(editor.completedCountHeading).toHaveText("Completed (3)");
 
     // Test Uncheck all
@@ -89,6 +94,8 @@ test.describe("Tasks and Completed Panel", () => {
 
     await host.goto("# Note\n\n- [x] Complete task\n", "note-collapse", false);
 
+    await editor.openTasksTab();
+
     await expect(editor.completedTaskList).toBeVisible();
     await expect(editor.tasksCollapseButton).toHaveText("Hide");
 
@@ -108,6 +115,8 @@ test.describe("Tasks and Completed Panel", () => {
     const editor = new EditorPage(page);
 
     await host.goto("# Project\n\nBuy milk\n", "note-task-writing", false);
+
+    await editor.openTasksTab();
 
     // Click into paragraph
     await editor.writingEditor.locator("p").click();
@@ -159,6 +168,7 @@ test.describe("Tasks and Completed Panel", () => {
     await host.goto(doc, "note-tasks-section-batch", false);
 
     // 1. Verify Outline displays section badges
+    await editor.openOutlineTab();
     const outlineItems = editor.outlinePanel.locator("ol li");
     await expect(outlineItems).toHaveCount(2);
 
@@ -172,11 +182,16 @@ test.describe("Tasks and Completed Panel", () => {
     const checkAllSprintA = outlineItems.nth(0).locator('.section-task-actions button[title="Check all in this section"]');
     await checkAllSprintA.click();
 
-    // Verify all tasks in Sprint A are checked -> Total completed is 4
+    // Switch to Tasks tab to verify total completed is 4
+    await editor.openTasksTab();
     await expect(editor.completedCountHeading).toHaveText("Completed (4)");
+
+    // Switch back to Outline tab to check badge
+    await editor.openOutlineTab();
     await expect(sprintABadge).toHaveText("2/2");
 
     // 3. Test grouped tasks panel batch action: Uncheck Sprint A group
+    await editor.openTasksTab();
     const sprintAGroup = editor.tasksPanel.locator('.task-group:has-text("Sprint A")');
     await expect(sprintAGroup).toBeVisible();
     const uncheckSprintAGroupBtn = sprintAGroup.locator('.task-group-actions button[title="Uncheck all in this group"]');
@@ -184,14 +199,20 @@ test.describe("Tasks and Completed Panel", () => {
 
     // Completed decreases to 2 (Sprint B only)
     await expect(editor.completedCountHeading).toHaveText("Completed (2)");
+
+    // Switch back to Outline tab to check badge
+    await editor.openOutlineTab();
     await expect(sprintABadge).toHaveText("0/2");
 
     // 4. Test Outline section batch action: Delete completed in Sprint B
     const deleteCompletedSprintB = outlineItems.nth(1).locator('.section-task-actions button.delete-btn');
     await deleteCompletedSprintB.click();
 
-    // Completed decreases to 0
+    // Switch to Tasks tab to check count
+    await editor.openTasksTab();
     await expect(editor.completedCountHeading).toHaveText("Completed (0)");
+
+    await editor.openOutlineTab();
     await expect(outlineItems.nth(1).locator(".section-task-badge")).toHaveCount(0);
 
     // Verify in Source mode
