@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root/packages/markdown-notes-plus"
+
+# Commits must validate the exact production artifact, under the Standard
+# Notes sandbox/CSP contract, in both supported browsers.
+npm run test:e2e:release

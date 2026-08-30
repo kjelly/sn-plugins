@@ -20,6 +20,8 @@
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:sn-contract": "npm run build && E2E_PROD=1 playwright test tests/e2e/specs/0_standardnotes_security_contract.spec.ts --project=chromium",
     "test:e2e:release": "npm run build && E2E_PROD=1 playwright test --project=chromium --project=firefox",
+    "setup:git-hooks": "bash ../../scripts/setup-git-hooks.sh",
+    "prepare": "npm run setup:git-hooks",
     "typecheck": "tsc --noEmit",
     "dev": "vite",
     "preview": "vite preview"
