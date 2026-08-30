@@ -16,6 +16,7 @@ test.describe("Advanced Features: Templates, Review, Palette, Callouts & Code Bl
     // Verify modal is open
     const modal = editor.frame.locator(".modal-backdrop");
     await expect(modal).toBeVisible();
+    await expect(modal.locator(".session-only-warning")).toContainText("cleared when the editor reloads");
 
     // Find Decision Snippet or Weekly Plan template
     const snippetTab = modal.locator('button:has-text("Snippets")');

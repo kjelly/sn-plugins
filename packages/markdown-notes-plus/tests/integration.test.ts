@@ -22,9 +22,10 @@ import {
 } from "../src/markdown/analysis.ts";
 import { reconcileSectionAnchor } from "../src/document/SectionAnchor.ts";
 import { AppDocumentLifecycle } from "../src/app/AppDocumentLifecycle.ts";
+import { modeAfterRequest } from "../src/app/AppModeTransition.ts";
 import { findMarkdownLinkAtOffset } from "../src/editor/SourceLinks.ts";
 
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
+declare const Deno: { test(name: string, fn: () => void | Promise<void>): void; readTextFile(path: string | URL): Promise<string> };
 
 type FakeBridgeHarness = {
   bridge: EditorKitBridge;
@@ -119,6 +120,30 @@ Deno.test("App lifecycle rejects every non-Source local writer while fallback is
   assertEquals(harness.saves.length, 0);
 });
 
+Deno.test("App mode requests stay in Source while a Writing fallback is present", () => {
+  assertEquals(modeAfterRequest("source", true), "source");
+  assertEquals(modeAfterRequest("writing", true), "source");
+  assertEquals(modeAfterRequest("split", true), "source");
+  assertEquals(modeAfterRequest("mindmap", true), "source");
+  assertEquals(modeAfterRequest("writing", false), "writing");
+  assertEquals(modeAfterRequest("split", false), "split");
+});
+
+Deno.test("App routes every mode request through the fallback-aware transition", async () => {
+  const source = await Deno.readTextFile(new URL("../src/app/App.tsx", import.meta.url));
+  const directModeWrites = source.split("\n").filter((line) => line.includes("setMode("));
+  assertEquals(directModeWrites.length, 2);
+  assert(directModeWrites.every((line) => line.includes("setMode(resolvedMode)")), "mode state must only be written by requestMode");
+  assertEquals((source.match(/onModeChange={requestMode}/g) ?? []).length, 3);
+  assert(source.includes("onSetMode={requestMode}"), "palette mode requests must use requestMode");
+  assert(source.includes('requestMode("writing")'), "automatic suitability correction must use requestMode");
+  assert(source.includes('preserveWritingFallback(markdown); requestMode("source")'), "fallback entry must use requestMode");
+  const templateHandler = source.slice(source.indexOf("const handleInsertTemplate"), source.indexOf("const handleInsertSnippet"));
+  const snippetHandler = source.slice(source.indexOf("const handleInsertSnippet"), source.indexOf("const requestMode"));
+  assert(!templateHandler.includes("canonical.applyLocal"), "template insertion must not bypass the lifecycle");
+  assert(!snippetHandler.includes("canonical.applyLocal"), "snippet insertion must not bypass the lifecycle");
+});
+
 Deno.test("App lifecycle clears fallback only for authoritative remote replacement", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "canonical", "note-app-provenance");
@@ -157,6 +182,17 @@ Deno.test("EditorKitBridge initializes a switched note before any local save can
   assertEquals(appLifecycle.fallback, undefined);
   assertEquals(harness.bridge.resolveConflict("keep-local"), false);
 
+  harness.clock.runAll();
+  assertEquals(harness.saves, []);
+});
+
+Deno.test("EditorKitBridge does not save an initial note containing only a fenced task example", async () => {
+  const harness = fakeBridgeHarness();
+  const input = "# Notes\n\n```md\n- [x] Example @repeat(1d) @done(2020-01-01)\n```\n";
+  await deliverBridgeContext(harness, input, "note-fenced-recurring-example");
+
+  assertEquals(harness.document.text, input);
+  assertEquals(harness.document.dirty, false);
   harness.clock.runAll();
   assertEquals(harness.saves, []);
 });
@@ -760,4 +796,3 @@ function assertEquals<T>(actual: T, expected: T): void {
     throw new Error(`values are not equal: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-

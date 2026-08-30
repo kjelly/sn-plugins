@@ -236,6 +236,10 @@ export function TemplateManagerModal({
           <button type="button" className="close-btn" onClick={onClose} aria-label="Close modal">✕</button>
         </header>
 
+        <aside className="session-only-warning" role="note">
+          Session only: this library is kept in memory and is cleared when the editor reloads. Export JSON before reloading, then Import JSON to restore it.
+        </aside>
+
         {errorMessage ? <div className="template-error-banner">{errorMessage}</div> : null}
 
         <div className="template-modal-toolbar">
