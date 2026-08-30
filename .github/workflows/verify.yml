@@ -3,7 +3,6 @@ name: Verify plugins
 on:
   pull_request:
   push:
-    branches-ignore: [main]
 
 permissions:
   contents: read
@@ -32,6 +31,10 @@ jobs:
         working-directory: packages/markdown-notes-plus
         run: npm ci
 
+      - name: Install Playwright browsers
+        working-directory: packages/markdown-notes-plus
+        run: npx playwright install --with-deps chromium firefox
+
       - name: Test and build Markdown Notes+
         working-directory: packages/markdown-notes-plus
         run: |
@@ -39,6 +42,7 @@ jobs:
           npm test
           npm run test:unit
           npm run test:integration
+          npm run test:e2e:release
           npm run build
           test -s dist/index.html
           for asset in dist/assets/*.js; do node --check "$asset"; done
