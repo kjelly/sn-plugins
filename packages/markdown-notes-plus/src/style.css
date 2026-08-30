@@ -1245,6 +1245,11 @@ blockquote.callout-type-caution::before {
   display: none !important;
 }
 
+.clipboard-copy-buffer {
+  position: fixed;
+  opacity: 0;
+}
+
 .mindmap-svg .task-icon-enabled,
 .task-icon-enabled {
   cursor: pointer;
@@ -1292,4 +1297,3 @@ blockquote.callout-type-caution::before {
 .health-score-bar-fill[data-score="90"] { width: 90%; }
 .health-score-bar-fill[data-score="95"] { width: 95%; }
 .health-score-bar-fill[data-score="100"] { width: 100%; }
-

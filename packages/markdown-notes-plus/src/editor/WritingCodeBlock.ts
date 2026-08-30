@@ -51,8 +51,9 @@ export function codeBlockEnhancedView(
       } else {
         const textarea = document.createElement("textarea");
         textarea.value = codeText;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
+        // The Standard Notes editor iframe forbids inline styles. Keep this
+        // temporary element visually hidden through the component stylesheet.
+        textarea.className = "clipboard-copy-buffer";
         document.body.appendChild(textarea);
         textarea.select();
         document.execCommand("copy");
