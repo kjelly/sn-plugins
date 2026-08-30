@@ -300,6 +300,50 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   color: var(--editor-accent);
 }
 
+/* Writing Table Controls */
+.writing-table-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--editor-accent) 8%, var(--editor-bg));
+  border: 1px solid color-mix(in srgb, var(--editor-border) 80%, transparent);
+  border-radius: 6px;
+  margin: 6px 0;
+  font-size: 0.8rem;
+  flex-wrap: wrap;
+}
+.table-controls-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.table-controls-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--editor-muted);
+  margin-right: 2px;
+}
+.writing-table-controls button {
+  min-height: 22px;
+  min-width: 22px;
+  padding: 1px 6px;
+  font-size: 0.78rem;
+  border-radius: 4px;
+  border: 1px solid var(--editor-border);
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+  cursor: pointer;
+}
+.writing-table-controls button:hover:not(:disabled) {
+  border-color: var(--editor-accent);
+  color: var(--editor-accent);
+}
+.writing-table-controls button.delete-btn:hover:not(:disabled) {
+  border-color: #b13d3d;
+  color: #b13d3d;
+}
+
 @media (prefers-contrast: more) { :root { --editor-border: var(--editor-fg); } button:focus-visible { outline-width: 3px; } }
 
 @media (pointer: coarse) {
