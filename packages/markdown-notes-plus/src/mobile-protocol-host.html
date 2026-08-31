@@ -32,6 +32,7 @@
         const params = new URLSearchParams(window.location.search);
         const registrationTiming = params.get("registration") || "before-relay";
         const parserName = params.get("parser") || "string-oracle";
+        const transport = params.get("transport") || "official";
         const registrationDelayMs = Math.max(0, Number(params.get("registration-delay-ms") || "0") || 0);
         const bridgeReadyDelayMs = Math.max(0, Number(params.get("bridge-ready-delay-ms") || "0") || 0);
         const ledger = [];
@@ -49,6 +50,8 @@
 
         const editorSrc = new URL("./index.html", window.location.href);
         editorSrc.searchParams.set("sn-mobile-protocol", "1");
+        if (transport === "android-object") editorSrc.searchParams.set("sn-android-compat", "1");
+        if (transport === "official") editorSrc.searchParams.set("sn-legacy-mobile-transport", "1");
         if (registrationTiming === "before-relay") editorSrc.searchParams.set("sn-bridge-start", "manual");
         if (bridgeReadyDelayMs > 0) editorSrc.searchParams.set("sn-bridge-ready-delay-ms", String(bridgeReadyDelayMs));
         iframe.src = `${editorSrc.pathname}${editorSrc.search}`;
@@ -67,7 +70,9 @@
         function terminalMilestone() {
           if (registrationTiming === "pre-start") return "iframe-load";
           if (registrationTiming === "before-relay") return "bridge-started-ack";
-          if (parserName === "direct-property") return "direct-property-drop";
+          if (parserName === "direct-property") {
+            return hasLedgerKind("host-routing-drop") ? "direct-property-drop" : "reply-dispatch";
+          }
           return "reply-dispatch";
         }
 
@@ -79,7 +84,7 @@
             return iframeLoaded && bridgeStartPending && registrationSent && hasLedgerKind("registration-delivery") && hasLedgerKind("bridge-start-dispatch") && hasLedgerKind("bridge-started-ack");
           }
           if (parserName === "direct-property") {
-            return firstOutboundSeen && hasLedgerKind("host-routing-drop");
+            return firstOutboundSeen && (hasLedgerKind("host-routing-drop") || hasLedgerKind("reply-dispatch"));
           }
           return firstOutboundSeen && hasLedgerKind("host-routing-route") && hasLedgerKind("reply-dispatch");
         }
@@ -300,7 +305,7 @@
           getOutbound() { return outbound.slice(); },
           getContextReplies() { return contextReplies.slice(); },
           getSaves() { return saves.slice(); },
-          getConfig() { return { registrationTiming, parser: parserName }; },
+          getConfig() { return { registrationTiming, parser: parserName, transport }; },
           triggerRegistration() { triggerAfterObservedAppMount(); },
           waitForSettle(timeoutMs) {
             if (settledGeneration === runGeneration) return Promise.resolve();

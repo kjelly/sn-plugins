@@ -24,7 +24,7 @@ type ProtocolHarness = {
   getOutbound: () => Array<{ raw: unknown; action?: string; sessionKey?: string; origin?: string }>;
   getContextReplies: () => unknown[];
   getSaves: () => Array<{ raw: unknown; parsed: { action?: string; sessionKey?: string; data?: unknown } }>;
-  getConfig: () => { registrationTiming: string; parser: string };
+  getConfig: () => { registrationTiming: string; parser: string; transport: string };
   triggerRegistration: () => void;
   waitForSettle: (timeoutMs: number) => Promise<void>;
   waitForSave: (timeoutMs: number) => Promise<{ raw: unknown; parsed: { action?: string; sessionKey?: string; data?: unknown } }>;
@@ -49,9 +49,10 @@ async function openHarness(
   page: import("@playwright/test").Page,
   registration: string,
   parser: string,
-  options: { bridgeReadyDelayMs?: number; registrationDelayMs?: number } = {},
+  options: { bridgeReadyDelayMs?: number; registrationDelayMs?: number; transport?: string } = {},
 ): Promise<ProtocolHarness> {
   const query = new URLSearchParams({ registration, parser });
+  if (options.transport !== undefined) query.set("transport", options.transport);
   if (options.bridgeReadyDelayMs !== undefined) query.set("bridge-ready-delay-ms", String(options.bridgeReadyDelayMs));
   if (options.registrationDelayMs !== undefined) query.set("registration-delay-ms", String(options.registrationDelayMs));
   await page.goto(`/mobile-protocol-host.html?${query.toString()}`);
@@ -96,11 +97,11 @@ test.describe("deterministic mobile protocol harness", () => {
     expect(startedAckIndex).toBeLessThan(settledIndex);
     expect(await host.getSettlement()).toMatchObject({ generation: 1, terminalMilestone: "bridge-started-ack", settledAt: expect.any(Number) });
     expect(await host.getOutbound()).toEqual([]);
-    expect(await host.getConfig()).toEqual({ registrationTiming: "before-relay", parser: "string-oracle" });
+    expect(await host.getConfig()).toEqual({ registrationTiming: "before-relay", parser: "string-oracle", transport: "official" });
   });
 
   test("registration after observed editor app mount is dropped by the exact 3.202.1 direct-property parser", async ({ page }) => {
-    const host = await openHarness(page, "after-app-mount", "direct-property");
+    const host = await openHarness(page, "after-app-mount", "direct-property", { transport: "official" });
 
     await host.waitForSettle(3000);
     const ledger = await host.getLedger();
@@ -126,6 +127,34 @@ test.describe("deterministic mobile protocol harness", () => {
     for (const entry of ledger.filter((candidate) => candidate.kind === "outbound")) {
       expect(entry).toMatchObject({ dataType: "string", action: expect.any(String), sessionKey: expect.any(String), origin: "null" });
     }
+  });
+
+  test("Android compatibility transport preserves object routing for the 3.202.1 direct-property parser", async ({ page }) => {
+    const host = await openHarness(page, "after-app-mount", "direct-property", { transport: "android-object" });
+
+    await host.waitForSettle(3000);
+    const ledger = await host.getLedger();
+    const outbound = await host.getOutbound();
+
+    expect(await host.getConfig()).toEqual({
+      registrationTiming: "after-app-mount",
+      parser: "direct-property",
+      transport: "android-object",
+    });
+    expect(outbound[0]).toMatchObject({ action: "stream-context-item", sessionKey: expect.any(String), origin: "null" });
+    expect(typeof outbound[0].raw).toBe("object");
+    expect(ledger.find((entry) => entry.kind === "host-routing")).toMatchObject({
+      parser: "direct-property",
+      decision: "route",
+      action: "stream-context-item",
+      origin: "null",
+    });
+    expect(ledger.find((entry) => entry.kind === "first-context-reply")).toMatchObject({
+      dataType: "string",
+      action: "reply",
+    });
+    expect(await host.getContextReplies()).toHaveLength(1);
+    expect(await host.getSettlement()).toMatchObject({ terminalMilestone: "reply-dispatch" });
   });
 
   test("registration after observed editor app mount reaches initial context through the string parser", async ({ page }) => {
