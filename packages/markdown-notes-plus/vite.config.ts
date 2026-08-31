@@ -40,6 +40,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, "src/index.html"),
         testHost: resolve(__dirname, "src/test-host.html"),
+        mobileProtocolHost: resolve(__dirname, "src/mobile-protocol-host.html"),
       },
     },
   },

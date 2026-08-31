@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Deterministic Mobile Component Protocol Harness</title>
+    <style nonce="sn-editor-csp-nonce">
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #f0f0f0;
+      }
+
+      #editor-frame {
+        width: 100vw;
+        height: 100vh;
+        border: none;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe
+      id="editor-frame"
+      title="Markdown Notes+ protocol fixture"
+      sandbox="allow-scripts allow-top-navigation-by-user-activation allow-popups allow-modals allow-forms allow-downloads"
+    ></iframe>
+    <script>
+      (function() {
+        const iframe = document.getElementById("editor-frame");
+        const params = new URLSearchParams(window.location.search);
+        const registrationTiming = params.get("registration") || "before-relay";
+        const parserName = params.get("parser") || "string-oracle";
+        const registrationDelayMs = Math.max(0, Number(params.get("registration-delay-ms") || "0") || 0);
+        const bridgeReadyDelayMs = Math.max(0, Number(params.get("bridge-ready-delay-ms") || "0") || 0);
+        const ledger = [];
+        const outbound = [];
+        const contextReplies = [];
+        const saves = [];
+        const resultListeners = [];
+        const saveListeners = [];
+        const runGeneration = 1;
+        let registrationSent = false;
+        let iframeLoaded = false;
+        let bridgeStartPending = false;
+        let firstOutboundSeen = false;
+        let settledGeneration;
+
+        const editorSrc = new URL("./index.html", window.location.href);
+        editorSrc.searchParams.set("sn-mobile-protocol", "1");
+        if (registrationTiming === "before-relay") editorSrc.searchParams.set("sn-bridge-start", "manual");
+        if (bridgeReadyDelayMs > 0) editorSrc.searchParams.set("sn-bridge-ready-delay-ms", String(bridgeReadyDelayMs));
+        iframe.src = `${editorSrc.pathname}${editorSrc.search}`;
+
+        function appendLedger(kind, fields) {
+          ledger.push(Object.assign({
+            sequence: ledger.length + 1,
+            kind: kind
+          }, fields || {}));
+        }
+
+        function hasLedgerKind(kind) {
+          return ledger.some((entry) => entry.kind === kind);
+        }
+
+        function terminalMilestone() {
+          if (registrationTiming === "pre-start") return "iframe-load";
+          if (registrationTiming === "before-relay") return "bridge-started-ack";
+          if (parserName === "direct-property") return "direct-property-drop";
+          return "reply-dispatch";
+        }
+
+        function reachedTerminalMilestone() {
+          if (registrationTiming === "pre-start") {
+            return iframeLoaded && registrationSent && hasLedgerKind("registration-delivery");
+          }
+          if (registrationTiming === "before-relay") {
+            return iframeLoaded && bridgeStartPending && registrationSent && hasLedgerKind("registration-delivery") && hasLedgerKind("bridge-start-dispatch") && hasLedgerKind("bridge-started-ack");
+          }
+          if (parserName === "direct-property") {
+            return firstOutboundSeen && hasLedgerKind("host-routing-drop");
+          }
+          return firstOutboundSeen && hasLedgerKind("host-routing-route") && hasLedgerKind("reply-dispatch");
+        }
+
+        function settleIfTerminal() {
+          if (settledGeneration === runGeneration || !reachedTerminalMilestone()) return;
+          settledGeneration = runGeneration;
+          appendLedger("settled", {
+            generation: runGeneration,
+            terminalMilestone: terminalMilestone(),
+            settledAt: Date.now()
+          });
+          for (const listener of resultListeners.splice(0)) listener();
+        }
+
+        function record(kind, fields) {
+          appendLedger(kind, fields);
+          settleIfTerminal();
+        }
+
+        function triggerAfterObservedAppMount() {
+          if (registrationTiming !== "after-app-mount") return;
+          if (!iframeLoaded) throw new Error("Cannot register before iframe load");
+          record("registration-boundary", {
+            boundary: "editor-app-mounted",
+            trigger: "test-controlled"
+          });
+          scheduleRegistration();
+        }
+
+        function sendToEditor(message) {
+          const raw = JSON.stringify(message);
+          if (iframe.contentWindow) iframe.contentWindow.postMessage(raw, "*");
+          return raw;
+        }
+
+        function replyToEditor(parsed, data) {
+          return sendToEditor({
+            action: "reply",
+            original: { messageId: parsed.messageId },
+            data: data
+          });
+        }
+
+        function sendRegistration() {
+          if (registrationSent) return;
+          registrationSent = true;
+          const message = {
+            action: "component-registered",
+            sessionKey: "deterministic-mobile-session-key",
+            componentData: {},
+            data: {
+              environment: "mobile",
+              platform: "mobile",
+              uuid: "deterministic-mobile-fixture",
+              activeThemeUrls: []
+            }
+          };
+          const raw = JSON.stringify(message);
+          record("registration-send", {
+            dataType: typeof raw,
+            action: message.action,
+            sessionKey: message.sessionKey,
+            targetOrigin: "*"
+          });
+          if (iframe.contentWindow) iframe.contentWindow.postMessage(raw, "*");
+          // postMessage has no delivery acknowledgement. This ledger entry marks
+          // the one and only host delivery attempt, keeping that boundary explicit.
+          record("registration-delivery", {
+            dataType: typeof raw,
+            delivery: "postMessage-dispatched",
+            targetOrigin: "*"
+          });
+        }
+
+        function scheduleRegistration() {
+          if (registrationDelayMs === 0) {
+            sendRegistration();
+            return;
+          }
+          record("registration-delay", { delayMs: registrationDelayMs });
+          setTimeout(sendRegistration, registrationDelayMs);
+        }
+
+        function parseWithStringOracle(raw) {
+          if (typeof raw !== "string") return raw;
+          try {
+            return JSON.parse(raw);
+          } catch (_) {
+            return undefined;
+          }
+        }
+
+        // This intentionally mirrors Standard Notes 3.202.1 ComponentManager:
+        // it reads event.data.sessionKey and does not deserialize mobile strings.
+        function parseWith2021DirectProperty(raw) {
+          return raw && raw.sessionKey ? raw : undefined;
+        }
+
+        function routeOutbound(raw, origin) {
+          const parsed = parserName === "direct-property"
+            ? parseWith2021DirectProperty(raw)
+            : parseWithStringOracle(raw);
+          if (!parsed || typeof parsed !== "object" || typeof parsed.sessionKey !== "string") {
+            record("host-routing", {
+              parser: parserName,
+              decision: "drop",
+              reason: "missing-session-key-after-parser",
+              origin: origin
+            });
+            record("host-routing-drop", { parser: parserName, origin: origin });
+            return;
+          }
+
+          record("host-routing", {
+            parser: parserName,
+            decision: "route",
+            action: parsed.action,
+            sessionKey: parsed.sessionKey,
+            origin: origin
+          });
+          record("host-routing-route", { parser: parserName, origin: origin, action: parsed.action });
+
+          if (parsed.action === "stream-context-item") {
+            const replyData = {
+              item: {
+                uuid: "deterministic-note-uuid",
+                content_type: "Note",
+                content: {
+                  text: "# Deterministic mobile protocol\n\nContext arrived."
+                }
+              }
+            };
+            contextReplies.push(replyData);
+            const rawReply = replyToEditor(parsed, replyData);
+            record("first-context-reply", {
+              dataType: typeof rawReply,
+              action: "reply",
+              sessionKey: parsed.sessionKey,
+              targetOrigin: "*"
+            });
+            record("reply-dispatch", { dataType: typeof rawReply, action: "reply", targetOrigin: "*" });
+            return;
+          }
+
+          if (parsed.action === "save-items") {
+            const save = { raw: raw, parsed: parsed };
+            saves.push(save);
+            record("save-received", {
+              dataType: typeof raw,
+              action: parsed.action,
+              sessionKey: parsed.sessionKey,
+              origin: origin
+            });
+            if (parsed.messageId) {
+              const rawReply = replyToEditor(parsed, {});
+              record("save-reply-dispatch", { dataType: typeof rawReply, action: "reply", targetOrigin: "*" });
+            }
+            for (const listener of saveListeners.splice(0)) listener(save);
+          }
+        }
+
+        window.addEventListener("message", (event) => {
+          if (event.source !== iframe.contentWindow) return;
+          const raw = event.data;
+          if (raw && typeof raw === "object" && raw.type === "sn-bridge-start-pending") {
+            bridgeStartPending = true;
+            record("bridge-start-pending", { listener: "absent", boundary: "before-bridge-start" });
+            maybeDispatchBeforeRelay();
+            return;
+          }
+          if (raw && typeof raw === "object" && raw.type === "sn-bridge-started") {
+            record("bridge-started-ack", { listener: "installed", boundary: "after-bridge-start" });
+            return;
+          }
+          const parsedForLedger = parseWithStringOracle(raw);
+          const entry = {
+            dataType: typeof raw,
+            action: parsedForLedger && typeof parsedForLedger === "object" ? parsedForLedger.action : undefined,
+            sessionKey: parsedForLedger && typeof parsedForLedger === "object" ? parsedForLedger.sessionKey : undefined,
+            origin: event.origin
+          };
+          outbound.push({ raw: raw, action: entry.action, sessionKey: entry.sessionKey, origin: event.origin });
+          record("outbound", entry);
+          if (!firstOutboundSeen) {
+            firstOutboundSeen = true;
+            record("first-outbound", entry);
+          }
+          routeOutbound(raw, event.origin);
+        });
+
+        iframe.addEventListener("load", () => {
+          iframeLoaded = true;
+          record("iframe-load", { observed: true });
+          maybeDispatchBeforeRelay();
+        });
+
+        function maybeDispatchBeforeRelay() {
+          if (registrationTiming !== "before-relay" || !iframeLoaded || !bridgeStartPending || registrationSent) return;
+          record("registration-boundary", {
+            boundary: "before-bridge-start",
+            listener: "absent",
+            trigger: "test-controlled-handshake"
+          });
+          sendRegistration();
+          if (!iframe.contentWindow) return;
+          iframe.contentWindow.postMessage({ type: "sn-start-bridge" }, "*");
+          record("bridge-start-dispatch", { trigger: "after-registration-delivery" });
+        }
+
+        if (registrationTiming === "pre-start") {
+          record("pre-start-boundary", { readiness: "before-iframe-navigation" });
+          sendRegistration();
+        }
+
+        window.__SN_MOBILE_PROTOCOL__ = {
+          getLedger() { return ledger.slice(); },
+          getOutbound() { return outbound.slice(); },
+          getContextReplies() { return contextReplies.slice(); },
+          getSaves() { return saves.slice(); },
+          getConfig() { return { registrationTiming, parser: parserName }; },
+          triggerRegistration() { triggerAfterObservedAppMount(); },
+          waitForSettle(timeoutMs) {
+            if (settledGeneration === runGeneration) return Promise.resolve();
+            return new Promise((resolve, reject) => {
+              let timer;
+              const onResult = () => {
+                clearTimeout(timer);
+                resolve();
+              };
+              timer = setTimeout(() => {
+                const index = resultListeners.indexOf(onResult);
+                if (index >= 0) resultListeners.splice(index, 1);
+                reject(new Error("Timed out waiting for deterministic protocol result"));
+              }, timeoutMs);
+              resultListeners.push(onResult);
+            });
+          },
+          getSettlement() {
+            return ledger.find((entry) => entry.kind === "settled");
+          },
+          waitForSave(timeoutMs) {
+            if (saves.length > 0) return Promise.resolve(saves[saves.length - 1]);
+            return new Promise((resolve, reject) => {
+              let timer;
+              const onSave = (save) => {
+                clearTimeout(timer);
+                resolve(save);
+              };
+              timer = setTimeout(() => {
+                const index = saveListeners.indexOf(onSave);
+                if (index >= 0) saveListeners.splice(index, 1);
+                reject(new Error("Timed out waiting for mobile protocol save"));
+              }, timeoutMs);
+              saveListeners.push(onSave);
+            });
+          }
+        };
+      })();
+    </script>
+  </body>
+</html>

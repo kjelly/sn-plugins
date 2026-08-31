@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const isProd = Boolean(process.env.E2E_PROD);
-const port = 5173;
+const isMobileProtocol = Boolean(process.env.E2E_MOBILE_PROTOCOL);
+const port = Number(process.env.E2E_PORT ?? 5173);
 
 export default defineConfig({
   testDir: "./tests/e2e/specs",
@@ -38,8 +39,7 @@ export default defineConfig({
       ? `vite preview --host 127.0.0.1 --port ${port} --strictPort`
       : `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}/test-host.html`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && !isMobileProtocol,
     timeout: 30000,
   },
 });
-

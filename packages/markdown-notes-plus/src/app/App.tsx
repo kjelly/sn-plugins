@@ -365,9 +365,44 @@ export function App() {
       }
       rerender(next);
     });
-    bridge.start();
+    const mobileProtocolParams = typeof window === "undefined"
+      ? undefined
+      : new URLSearchParams(window.location.search);
+    const mobileProtocolTest = mobileProtocolParams?.get("sn-mobile-protocol") === "1";
+    const manualBridgeStart = mobileProtocolTest && mobileProtocolParams?.get("sn-bridge-start") === "manual";
+    const bridgeReadyDelayMs = Math.max(0, Number(mobileProtocolParams?.get("sn-bridge-ready-delay-ms") ?? "0") || 0);
+    let bridgeReadyTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const announceBridgeReady = () => {
+      if (mobileProtocolTest) {
+        document.documentElement.dataset.snBridgeReady = "true";
+      }
+    };
+    const startBridge = () => {
+      bridge.start();
+      if (manualBridgeStart) window.parent.postMessage({ type: "sn-bridge-started" }, "*");
+      if (bridgeReadyDelayMs === 0) announceBridgeReady();
+      else bridgeReadyTimer = globalThis.setTimeout(announceBridgeReady, bridgeReadyDelayMs);
+    };
+    const startBridgeOnRequest = (event: MessageEvent) => {
+      if (event.source !== window.parent || event.data?.type !== "sn-start-bridge") return;
+      globalThis.removeEventListener("message", startBridgeOnRequest);
+      startBridge();
+    };
+    if (manualBridgeStart) {
+      globalThis.addEventListener("message", startBridgeOnRequest);
+      window.parent.postMessage({ type: "sn-bridge-start-pending" }, "*");
+    } else {
+      startBridge();
+    }
     const uninstallTheme = installThemeBridge(() => rerender(canonical.snapshot()));
-    return () => { uninstallTheme(); unsubscribe(); unsubscribeFallback(); };
+    return () => {
+      if (bridgeReadyTimer !== undefined) globalThis.clearTimeout(bridgeReadyTimer);
+      globalThis.removeEventListener("message", startBridgeOnRequest);
+      if (mobileProtocolTest) delete document.documentElement.dataset.snBridgeReady;
+      uninstallTheme();
+      unsubscribe();
+      unsubscribeFallback();
+    };
   }, [appLifecycle, bridge, canonical]);
 
   useEffect(() => {
