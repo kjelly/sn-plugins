@@ -40,12 +40,24 @@ const coarseControlSelector = [
   ".sidebar-tab-btn",
   ".outline-panel-controls button",
   ".outline-fold-toggle",
+  ".outline-drag-handle",
   ".outline-panel li .outline-heading-btn",
   ".outline-action-btn",
   ".section-task-actions button",
   ".milkdown-writing li[data-item-type=\"task\"] .task-checkbox",
   ".milkdown-writing li[data-item-type=\"task\"] .task-delete",
+  ".writing-table-controls button",
+  ".slash-menu .slash-command",
+  ".link-dialog .close-btn",
 ].join(", ");
+
+const mobileTargetInventory = {
+  paletteItem: ".palette-item",
+  mapSelect: ".map-pane select",
+  importSelect: ".import-export-group select",
+  writingFoldGutter: ".writing-fold-gutter-btn",
+  fileImportLabel: ".btn-file-import",
+};
 
 async function expectTouchTargetBounds(editor: EditorPage, selector: string): Promise<void> {
   const bounds = await editor.frame.locator(selector).evaluateAll((controls) => controls.map((control) => {
@@ -56,6 +68,38 @@ async function expectTouchTargetBounds(editor: EditorPage, selector: string): Pr
   for (const bound of bounds) {
     expect(bound.width).toBeGreaterThanOrEqual(40);
     expect(bound.height).toBeGreaterThanOrEqual(40);
+  }
+}
+
+async function expectOutlineControlsFit(editor: EditorPage): Promise<void> {
+  const metrics = await editor.frame.locator(".outline-panel").evaluate((outline) => {
+    const sidebar = outline.closest(".sidebar-pane");
+    if (!(sidebar instanceof HTMLElement)) throw new Error("outline panel must be inside the sidebar pane");
+    const outlineRect = outline.getBoundingClientRect();
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const controls = Array.from(outline.querySelectorAll<HTMLElement>(
+      ".outline-structural-actions button, .section-task-actions button, .outline-drag-handle, .outline-fold-toggle, .outline-heading-btn",
+    ));
+    return {
+      outline: { clientWidth: outline.clientWidth, scrollWidth: outline.scrollWidth, rect: outlineRect.toJSON() },
+      sidebar: { clientWidth: sidebar.clientWidth, scrollWidth: sidebar.scrollWidth, rect: sidebarRect.toJSON() },
+      controls: controls.map((control) => {
+        const rect = control.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      }),
+    };
+  });
+
+  expect(metrics.controls.length).toBeGreaterThan(0);
+  expect(metrics.outline.scrollWidth).toBeLessThanOrEqual(metrics.outline.clientWidth);
+  expect(metrics.sidebar.scrollWidth).toBeLessThanOrEqual(metrics.sidebar.clientWidth);
+  for (const control of metrics.controls) {
+    expect(control.width).toBeGreaterThanOrEqual(40);
+    expect(control.height).toBeGreaterThanOrEqual(40);
+    expect(control.left).toBeGreaterThanOrEqual(metrics.outline.rect.left);
+    expect(control.right).toBeLessThanOrEqual(metrics.outline.rect.right);
+    expect(control.left).toBeGreaterThanOrEqual(metrics.sidebar.rect.left);
+    expect(control.right).toBeLessThanOrEqual(metrics.sidebar.rect.right);
   }
 }
 
@@ -116,11 +160,210 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await editor.openSidebar();
 
     await expectTouchTargetBounds(editor, coarseControlSelector);
+    await expectTouchTargetBounds(editor, mobileTargetInventory.writingFoldGutter);
     await expect(editor.frame.locator(".outline-structural-actions").first()).toBeVisible();
 
     await editor.tasksTabBtn.click();
     await expect(editor.tasksPanel).toBeVisible();
     await expectTouchTargetBounds(editor, ".tasks-panel .panel-heading button, .task-group-actions button, .task-actions button, .tasks-panel .actions button");
+  });
+
+  test("Mobile deep outline actions fit the drawer and preserve semantics", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Root chapter\n\nRoot body.\n\n## Child Alpha with a deliberately long heading that must truncate inside the drawer\n\nChild body.\n\n### Grandchild Alpha\n\nGrandchild body.\n\n## Child Beta\n\n- [ ] Open child task\n- [x] Completed child task\n\n# Second root\n\nSecond body.\n", "note-mobile-outline-actions", false);
+    await expect(editor.status).toHaveText("Ready");
+    await editor.openSidebar();
+
+    const rows = editor.outlinePanel.locator("li[data-anchor]");
+    await expect(rows).toHaveCount(5);
+    const actions = editor.outlinePanel.locator("li[data-anchor] .outline-structural-actions");
+    await expect(actions).toHaveCount(5);
+    for (let index = 0; index < 5; index += 1) {
+      const group = actions.nth(index);
+      await expect(group).toBeVisible();
+      await expect(group.locator("button")).toHaveCount(6);
+      expect(await group.locator("button:disabled").count()).toBeGreaterThan(0);
+    }
+    await expect(editor.outlinePanel.locator(".outline-structural-actions button")).toHaveCount(30);
+    await expectOutlineControlsFit(editor);
+    await expectTouchTargetBounds(editor, ".section-task-actions button");
+
+    const childRow = editor.outlinePanel.locator("li[data-anchor]").filter({ hasText: "Child Beta" }).first();
+    const duplicateButton = childRow.locator('button[title="Duplicate subtree"]');
+    await expect(duplicateButton).toBeEnabled();
+    const savePromise = host.waitForNextSave(4000);
+    await duplicateButton.click();
+    await savePromise;
+    const saved = await host.getLatestSavedText();
+    expect(saved).toBeDefined();
+    expect(saved!.match(/^## Child Beta$/gm)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("Mobile table controls CSS contract meets touch targets", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("Table control CSS contract\n", "note-mobile-table-controls", false);
+    await expect(editor.status).toHaveText("Ready");
+
+    // WritingTableControls is not production-mounted; this fixture tests only
+    // the CSS contract for its existing toolbar markup.
+    await editor.frame.locator("body").evaluate((body) => {
+      const toolbar = document.createElement("div");
+      toolbar.className = "writing-table-controls";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.title = "Fixture table control";
+      button.textContent = "↑";
+      toolbar.append(button);
+      body.append(toolbar);
+    });
+    await expectTouchTargetBounds(editor, ".writing-table-controls > button");
+  });
+
+  test("Mounted slash-menu commands meet mobile touch targets", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("Slash menu target test\n", "note-mobile-slash-targets", false);
+    await expect(editor.status).toHaveText("Ready");
+    await editor.writingEditor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("/");
+
+    const command = editor.frame.locator(".slash-menu .slash-command").first();
+    await expect(command).toBeVisible();
+    await expectTouchTargetBounds(editor, ".slash-menu .slash-command");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Backspace");
+  });
+
+  test("Mounted palette items meet mobile touch targets", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Palette target test\n\nContent.\n", "note-mobile-palette-targets", false);
+    await expect(editor.status).toHaveText("Ready");
+
+    await editor.writingPane.locator('button[title="Command & Navigation Palette (Ctrl+P)"]').click();
+    const palette = editor.frame.locator(".palette-dialog");
+    await expect(palette).toBeVisible();
+    await expectTouchTargetBounds(editor, mobileTargetInventory.paletteItem);
+    await expectTouchTargetBounds(editor, ".palette-close-btn");
+    await palette.locator(".palette-close-btn").click();
+    await expect(palette).not.toBeVisible();
+  });
+
+  test("Mounted map and import selects meet mobile touch targets", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Select target test\n\nContent.\n", "note-mobile-select-targets", false);
+    await expect(editor.status).toHaveText("Ready");
+
+    await editor.switchMode("Split");
+    await expect(editor.mindmapPane).toBeVisible();
+    await expectTouchTargetBounds(editor, mobileTargetInventory.mapSelect);
+
+    await editor.switchMode("Writing");
+    await editor.writingPane.locator('button[title="Templates & Snippets Manager"]').click();
+    const templateModal = editor.frame.locator(".template-modal-content");
+    await expect(templateModal).toBeVisible();
+    await expectTouchTargetBounds(editor, mobileTargetInventory.importSelect);
+    await expectTouchTargetBounds(editor, mobileTargetInventory.fileImportLabel);
+    await templateModal.locator(".close-btn").click();
+    await expect(templateModal).not.toBeVisible();
+  });
+
+  test("Outline pointer drag reorders siblings with immediate mouse activation", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Alpha\n\nAlpha body.\n\n# Beta\n\nBeta body.\n\n# Gamma\n\nGamma body.\n", "note-mobile-outline-drag", false);
+    await expect(editor.status).toHaveText("Ready");
+    await editor.openSidebar();
+
+    const rows = editor.outlinePanel.locator("li[data-anchor]");
+    await expect(rows).toHaveCount(3);
+    const gammaHandle = rows.nth(2).locator(".outline-drag-handle");
+    const betaRow = rows.nth(1);
+    const gammaHandleBox = await gammaHandle.boundingBox();
+    const betaBox = await betaRow.boundingBox();
+    expect(gammaHandleBox).not.toBeNull();
+    expect(betaBox).not.toBeNull();
+
+    await page.mouse.move(gammaHandleBox!.x + 4, gammaHandleBox!.y + 4);
+    await page.mouse.down();
+    await page.mouse.move(betaBox!.x + 20, betaBox!.y + 2, { steps: 8 });
+    await page.mouse.up();
+
+    await expect(rows.nth(1).locator(".outline-heading-btn")).toContainText("Gamma");
+    await editor.switchMode("Source");
+    const text = await editor.getSourceText();
+    expect(text.indexOf("Gamma body.")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Gamma body.")).toBeLessThan(text.indexOf("Beta body."));
+  });
+
+  test("Outline pointer drag survives pointer-capture failure and cleans up", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Alpha\n\nAlpha body.\n\n# Beta\n\nBeta body.\n\n# Gamma\n\nGamma body.\n", "note-mobile-outline-drag-no-capture", false);
+    await expect(editor.status).toHaveText("Ready");
+    await editor.openSidebar();
+
+    const rows = editor.outlinePanel.locator("li[data-anchor]");
+    await expect(rows).toHaveCount(3);
+    const gammaHandle = rows.nth(2).locator(".outline-drag-handle");
+    const betaRow = rows.nth(1);
+    const gammaHandleBox = await gammaHandle.boundingBox();
+    const betaBox = await betaRow.boundingBox();
+    expect(gammaHandleBox).not.toBeNull();
+    expect(betaBox).not.toBeNull();
+
+    await editor.frame.locator("body").evaluate(() => {
+      type CapturePrototype = typeof Element.prototype & {
+        __snOriginalSetPointerCapture?: typeof Element.prototype.setPointerCapture;
+      };
+      const prototype = Element.prototype as CapturePrototype;
+      prototype.__snOriginalSetPointerCapture = prototype.setPointerCapture;
+      prototype.setPointerCapture = () => {
+        throw new Error("test capture failure");
+      };
+    });
+
+    try {
+      await page.mouse.move(gammaHandleBox!.x + 4, gammaHandleBox!.y + 4);
+      await page.mouse.down();
+      await page.mouse.move(betaBox!.x + 20, betaBox!.y + 2, { steps: 8 });
+      await page.mouse.up();
+    } finally {
+      await editor.frame.locator("body").evaluate(() => {
+        type CapturePrototype = typeof Element.prototype & {
+          __snOriginalSetPointerCapture?: typeof Element.prototype.setPointerCapture;
+        };
+        const prototype = Element.prototype as CapturePrototype;
+        if (prototype.__snOriginalSetPointerCapture) {
+          prototype.setPointerCapture = prototype.__snOriginalSetPointerCapture;
+          delete prototype.__snOriginalSetPointerCapture;
+        }
+      });
+    }
+
+    await expect(rows.nth(1).locator(".outline-heading-btn")).toContainText("Gamma");
+    await expect.poll(() => editor.frame.locator("body").evaluate(() => ({
+      dragging: document.body.classList.contains("outline-pointer-dragging"),
+      activeHandles: document.querySelectorAll(".outline-drag-handle-active").length,
+      draggingRows: document.querySelectorAll(".outline-row.dragging").length,
+    }))).toEqual({ dragging: false, activeHandles: 0, draggingRows: 0 });
+
+    await editor.switchMode("Source");
+    const text = await editor.getSourceText();
+    expect(text.indexOf("Gamma body.")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Gamma body.")).toBeLessThan(text.indexOf("Beta body."));
   });
 
   test("Link dialog keeps invalid input open, cancels exactly, and confirms a safe URL", async ({ page }) => {
@@ -138,6 +381,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await expect(dialog).toBeVisible();
     await expect(input).toBeFocused();
     await expect(input).toHaveCSS("font-size", "16px");
+    await expectTouchTargetBounds(editor, ".link-dialog .close-btn");
     await expectTouchTargetBounds(editor, ".link-dialog-actions button");
     await input.fill("javascript:alert(1)");
     await dialog.getByRole("button", { name: "Done", exact: true }).click();
@@ -297,6 +541,35 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
 
     await page.setViewportSize({ width: 901, height: 844 });
     await expect(editor.sidebarPane).not.toBeVisible();
+  });
+
+  test("Sidebar responds to the 900px breakpoint without a manual toggle", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Responsive sidebar\n\nContent.\n", "note-mobile-sidebar-responsive", false);
+    await expect(editor.status).toHaveText("Ready");
+    await expect(editor.sidebarPane).not.toBeVisible();
+
+    await page.setViewportSize({ width: 901, height: 844 });
+    await expect(editor.sidebarPane).toBeVisible();
+
+    await page.setViewportSize({ width: 700, height: 844 });
+    await expect(editor.sidebarPane).not.toBeVisible();
+  });
+
+  test("Manual sidebar toggle overrides subsequent breakpoint changes", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Manual sidebar\n\nContent.\n", "note-mobile-sidebar-manual-override", false);
+    await expect(editor.status).toHaveText("Ready");
+    await editor.openSidebar();
+
+    await page.setViewportSize({ width: 901, height: 844 });
+    await expect(editor.sidebarPane).toBeVisible();
+    await page.setViewportSize({ width: 700, height: 844 });
+    await expect(editor.sidebarPane).toBeVisible();
   });
 
   test("Mobile task checkbox click updates state smoothly", async ({ page }) => {

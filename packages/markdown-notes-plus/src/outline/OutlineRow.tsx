@@ -26,10 +26,8 @@ export type OutlineRowProps = {
   onCheckAllTasks: (anchor: number) => void;
   onUncheckAllTasks: (anchor: number) => void;
   onDeleteCompletedTasks: (anchor: number) => void;
-  onDragStart: (anchor: number, e: React.DragEvent) => void;
-  onDragOver: (anchor: number, e: React.DragEvent) => void;
-  onDragLeave: (anchor: number, e: React.DragEvent) => void;
-  onDrop: (anchor: number, e: React.DragEvent) => void;
+  onHandlePointerDown: (anchor: number, e: React.PointerEvent) => void;
+  isDragging?: boolean;
 };
 
 export const OutlineRow: React.FC<OutlineRowProps> = ({
@@ -52,10 +50,8 @@ export const OutlineRow: React.FC<OutlineRowProps> = ({
   onCheckAllTasks,
   onUncheckAllTasks,
   onDeleteCompletedTasks,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  onHandlePointerDown,
+  isDragging,
 }) => {
   const section = analysis.sections.find((s) => s.anchor === heading.from);
   const secFrom = section ? section.from : heading.from;
@@ -76,17 +72,14 @@ export const OutlineRow: React.FC<OutlineRowProps> = ({
 
   return (
     <li
-      className={`level-${heading.level} outline-row ${dropPlacement ? `drop-${dropPlacement}` : ""} ${isActive ? "active-row" : ""} ${isFocused ? "focused-row" : ""}`}
-      onDragOver={(e) => onDragOver(heading.from, e)}
-      onDragLeave={(e) => onDragLeave(heading.from, e)}
-      onDrop={(e) => onDrop(heading.from, e)}
+      data-anchor={heading.from}
+      className={`level-${heading.level} outline-row ${dropPlacement ? `drop-${dropPlacement}` : ""} ${isActive ? "active-row" : ""} ${isFocused ? "focused-row" : ""} ${isDragging ? "dragging" : ""}`}
     >
       <div className="outline-row-content">
         <span
           className="outline-drag-handle"
-          draggable={!readOnly}
-          onDragStart={(e) => onDragStart(heading.from, e)}
-          title={readOnly ? undefined : "Drag to reorder sibling section"}
+          onPointerDown={(e) => onHandlePointerDown(heading.from, e)}
+          title={readOnly ? undefined : "Hold, then drag to reorder sibling section"}
         >
           ⠿
         </span>

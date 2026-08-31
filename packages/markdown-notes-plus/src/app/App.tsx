@@ -240,6 +240,7 @@ export function App() {
       setSidebarOpen(!media.matches);
     };
     const handleChange = () => applyResponsiveSidebar();
+    applyResponsiveSidebar();
     if (typeof media.addEventListener === "function") media.addEventListener("change", handleChange);
     else media.addListener(handleChange);
     return () => {
