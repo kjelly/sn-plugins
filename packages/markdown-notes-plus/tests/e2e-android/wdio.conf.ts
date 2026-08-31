@@ -1,12 +1,15 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveAndroidBuildToolsVersion, resolveAppiumEndpoint } from "./appium-endpoint.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "../..");
 const apkPath = path.join(rootDir, "artifacts/standardnotes.apk");
+export const appiumEndpoint = resolveAppiumEndpoint(process.env.APPIUM_PORT);
 
 export const config = {
   runner: "local",
+  ...appiumEndpoint,
   autoCompileOpts: {
     autoCompile: true,
     tsNodeOpts: {
@@ -24,9 +27,10 @@ export const config = {
       "appium:app": apkPath,
       "appium:appPackage": "com.standardnotes",
       "appium:appActivity": "com.standardnotes.MainActivity",
-      "appium:noReset": false,
+      "appium:noReset": true,
       "appium:fullReset": false,
-      "appium:autoGrantPermissions": true,
+      "appium:autoGrantPermissions": false,
+      "appium:buildToolsVersion": resolveAndroidBuildToolsVersion(process.env.ANDROID_BUILD_TOOLS_VERSION),
       "appium:newCommandTimeout": 240,
     },
   ],
