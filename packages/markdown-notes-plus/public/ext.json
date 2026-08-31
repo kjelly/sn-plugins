@@ -1,0 +1,12 @@
+{
+  "identifier": "org.standardnotes.markdown-notes-plus",
+  "name": "Markdown Notes+",
+  "content_type": "SN|Component",
+  "area": "editor-editor",
+  "version": "0.1.0",
+  "url": "http://10.0.2.2:5173/index.html",
+  "file_type": "md",
+  "note_type": "markdown",
+  "interchangeable": true,
+  "showInGallery": false
+}

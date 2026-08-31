@@ -63,3 +63,31 @@ node --check dist/assets/<generated-index>.js
 `npm test` intentionally runs the existing Deno compatibility/projection
 regression suite. It does not claim full browser or Standard Notes host
 integration coverage.
+
+## Android E2E Testing with Official Standard Notes APK
+
+To run end-to-end integration tests using the official release APK of Standard Notes on an Android device or emulator:
+
+1. **Start Android Emulator / Connect Physical Device**:
+   Ensure `adb devices` lists your active Android device or emulator.
+
+2. **Download Official Standard Notes APK**:
+   ```bash
+   bash scripts/download-official-sn-apk.sh
+   ```
+
+3. **Start Local Dev Server**:
+   ```bash
+   npm run dev -- --host 0.0.0.0 --port 5173
+   ```
+   (The server serves the editor at `/index.html` and the extension manifest at `/ext.json`).
+
+4. **Run Appium / WebdriverIO Android E2E Suite**:
+   ```bash
+   npm run test:e2e:android-app
+   ```
+   *For physical devices over USB*, forward the port first:
+   ```bash
+   adb reverse tcp:5173 tcp:5173
+   ```
+
