@@ -29,3 +29,11 @@ Deno.test("downloader script is executable and outputs valid target path", async
   const output = new TextDecoder().decode(stdout);
   assertEquals(output.includes("artifacts/standardnotes.apk"), true);
 });
+
+Deno.test("headless android setup and run scripts are executable", async () => {
+  const setupInfo = await Deno.stat("scripts/setup-headless-android.sh");
+  assertEquals(Boolean(setupInfo.mode && (setupInfo.mode & 0o111) > 0), true);
+
+  const runInfo = await Deno.stat("scripts/run-headless-e2e.sh");
+  assertEquals(Boolean(runInfo.mode && (runInfo.mode & 0o111) > 0), true);
+});
