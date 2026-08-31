@@ -11,7 +11,7 @@ AVD_NAME="android_test_avd"
 SYSTEM_IMAGE="system-images;android-33;google_apis;x86_64"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 
-echo "=== [1/5] Checking Java & System Prerequisites ==="
+echo "=== [1/6] Checking Java & System Prerequisites ==="
 if ! command -v java >/dev/null 2>&1; then
   echo "Java not found. Installing OpenJDK 17..."
   if command -v sudo >/dev/null 2>&1; then
@@ -22,7 +22,7 @@ if ! command -v java >/dev/null 2>&1; then
   fi
 fi
 
-echo "=== [2/5] Setting up Android SDK Command-line Tools ==="
+echo "=== [2/6] Setting up Android SDK Command-line Tools ==="
 mkdir -p "${ANDROID_HOME}/cmdline-tools"
 
 if [[ ! -d "${ANDROID_HOME}/cmdline-tools/latest" ]]; then
@@ -35,20 +35,25 @@ if [[ ! -d "${ANDROID_HOME}/cmdline-tools/latest" ]]; then
   rm -rf "${TMP_DIR}"
 fi
 
-echo "=== [3/5] Accepting Licenses & Installing SDK Packages ==="
+echo "=== [3/6] Accepting Licenses & Installing SDK Packages ==="
 yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
 
 echo "Installing platform-tools, emulator, and system-image (${SYSTEM_IMAGE})..."
 "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "emulator" "${SYSTEM_IMAGE}"
 
-echo "=== [4/5] Creating Headless AVD (${AVD_NAME}) ==="
+echo "=== [4/6] Creating Headless AVD (${AVD_NAME}) ==="
 echo "no" | "${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager" create avd \
   -n "${AVD_NAME}" \
   -k "${SYSTEM_IMAGE}" \
   --force
 
-echo "=== [5/5] Downloading Official Standard Notes APK ==="
+echo "=== [5/6] Downloading Official Standard Notes APK ==="
 bash "${SCRIPT_DIR}/download-official-sn-apk.sh"
+
+echo "=== [6/6] Installing Appium & WebdriverIO Dependencies ==="
+cd "${ROOT_DIR}"
+npm install -D @wdio/cli @wdio/local-runner @wdio/mocha-framework @wdio/spec-reporter webdriverio appium
+npx appium driver install uiautomator2 2>/dev/null || true
 
 echo ""
 echo "========================================================"

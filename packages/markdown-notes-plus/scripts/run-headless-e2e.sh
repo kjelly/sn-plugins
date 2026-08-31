@@ -9,11 +9,20 @@ export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-t
 
 AVD_NAME="android_test_avd"
 PORT=5173
+APPIUM_PORT=4723
 VITE_PID=""
+APPIUM_PID=""
 EMULATOR_PID=""
+
+mkdir -p /tmp/android-logs
 
 cleanup() {
   echo "=== [Cleanup] Stopping background processes ==="
+  if [[ -n "${APPIUM_PID}" ]] && kill -0 "${APPIUM_PID}" 2>/dev/null; then
+    echo "Stopping Appium server (PID: ${APPIUM_PID})..."
+    kill "${APPIUM_PID}" || true
+  fi
+
   if [[ -n "${VITE_PID}" ]] && kill -0 "${VITE_PID}" 2>/dev/null; then
     echo "Stopping Vite server (PID: ${VITE_PID})..."
     kill "${VITE_PID}" || true
@@ -30,7 +39,20 @@ cleanup() {
 
 trap cleanup EXIT
 
-echo "=== [1/5] Checking Android Device / Emulator ==="
+echo "=== [1/6] Verifying Test Dependencies (WebdriverIO & Appium) ==="
+cd "${ROOT_DIR}"
+if [[ ! -x "${ROOT_DIR}/node_modules/.bin/wdio" ]] || [[ ! -x "${ROOT_DIR}/node_modules/.bin/appium" ]]; then
+  echo "WebdriverIO or Appium missing in node_modules. Installing..."
+  npm install -D @wdio/cli @wdio/local-runner @wdio/mocha-framework @wdio/spec-reporter webdriverio appium
+fi
+
+# Ensure uiautomator2 driver is registered in Appium
+if ! npx appium driver list --installed 2>/dev/null | grep -q "uiautomator2"; then
+  echo "Installing Appium uiautomator2 driver..."
+  npx appium driver install uiautomator2 2>/dev/null || true
+fi
+
+echo "=== [2/6] Checking Android Device / Emulator ==="
 DEVICE_LIST=$(adb devices 2>/dev/null | grep -w "device" || true)
 
 if [[ -z "${DEVICE_LIST}" ]]; then
@@ -42,7 +64,6 @@ if [[ -z "${DEVICE_LIST}" ]]; then
     exit 1
   fi
 
-  mkdir -p /tmp/android-logs
   "${EMULATOR_BIN}" -avd "${AVD_NAME}" \
     -no-window \
     -no-audio \
@@ -66,7 +87,7 @@ else
   echo "${DEVICE_LIST}"
 fi
 
-echo "=== [2/5] Installing Standard Notes Official APK ==="
+echo "=== [3/6] Installing Standard Notes Official APK ==="
 APK_PATH="${ROOT_DIR}/artifacts/standardnotes.apk"
 if [[ ! -f "${APK_PATH}" ]]; then
   echo "APK not found. Downloading..."
@@ -75,8 +96,7 @@ fi
 
 adb install -r "${APK_PATH}"
 
-echo "=== [3/5] Starting Local Editor Server (Port: ${PORT}) ==="
-cd "${ROOT_DIR}"
+echo "=== [4/6] Starting Local Editor Server (Port: ${PORT}) ==="
 npm run dev -- --host 0.0.0.0 --port "${PORT}" --strictPort > /tmp/android-logs/vite.log 2>&1 &
 VITE_PID=$!
 
@@ -89,7 +109,20 @@ for i in {1..30}; do
   sleep 1
 done
 
-echo "=== [4/5] Running Android E2E Tests with WebdriverIO ==="
-npm run test:e2e:android-app
+echo "=== [5/6] Starting Appium Server (Port: ${APPIUM_PORT}) ==="
+npx appium --port "${APPIUM_PORT}" --relaxed-security > /tmp/android-logs/appium.log 2>&1 &
+APPIUM_PID=$!
 
-echo "=== [5/5] Test Suite Completed Successfully! ==="
+echo "Waiting for Appium server to become responsive..."
+for i in {1..30}; do
+  if curl -s "http://127.0.0.1:${APPIUM_PORT}/status" >/dev/null 2>&1; then
+    echo "Appium server is ready at http://127.0.0.1:${APPIUM_PORT}"
+    break
+  fi
+  sleep 1
+done
+
+echo "=== [6/6] Running Android E2E Tests with WebdriverIO ==="
+npx wdio run tests/e2e-android/wdio.conf.ts
+
+echo "=== Test Suite Completed Successfully! ==="
