@@ -15,6 +15,7 @@ const editorCspMetaPlugin = {
 
 export default defineConfig({
   root: "src",
+  publicDir: resolve(__dirname, "public"),
   base: "./",
   plugins: [react(), editorCspMetaPlugin],
   server: {

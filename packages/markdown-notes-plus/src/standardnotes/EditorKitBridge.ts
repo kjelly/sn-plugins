@@ -13,6 +13,7 @@ export type EditorKitDelegate = {
 };
 type BridgeKit = {
   saveItemWithPresave: (note: HostNote, presave?: () => void) => void;
+  dispose?: () => void;
 };
 export type BridgeTimer = ReturnType<typeof globalThis.setTimeout>;
 export type BridgeScheduler = {
@@ -185,6 +186,7 @@ export class EditorKitBridge {
   dispose(): boolean {
     const flushed = this.flush();
     this.cancelPendingSave();
+    this.kit?.dispose?.();
     this.disposed = true;
     return flushed;
   }

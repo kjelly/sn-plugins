@@ -4,12 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-export ANDROID_HOME="${HOME}/Android/Sdk"
+export ANDROID_HOME="${ANDROID_HOME:-${HOME}/Android/Sdk}"
 export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/emulator:${PATH}"
 
 AVD_NAME="android_test_avd"
 SYSTEM_IMAGE="system-images;android-33;google_apis;x86_64"
+export ANDROID_BUILD_TOOLS_VERSION="${ANDROID_BUILD_TOOLS_VERSION:-35.0.0}"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}"
+APKSIGNER_JAR="${BUILD_TOOLS_DIR}/lib/apksigner.jar"
+APKSIGNER_BIN="${BUILD_TOOLS_DIR}/apksigner"
 
 echo "=== [1/6] Checking Java & System Prerequisites ==="
 if ! command -v java >/dev/null 2>&1; then
@@ -38,8 +42,22 @@ fi
 echo "=== [3/6] Accepting Licenses & Installing SDK Packages ==="
 yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
 
-echo "Installing platform-tools, emulator, and system-image (${SYSTEM_IMAGE})..."
-"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "emulator" "${SYSTEM_IMAGE}"
+echo "Installing platform-tools, emulator, build-tools (${ANDROID_BUILD_TOOLS_VERSION}), and system-image (${SYSTEM_IMAGE})..."
+"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+  "platform-tools" \
+  "emulator" \
+  "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
+  "${SYSTEM_IMAGE}"
+
+echo "Android Build Tools diagnostics:"
+echo "  version: ${ANDROID_BUILD_TOOLS_VERSION}"
+echo "  directory: ${BUILD_TOOLS_DIR}"
+echo "  apksigner executable: ${APKSIGNER_BIN}"
+echo "  apksigner jar: ${APKSIGNER_JAR}"
+if [[ ! -x "${APKSIGNER_BIN}" ]] || [[ ! -f "${APKSIGNER_JAR}" ]]; then
+  echo "Error: Android Build Tools ${ANDROID_BUILD_TOOLS_VERSION} did not provide the Appium signing tools." >&2
+  exit 1
+fi
 
 echo "=== [4/6] Creating Headless AVD (${AVD_NAME}) ==="
 echo "no" | "${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager" create avd \

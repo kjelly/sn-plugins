@@ -167,6 +167,9 @@ export function App() {
   const appLifecycle = useMemo(() => new AppDocumentLifecycle(canonical), [canonical]);
   const [, rerender] = useState<DocumentState>(canonical.snapshot());
   const writingHistoryResetRef = useRef<() => void>(() => undefined);
+  const bridgeStartMode = typeof window === "undefined"
+    ? undefined
+    : new URLSearchParams(window.location.search).get("sn-bridge-start");
   const bridge = useMemo(() => new EditorKitBridge(
     canonical,
     () => rerender(canonical.snapshot()),
@@ -174,6 +177,11 @@ export function App() {
     undefined,
     () => writingHistoryResetRef.current(),
   ), [canonical]);
+  // The host sends component-registered from iframe setup and may not retry.
+  // Start the relay during render for normal production startup so its message
+  // listener exists before the host can deliver that one-shot message. The
+  // deterministic harness can still request a deliberately manual start.
+  if (bridgeStartMode !== "manual") bridge.start();
   const [mode, setMode] = useState<Mode>("writing");
   const [filter, setFilter] = useState<MindMapFilter>("all");
   const [mindMapScope, setMindMapScope] = useState<MindMapScope>("entire-note");
