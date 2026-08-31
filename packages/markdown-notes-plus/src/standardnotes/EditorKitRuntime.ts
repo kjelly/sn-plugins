@@ -1,14 +1,12 @@
-import EditorKit, { type EditorKitDelegate as RuntimeEditorKitDelegate } from "@standardnotes/editor-kit";
 import type { EditorKitFactory } from "./EditorKitBridge";
+import { StandardNotesComponentTransport } from "./StandardNotesComponentTransport";
 
-type RuntimeNote = Parameters<EditorKit["saveItemWithPresave"]>[0];
-
-/** Production adapter for the pinned EditorKit package. */
+/** Production adapter for the editor-owned Component API transport. */
 export const createEditorKit: EditorKitFactory = (delegate, options) => {
-  const kit = new EditorKit(delegate as RuntimeEditorKitDelegate, options);
+  const transport = new StandardNotesComponentTransport(delegate, options);
   return {
     saveItemWithPresave(note, presave) {
-      kit.saveItemWithPresave(note as unknown as RuntimeNote, presave);
+      transport.saveItemWithPresave(note, presave);
     },
   };
 };

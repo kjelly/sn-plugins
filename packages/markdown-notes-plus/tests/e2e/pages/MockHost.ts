@@ -17,8 +17,8 @@ export interface MockSaveItem {
 export class MockHost {
   constructor(private readonly page: Page) {}
 
-  async goto(initialText?: string, uuid = "default-note-uuid", locked = false): Promise<void> {
-    await this.page.goto("/test-host.html");
+  async goto(initialText?: string, uuid = "default-note-uuid", locked = false, mobile = false): Promise<void> {
+    await this.page.goto(mobile ? "/test-host.html?mobile=1" : "/test-host.html");
     await this.page.waitForFunction(() => typeof (window as unknown as { __SN_MOCK_HOST__?: unknown }).__SN_MOCK_HOST__ !== "undefined");
     if (initialText !== undefined) {
       await this.setNote(initialText, uuid, locked);
@@ -79,6 +79,13 @@ export class MockHost {
     await this.page.evaluate(() => {
       const host = (window as unknown as { __SN_MOCK_HOST__: { clearSaves: () => void } }).__SN_MOCK_HOST__;
       host.clearSaves();
+    });
+  }
+
+  async getProtocolViolations(): Promise<Array<{ dataType: string; hasSessionKey: boolean }>> {
+    return await this.page.evaluate(() => {
+      const host = (window as unknown as { __SN_MOCK_HOST__: { getProtocolViolations: () => Array<{ dataType: string; hasSessionKey: boolean }> } }).__SN_MOCK_HOST__;
+      return host.getProtocolViolations();
     });
   }
 

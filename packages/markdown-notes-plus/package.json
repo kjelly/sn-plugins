@@ -15,7 +15,7 @@
     "build": "vite build",
     "lint": "deno lint src tests",
     "test": "deno test --allow-read --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/smart-paste.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts",
-    "test:unit": "deno test --allow-read --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/smart-paste.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts",
+    "test:unit": "deno test --allow-read --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/smart-paste.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts tests/standardnotes-transport.test.ts",
     "test:integration": "deno test --allow-read --no-prompt tests/integration.test.ts && node tests/run-source-history-boundary.mjs && node tests/run-milkdown-boundary.mjs",
     "test:e2e": "playwright test --project=chromium",
     "test:artifacts": "deno test --allow-read --no-prompt tests/build-artifact.test.ts",

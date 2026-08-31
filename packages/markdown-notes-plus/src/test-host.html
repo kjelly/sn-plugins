@@ -30,6 +30,7 @@
     <script>
       (function() {
         const iframe = document.getElementById("editor-frame");
+        const isMobile = new URLSearchParams(window.location.search).get("mobile") === "1";
         let streamContextMessageId = null;
         let registered = false;
         let currentNote = {
@@ -46,6 +47,7 @@
         };
 
         const receivedSaves = [];
+        const protocolViolations = [];
         const saveListeners = [];
         let handshakeResolve = null;
         const handshakePromise = new Promise((resolve) => {
@@ -59,8 +61,8 @@
             sessionKey: "mock-sn-session-key",
             componentData: {},
             data: {
-              environment: "web",
-              platform: "web",
+              environment: isMobile ? "mobile" : "web",
+              platform: isMobile ? "mobile" : "web",
               uuid: "mock-plugin-uuid",
               activeThemeUrls: []
             }
@@ -77,6 +79,11 @@
         }, 50);
 
         window.addEventListener("message", (event) => {
+          if (event.source === iframe.contentWindow &&
+              (!event.data || typeof event.data !== "object" || typeof event.data.sessionKey !== "string" || !event.data.sessionKey)) {
+            protocolViolations.push({ dataType: typeof event.data, hasSessionKey: Boolean(event.data?.sessionKey) });
+            return;
+          }
           const msg = event.data;
           if (!msg || typeof msg !== "object") return;
 
@@ -133,6 +140,9 @@
           getLatestSavedText() {
             const latest = receivedSaves[receivedSaves.length - 1];
             return latest?.items?.[0]?.content?.text;
+          },
+          getProtocolViolations() {
+            return protocolViolations;
           },
           clearSaves() {
             receivedSaves.length = 0;
