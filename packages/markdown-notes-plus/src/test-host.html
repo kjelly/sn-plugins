@@ -54,9 +54,14 @@
           handshakeResolve = resolve;
         });
 
+        function sendToEditor(message) {
+          if (iframe.contentWindow) {
+            iframe.contentWindow.postMessage(isMobile ? JSON.stringify(message) : message, "*");
+          }
+        }
+
         function sendRegistration() {
-          if (!iframe.contentWindow) return;
-          iframe.contentWindow.postMessage({
+          sendToEditor({
             action: "component-registered",
             sessionKey: "mock-sn-session-key",
             componentData: {},
@@ -66,7 +71,7 @@
               uuid: "mock-plugin-uuid",
               activeThemeUrls: []
             }
-          }, "*");
+          });
         }
 
         // Try registering periodically until handshake completes
@@ -79,13 +84,27 @@
         }, 50);
 
         window.addEventListener("message", (event) => {
-          if (event.source === iframe.contentWindow &&
-              (!event.data || typeof event.data !== "object" || typeof event.data.sessionKey !== "string" || !event.data.sessionKey)) {
+          if (event.source !== iframe.contentWindow) return;
+          const expectedDataType = isMobile ? "string" : "object";
+          if (typeof event.data !== expectedDataType) {
             protocolViolations.push({ dataType: typeof event.data, hasSessionKey: Boolean(event.data?.sessionKey) });
             return;
           }
-          const msg = event.data;
+          const rawMessage = event.data;
+          let msg = rawMessage;
+          if (isMobile) {
+            try {
+              msg = JSON.parse(rawMessage);
+            } catch (_) {
+              protocolViolations.push({ dataType: "invalid-json", hasSessionKey: false });
+              return;
+            }
+          }
           if (!msg || typeof msg !== "object") return;
+          if (typeof msg.sessionKey !== "string" || !msg.sessionKey) {
+            protocolViolations.push({ dataType: "missing-session-key", hasSessionKey: false });
+            return;
+          }
 
           if (msg.action === "stream-context-item") {
             registered = true;
@@ -94,13 +113,13 @@
             if (handshakeResolve) handshakeResolve();
 
             // Reply with current note
-            iframe.contentWindow.postMessage({
+            sendToEditor({
               action: "reply",
               original: { messageId: streamContextMessageId },
               data: {
                 item: currentNote
               }
-            }, "*");
+            });
           } else if (msg.action === "save-items") {
             const items = msg.data?.items || [];
             if (items.length > 0 && items[0].content?.text !== undefined && currentNote) {
@@ -109,7 +128,7 @@
             receivedSaves.push({
               timestamp: Date.now(),
               items: items,
-              raw: msg
+              raw: rawMessage
             });
 
             // Notify any listeners
@@ -119,11 +138,11 @@
 
             // Reply to acknowledge save
             if (msg.messageId) {
-              iframe.contentWindow.postMessage({
+              sendToEditor({
                 action: "reply",
                 original: { messageId: msg.messageId },
                 data: {}
-              }, "*");
+              });
             }
           } else if (msg.action === "themes-activated") {
             // Handshake sub-step
@@ -161,26 +180,26 @@
               }
             };
             if (streamContextMessageId && iframe.contentWindow) {
-              iframe.contentWindow.postMessage({
+              sendToEditor({
                 action: "reply",
                 original: { messageId: streamContextMessageId },
                 data: {
                   item: currentNote
                 }
-              }, "*");
+              });
             }
           },
           updateCurrentNote(text) {
             if (!currentNote) return;
             currentNote.content.text = text;
             if (streamContextMessageId && iframe.contentWindow) {
-              iframe.contentWindow.postMessage({
+              sendToEditor({
                 action: "reply",
                 original: { messageId: streamContextMessageId },
                 data: {
                   item: currentNote
                 }
-              }, "*");
+              });
             }
           },
           setLocked(locked) {
@@ -191,23 +210,23 @@
             }
             currentNote.content.appData["org.standardnotes.sn"].locked = locked;
             if (streamContextMessageId && iframe.contentWindow) {
-              iframe.contentWindow.postMessage({
+              sendToEditor({
                 action: "reply",
                 original: { messageId: streamContextMessageId },
                 data: {
                   item: currentNote
                 }
-              }, "*");
+              });
             }
           },
           setThemes(themeUrls) {
             if (iframe.contentWindow) {
-              iframe.contentWindow.postMessage({
+              sendToEditor({
                 action: "themes",
                 data: {
                   themes: themeUrls
                 }
-              }, "*");
+              });
             }
           },
           waitForHandshake() {

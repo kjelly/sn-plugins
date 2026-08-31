@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { MockHost } from "../pages/MockHost.ts";
 import { EditorPage } from "../pages/EditorPage.ts";
 
-test("mobile Component API keeps registration, initial context, and saves structured", async ({ page }) => {
+test("mobile Component API uses JSON strings for registration, context, and saves", async ({ page }) => {
   const host = new MockHost(page);
   const editor = new EditorPage(page);
 
@@ -20,9 +20,9 @@ test("mobile Component API keeps registration, initial context, and saves struct
 
   expect(await host.getLatestSavedText()).toContain("Saved from mobile transport.");
   expect(await host.getProtocolViolations()).toEqual([]);
-  const latestSaveIsObject = await page.evaluate(() => {
+  const latestSaveIsString = await page.evaluate(() => {
     const save = (window as unknown as { __SN_MOCK_HOST__: { getLatestSave: () => { raw: unknown } } }).__SN_MOCK_HOST__.getLatestSave();
-    return typeof save?.raw === "object" && save.raw !== null;
+    return typeof save?.raw === "string";
   });
-  expect(latestSaveIsObject).toBe(true);
+  expect(latestSaveIsString).toBe(true);
 });
