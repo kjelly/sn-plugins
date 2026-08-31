@@ -373,7 +373,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await host.goto("Selected text\n", "note-mobile-link-dialog", false);
     await expect(editor.status).toHaveText("Ready");
     await editor.writingEditor.click();
-    await page.keyboard.press("ControlOrMeta+a");
+    await editor.writingEditor.press("ControlOrMeta+a");
     await editor.writingLinkButton.click();
 
     const dialog = editor.frame.getByRole("dialog", { name: "Insert link" });
@@ -396,7 +396,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
 
     await editor.switchMode("Writing");
     await editor.writingEditor.click();
-    await page.keyboard.press("ControlOrMeta+a");
+    await editor.writingEditor.press("ControlOrMeta+a");
     await editor.writingLinkButton.click();
     await expect(dialog).toBeVisible();
     await input.fill("https://confirm.example/selected");
