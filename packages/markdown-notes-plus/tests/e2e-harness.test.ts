@@ -12,6 +12,10 @@ import {
   resolveAppiumEndpoint,
 } from "./e2e-android/appium-endpoint.ts";
 import {
+  isNoteOptionsPopoverNode,
+  NOTE_OPTIONS_POPOVER_SELECTOR,
+} from "./e2e-android/pages/StandardNotesApp.ts";
+import {
   assertEditorSelectionVerified,
   assertPluginInstallationVerified,
   createPrerequisiteGate,
@@ -678,6 +682,196 @@ Deno.test("headless runner emits focus, hierarchy, screenshot, and ANR diagnosti
   assertEquals(script.includes("uiautomator dump"), true);
   assertEquals(script.includes("screencap -p"), true);
   assertEquals(script.includes("ANR/logcat"), true);
+});
+
+Deno.test("headless runner requires interactive Android health before installing Standard Notes", async () => {
+  const script = await Deno.readTextFile("scripts/run-headless-e2e.sh");
+  const healthGate = script.indexOf("wait_for_android_interactive_health() {");
+  const install = script.indexOf('echo "=== [3/6] Installing Standard Notes Official APK ==="');
+  const invocation = script.lastIndexOf("wait_for_android_interactive_health", install);
+
+  assertEquals(healthGate >= 0, true);
+  assertEquals(invocation > healthGate && invocation < install, true);
+  assertEquals(script.includes("getprop sys.boot_completed"), true);
+  assertEquals(script.includes("getprop dev.bootcomplete"), true);
+  assertEquals(script.includes("getprop init.svc.bootanim"), true);
+  assertEquals(script.includes("settings get secure user_setup_complete"), true);
+  assertEquals(script.includes("android.intent.category.HOME"), true);
+  assertEquals(script.includes("topResumedActivity|mResumedActivity"), true);
+  assertEquals(script.includes("collect_android_diagnostics"), true);
+});
+
+Deno.test("plugin installation waits for confirmation dismissal before accepting a managed entry", async () => {
+  const source = await Deno.readTextFile("tests/e2e-android/pages/StandardNotesApp.ts");
+  const installMethodStart = source.indexOf("  async installCustomPlugin");
+  const installMethodEnd = source.indexOf("\n  async createNewNote", installMethodStart);
+  const installMethod = source.slice(installMethodStart, installMethodEnd);
+
+  assertEquals(installMethod.includes("(//*[@text=\"Install\"])[last()]"), true);
+  assertEquals(installMethod.includes("android.widget.Button[@text=\"Install\" and @enabled=\"true\"]"), false);
+  assertEquals(installMethod.includes("Standard Notes did not dismiss the custom-plugin confirmation dialog"), true);
+  assertEquals(installMethod.includes('//*[@text="No plugins installed."]'), true);
+  assertEquals(installMethod.includes("pluginVisible && !emptyStateVisible"), true);
+});
+
+Deno.test("plugin URL entry closes the keyboard before native Install interaction", async () => {
+  const source = await Deno.readTextFile("tests/e2e-android/pages/StandardNotesApp.ts");
+  const installMethodStart = source.indexOf("  async installCustomPlugin");
+  const installMethodEnd = source.indexOf("\n  async createNewNote", installMethodStart);
+  const installMethod = source.slice(installMethodStart, installMethodEnd);
+  const nativeContext = installMethod.indexOf('await browser.switchContext("NATIVE_APP");');
+  const hideKeyboard = installMethod.indexOf('await browser.executeScript("mobile: hideKeyboard", [{}]);');
+  const formInstall = installMethod.indexOf('const installButton = await $(\'(//*[@text="Install"])[last()]\');');
+
+  assertEquals(nativeContext >= 0, true);
+  assertEquals(hideKeyboard > nativeContext, true);
+  assertEquals(formInstall > hideKeyboard, true);
+  assertEquals(installMethod.includes("await installButton.waitForDisplayed({ timeout: 5000 });"), true);
+  assertEquals(installMethod.includes("await installButton.waitForEnabled({ timeout: 5000 });"), true);
+  assertEquals(installMethod.includes('pressKey", [{ keycode: 4 }]'), false);
+});
+
+Deno.test("Android editor input is owned by the extension iframe and ProseMirror DOM surface", async () => {
+  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+
+  assertEquals(source.includes('iframe[src="http://10.0.2.2:5173/index.html"]'), true);
+  assertEquals(source.includes('div.ProseMirror.editor[contenteditable="true"][role="textbox"]'), true);
+  assertEquals(source.includes("await browser.switchFrame(iframe);"), true);
+  assertEquals(source.includes("Custom editor ProseMirror surface did not receive DOM focus before typing"), true);
+  assertEquals(source.includes("await editor.setValue(text);"), true);
+  assertEquals(source.includes("Standard Notes Set editor width modal blocked the custom editor"), true);
+  assertEquals(source.includes("browser.keys"), false);
+  assertEquals(source.includes("android.widget.EditText"), false);
+  assertEquals(source.includes("getElementText"), false);
+});
+
+Deno.test("Android editor frame entry resets a retained child frame before locating the extension iframe", async () => {
+  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+  const frameSelection = source.indexOf("await browser.switchContext(webViewContext);");
+  const topLevelReset = source.indexOf("await browser.switchFrame(null);", frameSelection);
+  const iframeLookup = source.indexOf("const iframe = await $(EXTENSION_IFRAME);", frameSelection);
+
+  assertEquals(frameSelection >= 0, true);
+  assertEquals(topLevelReset > frameSelection, true);
+  assertEquals(iframeLookup > topLevelReset, true);
+});
+
+Deno.test("Android mode switching preserves a normal click when WDIO visibility is false", async () => {
+  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+  const modeStart = source.indexOf("  async switchMode");
+  const modeMethod = source.slice(modeStart);
+  const observationStart = source.indexOf("  private async observeModeButton");
+  const observationEnd = source.indexOf("\n  private async editorText", observationStart);
+  const observation = source.slice(observationStart, observationEnd);
+
+  // This is the failure shape from the nested Android WebView: the element is
+  // in the DOM with usable geometry/style even though WDIO reports false.
+  const writingButton = {
+    domPresent: true,
+    width: 72,
+    height: 26,
+    display: "block",
+    visibility: "visible",
+    opacity: 1,
+    wdioDisplayed: false,
+  };
+  assertEquals(
+    writingButton.domPresent
+      && writingButton.width > 0
+      && writingButton.height > 0
+      && writingButton.display === "block"
+      && writingButton.visibility === "visible"
+      && writingButton.opacity > 0
+      && !writingButton.wdioDisplayed,
+    true,
+  );
+
+  assertEquals(source.includes('[role="toolbar"][aria-label="Editor mode"]'), true);
+  assertEquals(modeMethod.includes('not(ancestor::*[@hidden])'), true);
+  assertEquals(modeMethod.includes("await modeButton.isExisting()"), true);
+  assertEquals(observation.includes("getBoundingClientRect()"), true);
+  assertEquals(observation.includes("getComputedStyle(button)"), true);
+  assertEquals(modeMethod.includes("await modeButton.click();"), true);
+  assertEquals(modeMethod.includes("await modeButton.isDisplayed()"), false);
+  assertEquals(modeMethod.includes("await modeButton.waitForDisplayed"), false);
+  assertEquals(modeMethod.includes("executeScript"), false);
+  assertEquals(observation.includes('active: button.classList.contains("active")'), true);
+  assertEquals(modeMethod.includes('if (modeName === "Writing") await this.switchToWritingEditor();'), true);
+});
+
+Deno.test("Android mode transitions enter the extension frame without requiring the hidden Writing surface", async () => {
+  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+  const frameEntryStart = source.indexOf("  private async enterExtensionFrame");
+  const frameEntryEnd = source.indexOf("\n  private async switchToWritingEditor", frameEntryStart);
+  const frameEntry = source.slice(frameEntryStart, frameEntryEnd);
+  const writingEntryStart = source.indexOf("  private async switchToWritingEditor");
+  const writingEntryEnd = source.indexOf("\n  private async editorText", writingEntryStart);
+  const writingEntry = source.slice(writingEntryStart, writingEntryEnd);
+  const modeStart = source.indexOf("  async switchMode");
+  const modeEntry = source.slice(modeStart);
+  const modeClick = modeEntry.indexOf("await modeButton.click();");
+  const writingPostcondition = modeEntry.indexOf("await this.switchToWritingEditor();");
+
+  assertEquals(frameEntry.includes("PROSEMIRROR_EDITOR"), false);
+  assertEquals(writingEntry.includes("await this.enterExtensionFrame();"), true);
+  assertEquals(writingEntry.includes("await editor.waitForDisplayed"), true);
+  assertEquals(modeEntry.includes("await this.enterExtensionFrame();"), true);
+  assertEquals(modeClick >= 0, true);
+  assertEquals(writingPostcondition > modeClick, true);
+  assertEquals(modeEntry.includes('button[normalize-space(.)="${modeName}"]'), true);
+});
+
+Deno.test("Android E2E restricts mode navigation to actual editor modes and preserves the marker through Source", async () => {
+  const page = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+  const spec = await Deno.readTextFile("tests/e2e-android/specs/sn-official-integration.spec.ts");
+  const modeSignatureStart = page.indexOf("  async switchMode(");
+  const modeSignatureEnd = page.indexOf("):", modeSignatureStart);
+  const modeSignature = page.slice(modeSignatureStart, modeSignatureEnd);
+  const sourceTransition = spec.indexOf('await editor.switchMode("Source");');
+  const writingTransition = spec.indexOf('await editor.switchMode("Writing");', sourceTransition);
+  const markerAfterWriting = spec.indexOf("await editor.waitForVisibleText(SAVED_NOTE_MARKER);", writingTransition);
+
+  assertEquals(modeSignature.includes('"Writing" | "Source" | "Split" | "Mind Map"'), true);
+  assertEquals(modeSignature.includes('"Tasks"'), false);
+  assertEquals(sourceTransition >= 0, true);
+  assertEquals(writingTransition > sourceTransition, true);
+  assertEquals(markerAfterWriting > writingTransition, true);
+  assertEquals(spec.includes('await editor.switchMode("Tasks");'), false);
+});
+
+Deno.test("fallback editor selection closes its own Note options popover before declaring readiness", async () => {
+  const source = await Deno.readTextFile("tests/e2e-android/pages/StandardNotesApp.ts");
+  const selectionStart = source.indexOf("  async selectEditor");
+  const selectionEnd = source.indexOf("\n  async returnToNotesList", selectionStart);
+  const selection = source.slice(selectionStart, selectionEnd);
+  const fallbackOpened = selection.indexOf("openedNoteOptionsPopover = true;");
+  const popoverCheck = selection.indexOf("const noteOptionsPopover = await $(NOTE_OPTIONS_POPOVER_SELECTOR);");
+  const doneClick = selection.indexOf("await doneButton.click();", popoverCheck);
+  const popoverFailure = selection.indexOf(
+    "Standard Notes Note options popover remained open after selecting the custom editor",
+    doneClick,
+  );
+  const readyAssertion = selection.indexOf("assertEditorSelectionVerified", popoverFailure);
+
+  assertEquals(fallbackOpened >= 0, true);
+  assertEquals(popoverCheck > fallbackOpened, true);
+  assertEquals(doneClick > popoverCheck, true);
+  assertEquals(popoverFailure > doneClick, true);
+  assertEquals(readyAssertion > popoverFailure, true);
+});
+
+Deno.test("Note options popover detection excludes the persistent trigger and matches only the open ListView", () => {
+  assertEquals(NOTE_OPTIONS_POPOVER_SELECTOR, '//*[@class="android.widget.ListView" and @text="Note options menu"]');
+  assertEquals(isNoteOptionsPopoverNode({
+    className: "android.view.View",
+    resourceId: "note-options-button",
+    text: "Note options menu",
+  }), false);
+  assertEquals(isNoteOptionsPopoverNode({
+    className: "android.widget.ListView",
+    resourceId: "",
+    text: "Note options menu",
+  }), true);
 });
 
 Deno.test("headless runner fails closed when Appium Build Tools are missing", async () => {

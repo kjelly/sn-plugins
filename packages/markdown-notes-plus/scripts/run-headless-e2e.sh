@@ -16,6 +16,7 @@ export ANDROID_BUILD_TOOLS_VERSION="${ANDROID_BUILD_TOOLS_VERSION:-35.0.0}"
 BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}"
 APKSIGNER_JAR="${BUILD_TOOLS_DIR}/lib/apksigner.jar"
 APKSIGNER_BIN="${BUILD_TOOLS_DIR}/apksigner"
+ANDROID_DEVICE_READY_TIMEOUT_SECONDS="${ANDROID_DEVICE_READY_TIMEOUT_SECONDS:-120}"
 VITE_PID=""
 APPIUM_PID=""
 EMULATOR_PID=""
@@ -130,6 +131,59 @@ establish_notification_permission() {
     return 1
   fi
   echo "Notification permission verified before Standard Notes launch."
+}
+
+wait_for_android_interactive_health() {
+  local deadline
+  local sys_boot_completed
+  local dev_boot_completed
+  local boot_animation_state
+  local user_setup_complete
+  local home_activity
+  local resumed_activity
+
+  deadline=$((SECONDS + ANDROID_DEVICE_READY_TIMEOUT_SECONDS))
+  echo "Waiting for Android interactive health before starting the test..."
+
+  while ((SECONDS <= deadline)); do
+    sys_boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+    dev_boot_completed="$(adb shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r')"
+    boot_animation_state="$(adb shell getprop init.svc.bootanim 2>/dev/null | tr -d '\r')"
+    user_setup_complete="$(adb shell settings get secure user_setup_complete 2>/dev/null | tr -d '\r')"
+
+    if [[ "${sys_boot_completed}" == "1" ]] \
+      && [[ "${dev_boot_completed}" == "1" ]] \
+      && [[ "${boot_animation_state}" == "stopped" ]] \
+      && [[ "${user_setup_complete}" == "1" ]]; then
+      home_activity="$(adb shell cmd package resolve-activity --brief \
+        -a android.intent.action.MAIN \
+        -c android.intent.category.HOME 2>/dev/null \
+        | tr -d '\r' \
+        | grep -E '^[[:alnum:]_.]+/' \
+        | tail -n 1 || true)"
+
+      if [[ -n "${home_activity}" ]]; then
+        adb shell am start -W \
+          -a android.intent.action.MAIN \
+          -c android.intent.category.HOME >/dev/null 2>&1 || true
+        resumed_activity="$(adb shell dumpsys activity activities 2>/dev/null \
+          | grep -E 'topResumedActivity|mResumedActivity' \
+          | tr -d '\r' || true)"
+
+        if [[ "${resumed_activity}" == *"${home_activity}"* ]]; then
+          echo "Android interactive health verified with HOME activity ${home_activity}."
+          return 0
+        fi
+      fi
+    fi
+
+    sleep 2
+  done
+
+  echo "Error: Android did not become interactively healthy within ${ANDROID_DEVICE_READY_TIMEOUT_SECONDS}s." >&2
+  echo "Expected completed boot, Settings service availability, and a resumed HOME activity before Appium starts." >&2
+  collect_android_diagnostics
+  return 1
 }
 
 collect_android_diagnostics() {
@@ -254,6 +308,8 @@ else
   echo "Found active Android device:"
   echo "${DEVICE_LIST}"
 fi
+
+wait_for_android_interactive_health
 
 echo "=== [3/6] Installing Standard Notes Official APK ==="
 APK_PATH="${ROOT_DIR}/artifacts/standardnotes.apk"

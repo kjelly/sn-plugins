@@ -332,7 +332,10 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     // Use a local stylesheet fixture so this test verifies the theme lifecycle
     // without coupling the network gate to external Standard Notes hosting.
     const themeUrl = new URL("/e2e-theme.css", page.url()).href;
+    const themeResponsePromise = page.waitForResponse((response) => response.url() === themeUrl);
     await host.setThemes([themeUrl]);
+    const themeResponse = await themeResponsePromise;
+    expect(themeResponse.ok(), `Theme stylesheet request failed: ${themeUrl}`).toBe(true);
     const themeLink = editor.frame.locator(`link.custom-theme[href="${themeUrl}"]`);
     await expect(themeLink).toHaveCount(1);
     await themeLink.evaluate((link) => new Promise<void>((resolve, reject) => {
@@ -343,9 +346,6 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
       link.addEventListener("load", () => resolve(), { once: true });
       link.addEventListener("error", () => reject(new Error("Test theme stylesheet failed to load")), { once: true });
     }));
-    // Keep the fixture link attached until the frame is torn down. Removing a
-    // loaded stylesheet is reported as an aborted request by Firefox, which is
-    // unrelated to the editor's network/CSP contract and makes the gate flaky.
 
     // 9. Debounced Save Cycle & Verification
     await editor.switchMode("Writing");

@@ -32,6 +32,19 @@ declare const browser: {
   keys(keys: string[] | string): Promise<void>;
 };
 
+export const NOTE_OPTIONS_POPOVER_SELECTOR =
+  '//*[@class="android.widget.ListView" and @text="Note options menu"]';
+
+export function isNoteOptionsPopoverNode(node: {
+  className: string;
+  resourceId: string;
+  text: string;
+}): boolean {
+  return node.className === "android.widget.ListView"
+    && node.resourceId === ""
+    && node.text === "Note options menu";
+}
+
 export class StandardNotesApp {
   private async ensureStandardNotesUiReady(): Promise<void> {
     await waitForStandardNotesUiReady(browser, $);
@@ -125,6 +138,11 @@ export class StandardNotesApp {
       await webInput.waitForDisplayed({ timeout: 10000 });
       await webInput.setValue(manifestUrl);
       await browser.switchContext("NATIVE_APP");
+      // WebView typing leaves the soft keyboard open. The native form's
+      // Install button is below that reduced viewport, so close the keyboard
+      // through UiAutomator2 rather than using BACK (which can leave
+      // Preferences altogether).
+      await browser.executeScript("mobile: hideKeyboard", [{}]);
     } else {
       await urlInput.click();
       // Fall back to key events when the APK does not expose a debuggable
@@ -134,24 +152,47 @@ export class StandardNotesApp {
     }
 
     const installButton = await $('(//*[@text="Install"])[last()]');
+    await installButton.waitForDisplayed({ timeout: 5000 });
     await installButton.waitForEnabled({ timeout: 5000 });
     await installButton.click();
 
     const confirmation = await $('//*[@text="Confirm Extension"]');
-    if (await confirmation.isExisting()) {
-      await confirmation.waitForDisplayed({ timeout: 5000 });
-      // Gallery cards also contain disabled Install buttons. The confirmation
-      // dialog is the only enabled native Install button at this point.
-      const confirmButton = await $('(//android.widget.Button[@text="Install" and @enabled="true"])[last()]');
-      await confirmButton.waitForDisplayed({ timeout: 5000 });
-      await confirmButton.click();
+    await confirmation.waitForDisplayed({ timeout: 10000 });
+    // UiAutomator2 cannot resolve the confirmation action with a
+    // class-plus-enabled XPath here, even though the raw hierarchy exposes
+    // those attributes. The text-only final Install action is proven by the
+    // same 3.202.1 dialog flow and is only used after confirmation is visible.
+    const confirmButton = await $('(//*[@text="Install"])[last()]');
+    await confirmButton.waitForDisplayed({ timeout: 5000 });
+    await confirmButton.click();
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!(await confirmation.isExisting()) || !(await confirmation.isDisplayed())) break;
+      await browser.pause(500);
     }
 
+    if (await confirmation.isExisting() && await confirmation.isDisplayed()) {
+      throw new Error("Standard Notes did not dismiss the custom-plugin confirmation dialog");
+    }
+
+    // A plugin name is present inside the confirmation dialog, so it is not
+    // proof of installation. Require the empty state to disappear after the
+    // dialog closes, then require the managed plugin entry to be visible.
+    const emptyPluginState = await $('//*[@text="No plugins installed."]');
     const installedPlugin = await $(
       '//*[contains(@text, "Markdown Notes+") or contains(@content-desc, "Markdown Notes+")]',
     );
-    const pluginVisible = await installedPlugin.isExisting() && await installedPlugin.isDisplayed();
-    assertPluginInstallationVerified("Markdown Notes+", pluginVisible);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const pluginVisible = await installedPlugin.isExisting() && await installedPlugin.isDisplayed();
+      const emptyStateVisible = await emptyPluginState.isExisting() && await emptyPluginState.isDisplayed();
+      if (pluginVisible && !emptyStateVisible) {
+        assertPluginInstallationVerified("Markdown Notes+", true);
+        return;
+      }
+      await browser.pause(500);
+    }
+
+    assertPluginInstallationVerified("Markdown Notes+", false);
   }
 
   async createNewNote(): Promise<void> {
@@ -192,12 +233,14 @@ export class StandardNotesApp {
       }
       await browser.pause(500);
     }
+    let openedNoteOptionsPopover = false;
     if (editorMenuVisible) {
       await editorMenuButton.click();
     } else {
       const noteOptionsButton = await $('//*[@resource-id="note-options-button" or @text="Note options menu"]');
       await noteOptionsButton.waitForDisplayed({ timeout: 10000 });
       await noteOptionsButton.click();
+      openedNoteOptionsPopover = true;
       const changeNoteType = await $('//*[@text="Change note type" or contains(@text, "Change note type")]');
       await changeNoteType.waitForDisplayed({ timeout: 10000 });
       await changeNoteType.click();
@@ -235,6 +278,24 @@ export class StandardNotesApp {
       // The dialog is rendered asynchronously after the component WebView is
       // mounted; do not send keyboard input until this delayed gate is gone.
       await browser.pause(500);
+    }
+
+    if (openedNoteOptionsPopover) {
+      const noteOptionsPopover = await $(NOTE_OPTIONS_POPOVER_SELECTOR);
+      if (await noteOptionsPopover.isExisting() && await noteOptionsPopover.isDisplayed()) {
+        const doneButton = await $('//*[@text="Done"]');
+        await doneButton.waitForDisplayed({ timeout: 10000 });
+        await doneButton.click();
+
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          if (!(await noteOptionsPopover.isExisting()) || !(await noteOptionsPopover.isDisplayed())) break;
+          await browser.pause(500);
+        }
+      }
+
+      if (await noteOptionsPopover.isExisting() && await noteOptionsPopover.isDisplayed()) {
+        throw new Error("Standard Notes Note options popover remained open after selecting the custom editor");
+      }
     }
 
     // The selected component's display name is not part of the mobile native

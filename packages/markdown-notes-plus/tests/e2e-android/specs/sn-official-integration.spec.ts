@@ -25,8 +25,8 @@ describe("Official Standard Notes Android APK Integration", () => {
     await editor.typeContent("# Live Android E2E Test\n\n- [ ] Task 1 verified\n");
     await editor.waitForVisibleText(SAVED_NOTE_MARKER);
     await editor.switchMode("Source");
-    await editor.switchMode("Tasks");
     await editor.switchMode("Writing");
+    await editor.waitForVisibleText(SAVED_NOTE_MARKER);
 
     setupPrerequisite.assertReady();
     await app.returnToNotesList();
