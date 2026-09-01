@@ -181,14 +181,21 @@ export function preservesWritingStructuralContext(context: WritingStructuralCont
   return hasThematicBreak(markdown);
 }
 
-function normalizeTrailingNewlines(text: string): string {
-  return text.replace(/\n+$/, "");
+function stripWritingSuffix(text: string): string {
+  let end = text.length;
+  while (end > 0 && text[end - 1] === "\n" && (end < 2 || text[end - 2] !== "\r")) end -= 1;
+  return text.slice(0, end);
+}
+
+/** Reattach the canonical document's exact terminal line-ending suffix. */
+export function reconnectWritingSuffix(source: string, serialized: string): string {
+  return stripWritingSuffix(serialized) + source.slice(stripWritingSuffix(source).length);
 }
 
 /** Prove that the initial document survived Milkdown's actual serializer. */
 export function assessWritingRoundTrip(source: string, serialized: string): WritingRoundTripResult {
   if (!isWritingLexicallySafe(source)) return { editable: false, reason: "Writing cannot preserve this Markdown exactly; use Source mode." };
-  if (normalizeTrailingNewlines(source) !== normalizeTrailingNewlines(serialized)) {
+  if (source !== serialized) {
     return { editable: false, reason: "Writing serializer changed the source; use Source mode for exact Markdown." };
   }
   return { editable: true };

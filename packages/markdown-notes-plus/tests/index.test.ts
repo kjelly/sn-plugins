@@ -46,6 +46,13 @@ import { projectMindmapMarkdown } from "../src/markdown/analysis.ts";
 import { WritingControlRegistry, writingControlIsDisabled, writingTaskIsHidden } from "../src/editor/WritingTaskControls.ts";
 import { isWritingLinkShortcut } from "../src/editor/WritingShortcuts.ts";
 import { WRITING_COMMANDS, writingCommandPlan } from "../src/editor/WritingCommandPlan.ts";
+import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
+import {
+  armWritingEnableAttempt,
+  createWritingEnableAttemptState,
+  observeWritingCanonical,
+  observeWritingCapability,
+} from "../src/app/AppModeTransition.ts";
 
 Deno.test("preserves empty, trailing-newline, blank-line, and CRLF source exactly", () => {
   assertEquals(splitMarkdownLines(""), []);
@@ -632,7 +639,7 @@ Deno.test("EditorKit lifecycle initializes a different note and preserves unknow
 
 Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove lossless", () => {
   assertEquals(assessWritingRoundTrip("- task", "- task").editable, true);
-  assertEquals(assessWritingRoundTrip("# Title\n\nParagraph\n\n\n\n\n\n", "# Title\n\nParagraph\n").editable, true);
+  assertEquals(assessWritingRoundTrip("# Title\n\nParagraph\n\n\n\n\n\n", "# Title\n\nParagraph\n").editable, false);
   for (const source of [
     "+ task",
     "- task\r\n",
@@ -643,7 +650,130 @@ Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove l
   ]) {
     assertEquals(assessWritingRoundTrip(source, source), { editable: false, reason: "Writing cannot preserve this Markdown exactly; use Source mode." });
   }
+  assertEquals(assessWritingRoundTrip("plain\r\n", "plain\r\n").editable, false);
+  assertEquals(assessWritingMutation("plain\r\n", "plain\r\n").editable, false);
   assertEquals(assessWritingMutation("plain", "plain\r\nedit").editable, false);
+});
+
+Deno.test("normalizes only GFM-confirmed bare HTTP(S) URLs with exact UTF-16 changes", () => {
+  const source = "😀 https://one.test/a, [two](https://two.test) <https://three.test> https://四.test/路.";
+  const result = normalizeBareUrls(source);
+  const first = source.indexOf("https://one.test/a");
+  const second = source.indexOf("https://四.test/路");
+  assertEquals(result.markdown, "😀 [https://one.test/a](https://one.test/a), [two](https://two.test) <https://three.test> [https://四.test/路](https://四.test/路).");
+  assertEquals(result.changeSet?.changes, [
+    { from: first, to: first + "https://one.test/a".length, insertedLength: "[https://one.test/a](https://one.test/a)".length },
+    { from: second, to: second + "https://四.test/路".length, insertedLength: "[https://四.test/路](https://四.test/路)".length },
+  ]);
+  assertEquals(result.changeSet?.oldLength, source.length);
+  assertEquals(result.changeSet?.newLength, result.markdown.length);
+});
+
+Deno.test("normalizer leaves code, HTML, existing links, and autolinks untouched", () => {
+  const source = [
+    "`https://inline.test`",
+    "    https://indented.test",
+    "```md",
+    "https://fenced.test",
+    "```",
+    "<!-- https://comment.test -->",
+    "<div>https://html.test</div>",
+    "outside https://visible.test!",
+  ].join("\n");
+  const result = normalizeBareUrls(source);
+  assertEquals(result.markdown, source.replace("https://visible.test", "[https://visible.test](https://visible.test)"));
+  assertEquals(result.changeSet?.changes.length, 1);
+});
+
+Deno.test("normalizer escapes URL Markdown punctuation without changing the source URL", () => {
+  const source = "https://x.test/a]b https://x.test/a(b)";
+  const result = normalizeBareUrls(source);
+  assertEquals(result.markdown, "[https://x.test/a\\]b](https://x.test/a]b) [https://x.test/a(b)](https://x.test/a\\(b\\))");
+  assertEquals(result.changeSet?.changes, [
+    { from: 0, to: "https://x.test/a]b".length, insertedLength: "[https://x.test/a\\]b](https://x.test/a]b)".length },
+    { from: "https://x.test/a]b ".length, to: source.length, insertedLength: "[https://x.test/a(b)](https://x.test/a\\(b\\))".length },
+  ]);
+});
+
+Deno.test("normalizer preserves every terminal line-ending suffix", () => {
+  for (const suffix of ["", "\n", "\n\n", "\r\n", "\r\n\r\n"]) {
+    const source = `https://suffix.test${suffix}`;
+    const result = normalizeBareUrls(source);
+    assertEquals(result.markdown, `[https://suffix.test](https://suffix.test)${suffix}`);
+    if (suffix) assertEquals(result.markdown.slice(-suffix.length), suffix);
+  }
+});
+
+Deno.test("Writing enable attempts require the exact proof target and one document generation", () => {
+  let state = createWritingEnableAttemptState();
+  state = armWritingEnableAttempt(state, "target", 4, true);
+  assertEquals(state.pending, { id: 1, expectedCanonicalText: "target", documentGeneration: 4 });
+
+  state = observeWritingCanonical(state, {
+    previousCanonicalText: "previous",
+    currentCanonicalText: "target",
+    documentGeneration: 5,
+    initialized: false,
+  });
+  assertEquals(state.pending, {
+    id: 1,
+    expectedCanonicalText: "target",
+    documentGeneration: 4,
+    committedGeneration: 5,
+  });
+
+  let outcome = observeWritingCapability(state, {
+    editable: true,
+    proofSource: "target",
+    currentCanonicalText: "target",
+    documentGeneration: 5,
+  });
+  assertEquals(outcome.enableWriting, true);
+  assertEquals(outcome.state.pending, undefined);
+  outcome = observeWritingCapability(outcome.state, {
+    editable: true,
+    proofSource: "target",
+    currentCanonicalText: "target",
+    documentGeneration: 5,
+  });
+  assertEquals(outcome.enableWriting, false);
+
+  state = armWritingEnableAttempt(outcome.state, "target", 5, true);
+  outcome = observeWritingCapability(state, {
+    editable: false,
+    proofSource: "target",
+    currentCanonicalText: "target",
+    documentGeneration: 5,
+  });
+  assertEquals(outcome.enableWriting, false);
+  outcome = observeWritingCapability(outcome.state, {
+    editable: true,
+    proofSource: "target",
+    currentCanonicalText: "target",
+    documentGeneration: 5,
+  });
+  assertEquals(outcome.enableWriting, false);
+
+  state = armWritingEnableAttempt(outcome.state, "target", 5, true);
+  state = observeWritingCanonical(state, {
+    previousCanonicalText: "target",
+    currentCanonicalText: "changed",
+    documentGeneration: 5,
+    initialized: false,
+  });
+  assertEquals(state.pending, undefined);
+
+  state = armWritingEnableAttempt(state, "target", 5, true);
+  state = observeWritingCanonical(state, {
+    previousCanonicalText: "previous",
+    currentCanonicalText: "target",
+    documentGeneration: 6,
+    initialized: true,
+  });
+  assertEquals(state.pending, undefined);
+
+  state = armWritingEnableAttempt(state, "target", 5, false);
+  assertEquals(state.pending, undefined);
 });
 
 Deno.test("empty Writing notes allow only LF-safe initial materialization", () => {

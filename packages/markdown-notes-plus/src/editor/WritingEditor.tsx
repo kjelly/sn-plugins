@@ -13,7 +13,7 @@ import type { EditorView as ProseEditorView } from "@milkdown/prose/view";
 import { SlashProvider } from "@milkdown/plugin-slash";
 import { toggleMark } from "@milkdown/prose/commands";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry, writingControlIsDisabled, writingTaskIsHidden, type WritingControlState } from "./WritingTaskControls";
-import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
+import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, reconnectWritingSuffix, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
@@ -47,7 +47,7 @@ export type WritingEditorProps = {
   command?: WritingCommand;
   insertPayload?: InsertPayload;
   library?: InsertLibrary;
-  onCapabilityChange?: (result: WritingRoundTripResult) => void;
+  onCapabilityChange?: (result: WritingRoundTripResult, proofSource?: string) => void;
   onLosslessFallback?: (value: string, result: WritingRoundTripResult) => void;
 };
 
@@ -568,6 +568,7 @@ type WritingEditorValueSync = {
 type WritingEditorConfiguration = {
   host: HTMLDivElement;
   value: string;
+  valueRef: { current: string };
   readOnlyRef: { current: boolean };
   controls: WritingControlRegistry;
   onToggleTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void };
@@ -592,6 +593,7 @@ type PendingLinkDialog = {
 export function configureWritingEditor(editor: Editor, {
   host,
   value,
+  valueRef,
   readOnlyRef,
   controls,
   onToggleTaskRef,
@@ -612,6 +614,7 @@ export function configureWritingEditor(editor: Editor, {
         bullet: "-" as const,
         bulletOther: "*" as const,
         listItemIndent: "one" as const,
+        resourceLink: true,
       }));
       ctx.update(editorViewOptionsCtx, (options) => ({
         ...options,
@@ -628,7 +631,7 @@ export function configureWritingEditor(editor: Editor, {
             () => {
               try {
                 const serialize = ctx.get(serializerCtx);
-                return serialize(view.state.doc);
+                return reconnectWritingSuffix(valueRef.current, serialize(view.state.doc));
               } catch {
                 return undefined;
               }
@@ -645,12 +648,12 @@ export function configureWritingEditor(editor: Editor, {
     .use(history)
     .use(listener)
     .config((ctx) => {
-      ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, markdown));
+      ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, reconnectWritingSuffix(valueRef.current, markdown)));
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use((ctx) => async () => {
       await ctx.wait(SerializerReady);
-      if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
+      if (serializerRef) serializerRef.current = (doc: ProseNode) => reconnectWritingSuffix(valueRef.current, ctx.get(serializerCtx)(doc));
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use($prose(() => writingOriginPlugin))
@@ -738,7 +741,7 @@ export function WritingEditor({
     const next = result.editable;
     if (!force && capabilityRef.current === next) return;
     capabilityRef.current = next;
-    onCapabilityChangeRef.current?.(result);
+    onCapabilityChangeRef.current?.(result, valueRef.current);
   };
 
   const synchronizeEditorValue = (target: string, forceReport = false) => {
@@ -750,7 +753,7 @@ export function WritingEditor({
       generation: generationRef.current,
       value: target,
       replace: (next, origin) => editor.action((ctx) => replaceAllWithOrigin(ctx, next, origin)),
-      serialize: () => editor.action((ctx) => ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc)),
+      serialize: () => editor.action((ctx) => reconnectWritingSuffix(target, ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc))),
       report: (result) => reportCapability(result, forceReport),
     });
   };
@@ -788,6 +791,7 @@ export function WritingEditor({
     const editor = configureWritingEditor(Editor.make(), {
       host: hostElement,
       value,
+      valueRef,
       readOnlyRef,
       controls: controlsRef.current,
       onToggleTaskRef,
@@ -798,7 +802,7 @@ export function WritingEditor({
       editability: { readOnlyRef, capabilityRef },
       onRequestLinkRef,
       onMarkdownUpdated: (ctx, markdown) => {
-        if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
+        if (serializerRef) serializerRef.current = (doc: ProseNode) => reconnectWritingSuffix(valueRef.current, ctx.get(serializerCtx)(doc));
         if (parserRef) parserRef.current = (docText: string) => ctx.get(parserCtx)(docText);
         const view = ctx.get(editorViewCtx);
         if (view.composing) return;
@@ -806,6 +810,13 @@ export function WritingEditor({
         const originState = writingOriginPluginKey.getState(view.state) ?? { origin: "user" as const };
         const origin = originState.origin;
         if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
+        const proof = assessWritingMutation(valueRef.current, markdown, origin, originState.structural?.context);
+        if (!proof.editable) {
+          capabilityRef.current = false;
+          onCapabilityChangeRef.current?.(proof, valueRef.current);
+          onLosslessFallbackRef.current?.(markdown, proof);
+          return;
+        }
         if (markdown === valueRef.current) return;
         onChangeRef.current(markdown);
       },

@@ -13,14 +13,15 @@ import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import { CanonicalDocument } from "../src/document/CanonicalDocument";
 import { applyWritingCommand, writingLinkHref } from "../src/editor/WritingCommands";
-import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState } from "../src/editor/WritingEditorLifecycle";
+import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, reconnectWritingSuffix, WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState } from "../src/editor/WritingEditorLifecycle";
 import { writingCommandPlan, type WritingCommandName } from "../src/editor/WritingCommandPlan";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry } from "../src/editor/WritingTaskControls";
 import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/EditorKitBridge";
 import { configureWritingEditor, replaceAllWithOrigin, synchronizeWritingEditorValue, writingCommonmark } from "../src/editor/WritingEditor";
 import { analyzeMarkdown, deleteTask } from "../src/markdown/analysis.ts";
+import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
 
-function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark): { context: Ctx; schema: Schema; parse: (source: string) => ReturnType<NonNullable<typeof ParserState.create>> extends (source: string) => infer Document ? Document : never; serialize: (document: ProseNode) => string } {
+function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark, resourceLink = false): { context: Ctx; schema: Schema; parse: (source: string) => ReturnType<NonNullable<typeof ParserState.create>> extends (source: string) => infer Document ? Document : never; serialize: (document: ProseNode) => string } {
   const context = new Ctx(new Container(), new Clock());
   context.inject(nodesCtx, []).inject(marksCtx, []).inject(remarkStringifyOptionsCtx, {});
   // Mirror the production Writing preset's schema boundary. This helper does
@@ -32,7 +33,7 @@ function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark)
     if (handler) void handler();
   }
   const schema = new Schema({ nodes: Object.fromEntries(context.get(nodesCtx)), marks: Object.fromEntries(context.get(marksCtx)) });
-  const processor = remark().use(remarkGfm);
+  const processor = remark().use(remarkGfm).data("settings", { resourceLink });
   const parse = ParserState.create!(schema, processor);
   const serialize = SerializerState.create!(schema, processor);
   context.inject(editorViewCtx, {} as never);
@@ -51,6 +52,7 @@ function testWritingEditorPresetLifecycle(): void {
   const registeredEditor = configureWritingEditor(editor, {
     host: {} as HTMLDivElement,
     value: "",
+    valueRef: { current: "" },
     readOnlyRef,
     controls: new WritingControlRegistry(),
     onDeleteTaskRef: { current: () => undefined },
@@ -99,6 +101,25 @@ function testWritingEditorPresetLifecycle(): void {
   assert(!serialized.includes("<br />"), "Writing serialization must not contain synthetic <br />");
   assert(!canonical.text.includes("<br />"), "canonical Markdown must not contain synthetic <br />");
   assert.equal(canonical.text, serialized, "canonical Markdown must match the final Writing serialization");
+}
+
+{
+  const { parse, serialize } = createWritingEnvironment(writingCommonmark, true);
+  for (const bare of ["https://bare.example/path", "https://x.test/a]b", "https://x.test/a(b)"]) {
+    const bareSerialized = serialize(parse(bare));
+    assert.equal(assessWritingRoundTrip(bare, reconnectWritingSuffix(bare, bareSerialized)).editable, false, "bare URL must fail the initial exact proof");
+
+    const normalized = normalizeBareUrls(bare).markdown;
+    const parsed = parse(normalized);
+    const normalizedLink = parsed.firstChild?.firstChild;
+    const linkMark = normalizedLink?.marks.find((mark) => mark.type.name === "link");
+    assert(linkMark, "normalized URL must parse as a resource link mark");
+    assert.equal(linkMark.attrs.href, bare, "normalized link href must preserve URL semantics");
+    const normalizedSerialized = reconnectWritingSuffix(normalized, serialize(parsed));
+    assert.equal(normalizedSerialized, normalized, "resourceLink serializer must preserve an explicit Markdown link after suffix reconnect");
+    assert.equal(assessWritingRoundTrip(normalized, normalizedSerialized).editable, true, "normalized URL must pass the exact proof");
+    assert.equal(assessWritingMutation(normalized, normalized, "user").editable, true, "normalized URL must not immediately fall back after canonical handoff");
+  }
 }
 
 testWritingEditorPresetLifecycle();

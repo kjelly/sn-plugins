@@ -20,6 +20,7 @@ import {
 } from "../markdown/analysis";
 import type { TextChangeSet } from "../document/PositionMap.ts";
 import { reconcileSectionAnchor } from "../document/SectionAnchor.ts";
+import { normalizeBareUrls } from "../document/normalizeBareUrls.ts";
 import { groupTasksByHeading, taskIndex } from "../tasks/TaskIndex";
 import { outlineIndex } from "../outline/OutlineIndex";
 import { OutlinePanel } from "../outline/OutlinePanel.tsx";
@@ -39,7 +40,13 @@ import { WritingEditor, type WritingCommand, type WritingCommandName } from "../
 import type { WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
 import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
-import { modeAfterRequest } from "./AppModeTransition";
+import {
+  armWritingEnableAttempt,
+  createWritingEnableAttemptState,
+  modeAfterRequest,
+  observeWritingCanonical,
+  observeWritingCapability,
+} from "./AppModeTransition";
 import {
   type InsertLibrary,
   type TemplateDefinition,
@@ -205,6 +212,7 @@ export function App() {
   const [insertPayload, setInsertPayload] = useState<{ id: number; markdown: string; cursorOffset?: number }>();
   const [writingResetEpoch, setWritingResetEpoch] = useState(0);
   const [writingCapability, setWritingCapability] = useState<WritingRoundTripResult>({ editable: false, reason: "Writing is checking whether this source can be preserved exactly." });
+  const writingEnableAttemptRef = useRef(createWritingEnableAttemptState());
   const nextCommandId = useRef(1);
   const sourceViewRef = useRef<EditorViewType>();
   const canonicalTextRef = useRef(canonical.text);
@@ -328,7 +336,6 @@ export function App() {
       setMode(resolvedMode);
       return;
     }
-    if (resolvedMode === "writing" || resolvedMode === "split") setWritingCapability({ editable: true });
     setMode(resolvedMode);
   };
 
@@ -357,6 +364,12 @@ export function App() {
     const unsubscribeFallback = appLifecycle.subscribeFallback(setSourceFallbackText);
     const unsubscribe = canonical.subscribe((next, transition) => {
       const previous = canonicalTextRef.current;
+      writingEnableAttemptRef.current = observeWritingCanonical(writingEnableAttemptRef.current, {
+        previousCanonicalText: previous,
+        currentCanonicalText: next.text,
+        documentGeneration: next.resetGeneration,
+        initialized: transition?.kind === "initialize",
+      });
       canonicalTextRef.current = next.text;
       appLifecycle.observeCanonicalTransition(previous, next, transition);
       if (previous !== next.text) {
@@ -439,6 +452,35 @@ export function App() {
   const edit = (next: string, changeSet?: TextChangeSet) => {
     if (appLifecycle.applyLocal(next, changeSet)) bridge.notifyLocalChange(canonical.text);
   };
+  const handleWritingCapabilityChange = useCallback((result: WritingRoundTripResult, proofSource?: string) => {
+    setWritingCapability(result);
+    const current = canonical.snapshot();
+    const outcome = observeWritingCapability(writingEnableAttemptRef.current, {
+      editable: result.editable,
+      proofSource,
+      currentCanonicalText: current.text,
+      documentGeneration: current.resetGeneration,
+    });
+    writingEnableAttemptRef.current = outcome.state;
+    if (outcome.enableWriting) {
+      setMode((currentMode) => currentMode === "writing" || currentMode === "split" ? currentMode : "writing");
+    }
+  }, [canonical]);
+  const handleNormalizeBareUrls = useCallback(() => {
+    if (snapshot.locked || !appLifecycle.canApplyLocal()) return;
+    const result = normalizeBareUrls(canonical.text);
+    if (!result.changed) return;
+    const before = canonical.snapshot();
+    writingEnableAttemptRef.current = armWritingEnableAttempt(
+      writingEnableAttemptRef.current,
+      result.markdown,
+      before.resetGeneration,
+      true,
+    );
+    const applied = appLifecycle.applyLocal(result.markdown, result.changeSet);
+    if (applied) bridge.notifyLocalChange(canonical.text);
+    else writingEnableAttemptRef.current = armWritingEnableAttempt(writingEnableAttemptRef.current, result.markdown, before.resetGeneration, false);
+  }, [appLifecycle, canonical, snapshot.locked]);
   const editSource = (next: string, changeSet?: TextChangeSet) => {
     // CodeMirror's change set is relative to the temporary fallback text, not
     // to canonical.text. The first explicit Source edit therefore crosses the
@@ -599,11 +641,12 @@ export function App() {
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("table")} title="Table">Table</button>
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("link")} title="Link (Ctrl+K)">Link</button>
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("divider")} title="Divider">Divider</button>
+          <button disabled={snapshot.locked || !appLifecycle.canApplyLocal()} onMouseDown={(e) => e.preventDefault()} onClick={handleNormalizeBareUrls} title="Convert bare URLs to Markdown links">{writingCapability.editable ? "Convert bare URLs to Markdown links" : "Convert to enable Writing mode"}</button>
           <button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button>
           <button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} onCapabilityChange={setWritingCapability} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); requestMode("source"); }} /></ErrorBoundary></section>
+        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); requestMode("source"); }} /></ErrorBoundary></section>
         {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
         {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools">{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} /></ErrorBoundary></section> : null}
       </section>
@@ -666,6 +709,8 @@ export function App() {
               onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
               onAutoFix={handleAutoFix}
               onFixAll={handleFixAll}
+              onNormalizeBareUrls={handleNormalizeBareUrls}
+              normalizeBareUrlsLabel={writingCapability.editable ? "Convert bare URLs to Markdown links" : "Convert to enable Writing mode"}
             />
           ) : null}
           {sidebarTab === "tasks" ? (

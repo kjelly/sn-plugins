@@ -10,6 +10,8 @@ export interface ReviewPanelProps {
   onSelectHeading?: (anchor: number) => void;
   onAutoFix?: (issueId: string) => void;
   onFixAll?: () => void;
+  onNormalizeBareUrls?: () => void;
+  normalizeBareUrlsLabel?: string;
 }
 
 export function ReviewPanel({
@@ -18,6 +20,8 @@ export function ReviewPanel({
   onSelectHeading,
   onAutoFix,
   onFixAll,
+  onNormalizeBareUrls,
+  normalizeBareUrlsLabel = "Convert bare URLs to Markdown links",
 }: ReviewPanelProps) {
   const { metrics, issues, healthScore } = report;
   const fixableIssues = issues.filter((i) => i.canAutoFix);
@@ -119,6 +123,17 @@ export function ReviewPanel({
               title="Fix all safe structural issues automatically"
             >
               Fix All ({fixableIssues.length})
+            </button>
+          ) : null}
+          {onNormalizeBareUrls ? (
+            <button
+              type="button"
+              className="btn-diagnostic-action"
+              disabled={readOnly}
+              onClick={onNormalizeBareUrls}
+              title="Convert bare URLs to Markdown links"
+            >
+              {normalizeBareUrlsLabel}
             </button>
           ) : null}
         </div>
