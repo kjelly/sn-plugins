@@ -195,7 +195,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .mindmap-svg input[type="checkbox"] { cursor: pointer; pointer-events: auto; margin-right: 4px; vertical-align: middle; accent-color: var(--editor-accent); }
 
 /* Sidebar Inspector */
-.sidebar-header { display: none; }
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--editor-border); }
+.sidebar-close-btn { width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--editor-border); border-radius: 4px; background: transparent; color: var(--editor-muted); font-size: 14px; cursor: pointer; }
+.sidebar-close-btn:hover { color: var(--editor-fg); border-color: var(--editor-accent); }
 .sidebar-backdrop { display: none; }
 .sidebar-pane { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; height: 100%; max-height: 100%; padding: 4px; }
 .sidebar-pane .pane-section { background: color-mix(in srgb, var(--editor-bg) 98%, var(--editor-fg)); border: 1px solid var(--editor-border); border-radius: 5px; padding: 8px; }
