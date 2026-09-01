@@ -1,4 +1,4 @@
-import { CanonicalDocument, type DocumentState, type DocumentTransition } from "../document/CanonicalDocument.ts";
+import { CanonicalDocument, type DocumentState, type DocumentToken, type DocumentTransition } from "../document/CanonicalDocument.ts";
 import type { TextChangeSet } from "../document/PositionMap.ts";
 
 type FallbackListener = (fallback: string | undefined) => void;
@@ -35,6 +35,11 @@ export class AppDocumentLifecycle {
   applyLocal(text: string, changeSet?: TextChangeSet): boolean {
     if (!this.canApplyLocal()) return false;
     return this.canonical.applyLocal(text, changeSet);
+  }
+
+  applyLocalIfCurrent(token: DocumentToken, text: string, changeSet?: TextChangeSet): boolean {
+    if (!this.canApplyLocal()) return false;
+    return this.canonical.applyLocalIfCurrent(token, text, changeSet);
   }
 
   applySourceEdit(text: string, changeSet?: TextChangeSet): boolean {

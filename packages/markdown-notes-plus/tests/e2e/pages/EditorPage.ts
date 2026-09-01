@@ -1,6 +1,6 @@
 import { expect, type FrameLocator, type Locator, type Page } from "@playwright/test";
 
-export type EditorMode = "Writing" | "Split" | "Source" | "Mindmap";
+export type EditorMode = "Writing" | "Split" | "Source" | "Mindmap" | "Kanban";
 
 export class EditorPage {
   readonly frame: FrameLocator;
@@ -39,6 +39,11 @@ export class EditorPage {
   readonly mindmapSvg: Locator;
   readonly mindmapFilterSelect: Locator;
   readonly mindmapScopeSelect: Locator;
+
+  // Kanban pane
+  readonly kanbanPane: Locator;
+  readonly kanbanColumns: Locator;
+  readonly kanbanDropZones: Locator;
 
   // Sidebar & Layout
   readonly workspaceLayout: Locator;
@@ -98,6 +103,10 @@ export class EditorPage {
     this.mindmapSvg = this.mindmapPane.locator(".mindmap-svg");
     this.mindmapFilterSelect = this.mindmapPane.locator('label:has-text("Tasks") select');
     this.mindmapScopeSelect = this.mindmapPane.locator('label:has-text("Scope") select');
+
+    this.kanbanPane = this.frame.locator(".kanban-pane");
+    this.kanbanColumns = this.kanbanPane.locator(".kanban-column");
+    this.kanbanDropZones = this.kanbanPane.locator(".kanban-drop-zone");
 
     this.workspaceLayout = this.frame.locator(".workspace-layout");
     this.sidebarPane = this.frame.locator(".sidebar-pane");
@@ -181,6 +190,13 @@ export class EditorPage {
   get mindmapModeButton(): Locator {
     return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Mindmap" }).first();
   }
+  get kanbanModeButton(): Locator {
+    return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Kanban" }).first();
+  }
+
+  kanbanCard(text: string): Locator {
+    return this.kanbanPane.locator(".kanban-card", { hasText: text }).first();
+  }
 
   async switchMode(mode: EditorMode): Promise<void> {
     // On compact layouts the open drawer/backdrop covers the mode controls.
@@ -203,7 +219,7 @@ export class EditorPage {
   }
 
   async getSourceText(): Promise<string> {
-    return (await this.sourceEditor.textContent()) ?? "";
+    return (await this.sourceEditor.locator(".cm-line").allTextContents()).join("\n");
   }
 
   async typeInWriting(text: string): Promise<void> {

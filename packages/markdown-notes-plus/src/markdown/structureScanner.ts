@@ -1,6 +1,40 @@
+export type EolKind = "LF" | "CRLF" | "CR" | "none";
+export type PhysicalLine = {
+  start: number;
+  contentFrom: number;
+  contentTo: number;
+  eolFrom: number;
+  eolTo: number;
+  eolKind: EolKind;
+  text: string;
+};
 export type MarkdownLine = { start: number; contentEnd: number; end: number; text: string };
 export type MarkdownRange = { from: number; to: number };
 export type MarkdownStructure = { lines: MarkdownLine[]; opaqueFencedRanges: MarkdownRange[]; taskEligible: boolean[] };
+
+export function splitPhysicalLines(markdown: string): PhysicalLine[] {
+  const lines: PhysicalLine[] = [];
+  let start = 0;
+  while (start < markdown.length) {
+    let cursor = start;
+    while (cursor < markdown.length && markdown[cursor] !== "\n" && markdown[cursor] !== "\r") cursor += 1;
+    const contentTo = cursor;
+    let eolKind: EolKind = "none";
+    let eolTo = cursor;
+    if (cursor < markdown.length) {
+      if (markdown[cursor] === "\r" && markdown[cursor + 1] === "\n") {
+        eolKind = "CRLF";
+        eolTo = cursor + 2;
+      } else {
+        eolKind = markdown[cursor] === "\n" ? "LF" : "CR";
+        eolTo = cursor + 1;
+      }
+    }
+    lines.push({ start, contentFrom: start, contentTo, eolFrom: contentTo, eolTo, eolKind, text: markdown.slice(start, contentTo) });
+    start = eolTo;
+  }
+  return lines;
+}
 
 export function splitMarkdownLines(markdown: string): MarkdownLine[] {
   const lines: MarkdownLine[] = [];

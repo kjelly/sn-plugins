@@ -1,6 +1,12 @@
 import { createTextChangeSet, type TextChange, type TextChangeSet } from "../document/PositionMap.ts";
 import { updateTaskTextForToggle } from "../tasks/RecurringTasks.ts";
-import { scanMarkdownStructure as scanSharedMarkdownStructure, splitMarkdownLines as splitSharedMarkdownLines } from "./structureScanner.ts";
+import {
+  scanMarkdownStructure as scanSharedMarkdownStructure,
+  splitMarkdownLines as splitSharedMarkdownLines,
+  splitPhysicalLines,
+  type EolKind,
+  type PhysicalLine,
+} from "./structureScanner.ts";
 
 export type MarkdownLine = { start: number; contentEnd: number; end: number; text: string };
 export type MarkdownRange = { from: number; to: number };
@@ -29,10 +35,20 @@ export type SectionInfo = {
 };
 export type TaskInfo = { from: number; to: number; itemStart: number; itemEnd: number; checkboxOffset: number; checked: boolean; text: string; depth: number; headingPath: string[] };
 export type MarkdownStructure = { lines: MarkdownLine[]; opaqueFencedRanges: MarkdownRange[]; taskEligible: boolean[] };
+export type MovableTaskPayload = { from: number; to: number; eolKind: Exclude<EolKind, "none"> | "none" };
+export type MovableTaskSubtree = {
+  rootTaskFrom: number;
+  movable: boolean;
+  payload?: MovableTaskPayload;
+  reason?: string;
+  blockingHeadingFrom?: number;
+};
 export type MarkdownAnalysis = {
   headings: HeadingInfo[];
   tasks: TaskInfo[];
   sections: SectionInfo[];
+  physicalLines: PhysicalLine[];
+  movableTaskSubtrees: MovableTaskSubtree[];
   opaqueFencedRanges: MarkdownRange[];
   sectionAt: (offset: number) => SectionInfo | undefined;
   sectionByAnchor: (anchor: number) => SectionInfo | undefined;
@@ -192,9 +208,19 @@ export function analyzeMarkdown(markdown: string): MarkdownAnalysis {
     if (markerOffset < 0 || isInsideInlineCode(line.text, markerOffset)) continue;
     if (!item || markerOffset < 0) continue;
     let itemEnd = line.end;
-    for (let child = index + 1; child < lines.length; child += 1) { const next = lines[child]; const nextList = listItemMatch(next.text); const nextIndent = indentation(next.text); if (nextList && nextIndent <= depth) break; if (!nextList && next.text.trim() !== "" && nextIndent <= depth) break; itemEnd = next.end; }
+    for (let child = index + 1; child < lines.length; child += 1) {
+      const next = lines[child];
+      if (headings.some((heading) => heading.from === next.start)) break;
+      const nextList = listItemMatch(next.text);
+      const nextIndent = indentation(next.text);
+      if (nextList && nextIndent <= depth) break;
+      if (!nextList && next.text.trim() !== "" && nextIndent <= depth) break;
+      itemEnd = next.end;
+    }
     tasks.push({ from: line.start, to: line.contentEnd, itemStart: line.start, itemEnd, checkboxOffset: line.start + markerOffset + 1, checked: match[2].toLowerCase() === "x", text: match[3].trim(), depth, headingPath: headingStack.slice() });
   }
+  const physicalLines = splitPhysicalLines(markdown);
+  const movableTaskSubtrees = tasks.map((task) => movableTaskSubtreeFor(task, headings, structure, physicalLines));
   const sections: SectionInfo[] = headings.map((heading, index) => {
     let to = markdown.length;
     for (let next = index + 1; next < headings.length; next += 1) {
@@ -219,8 +245,68 @@ export function analyzeMarkdown(markdown: string): MarkdownAnalysis {
       parentAnchor,
     };
   });
-  const analysis: MarkdownAnalysis = { headings, tasks, sections, opaqueFencedRanges: structure.opaqueFencedRanges, sectionAt: (offset) => sectionAt(analysis, offset), sectionByAnchor: (anchor) => sectionByAnchor(analysis, anchor) };
+  const analysis: MarkdownAnalysis = {
+    headings,
+    tasks,
+    sections,
+    physicalLines,
+    movableTaskSubtrees,
+    opaqueFencedRanges: structure.opaqueFencedRanges,
+    sectionAt: (offset) => sectionAt(analysis, offset),
+    sectionByAnchor: (anchor) => sectionByAnchor(analysis, anchor),
+  };
   return analysis;
+}
+
+function movableTaskSubtreeFor(
+  task: TaskInfo,
+  headings: HeadingInfo[],
+  structure: MarkdownStructure,
+  physicalLines: PhysicalLine[],
+): MovableTaskSubtree {
+  const lineIndex = physicalLines.findIndex((line) => line.start === task.from);
+  const root = lineIndex < 0 ? undefined : physicalLines[lineIndex];
+  if (!root || task.depth !== 0 || !structure.taskEligible[lineIndex]) return { rootTaskFrom: task.from, movable: false, reason: "Only an unquoted root task can be moved." };
+  if (/^\s*>/.test(root.text)) return { rootTaskFrom: task.from, movable: false, reason: "Blockquoted tasks are source-only." };
+  if (root.eolKind === "CR") return { rootTaskFrom: task.from, movable: false, reason: "Bare-CR Markdown is source-only." };
+  if (root.eolKind === "none") return { rootTaskFrom: task.from, movable: false, reason: "A movable task must have a terminating EOL." };
+  const rootIndent = indentation(root.text);
+  let lastPayloadIndex = lineIndex;
+  let blocked: string | undefined;
+  let blockingHeadingFrom: number | undefined;
+  for (let index = lineIndex + 1; index < physicalLines.length; index += 1) {
+    const line = physicalLines[index];
+    const heading = headings.find((candidate) => candidate.from === line.start);
+    if (heading) {
+      if (indentation(line.text) > rootIndent) {
+        blocked = "A heading inside a task subtree makes the card source-only.";
+        blockingHeadingFrom = heading.from;
+      }
+      break;
+    }
+    const trimmed = line.text.trim();
+    if (trimmed === "") continue;
+    const indent = indentation(line.text);
+    const list = listItemMatch(line.text);
+    if (list && indent <= rootIndent) break;
+    if (!list && indent <= rootIndent) break;
+    if (line.eolKind === "CR") blocked = "Bare-CR Markdown is source-only.";
+    if (isInRange(line.start, structure.opaqueFencedRanges)) blocked = "Fenced content cannot be moved as a task card.";
+    if (/^\s*>/.test(line.text)) blocked = "Blockquotes cannot be moved as a task card.";
+    if (isHtmlBlock(physicalLines.map((candidate) => ({ start: candidate.start, contentEnd: candidate.contentTo, end: candidate.eolTo, text: candidate.text })), index)) blocked = "HTML/comment content cannot be moved as a task card.";
+    if (isTableLiteral(line.text)) blocked = "Table content cannot be moved as a task card.";
+    if (list && !structure.taskEligible[index]) blocked = "Unknown list containers cannot be moved as a task card.";
+    lastPayloadIndex = index;
+  }
+  if (blocked) return { rootTaskFrom: task.from, movable: false, reason: blocked, ...(blockingHeadingFrom === undefined ? {} : { blockingHeadingFrom }) };
+  const payloadLine = physicalLines[lastPayloadIndex];
+  if (!payloadLine || payloadLine.eolKind === "CR") return { rootTaskFrom: task.from, movable: false, reason: "A task subtree cannot contain bare-CR lines." };
+  if (lastPayloadIndex !== lineIndex && payloadLine.eolKind === "none") return { rootTaskFrom: task.from, movable: false, reason: "A task subtree continuation must have a terminating EOL." };
+  return {
+    rootTaskFrom: task.from,
+    movable: true,
+    payload: { from: root.contentFrom, to: payloadLine.eolTo, eolKind: root.eolKind },
+  };
 }
 
 export function headingIndexByAnchor(analysis: MarkdownAnalysis, anchor: number): number | undefined {

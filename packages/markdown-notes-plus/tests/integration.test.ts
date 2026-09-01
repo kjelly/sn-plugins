@@ -102,6 +102,22 @@ Deno.test("App lifecycle retires a rejected Writing fallback on an explicit Sour
   assertEquals(harness.saves.length, 0);
 });
 
+Deno.test("Canonical conflict invalidates a move token without changing text or history", () => {
+  const document = new CanonicalDocument("base");
+  const transitions: string[] = [];
+  document.subscribe((_state, transition) => { if (transition?.kind) transitions.push(transition.kind); });
+  assert(document.applyLocal("local"), "local edit should apply");
+  const token = document.token;
+  const historyBeforeConflict = transitions.length;
+  assertEquals(document.receiveRemote("remote"), "conflicted");
+  assertEquals(document.text, "local");
+  assertEquals(document.applyLocalIfCurrent(token, "stale"), false);
+  assertEquals(document.text, "local");
+  assertEquals(transitions.length, historyBeforeConflict + 1);
+  assert(document.undo(), "the original local edit should remain the only undo entry");
+  assertEquals(document.text, "base");
+});
+
 Deno.test("App lifecycle rejects every non-Source local writer while fallback is present", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "- [ ] task", "note-app-writers");
@@ -125,8 +141,10 @@ Deno.test("App mode requests stay in Source while a Writing fallback is present"
   assertEquals(modeAfterRequest("writing", true), "source");
   assertEquals(modeAfterRequest("split", true), "source");
   assertEquals(modeAfterRequest("mindmap", true), "source");
+  assertEquals(modeAfterRequest("kanban", true), "source");
   assertEquals(modeAfterRequest("writing", false), "writing");
   assertEquals(modeAfterRequest("split", false), "split");
+  assertEquals(modeAfterRequest("kanban", false), "kanban");
 });
 
 Deno.test("App routes every mode request through the fallback-aware transition", async () => {

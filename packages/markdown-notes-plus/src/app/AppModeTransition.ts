@@ -1,4 +1,4 @@
-export type AppMode = "writing" | "split" | "source" | "mindmap";
+export type AppMode = "writing" | "split" | "source" | "mindmap" | "kanban";
 
 export type PendingWritingEnableAttempt = {
   id: number;

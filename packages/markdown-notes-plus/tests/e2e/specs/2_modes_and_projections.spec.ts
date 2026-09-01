@@ -160,6 +160,28 @@ test.describe("Modes and Projections", () => {
     await expect(nextSibling).toHaveText("Task");
   });
 
+  test("Mouse wheel scrolls an overflowing toolbar horizontally", async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 800 });
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Header\n\nContent paragraph.\n", "note-toolbar-wheel", false);
+    const toolbar = editor.writingPane.locator(".pane-toolbar");
+    await expect(toolbar).toBeVisible();
+
+    const initial = await toolbar.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollLeft: element.scrollLeft,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(initial.scrollWidth).toBeGreaterThan(initial.clientWidth);
+
+    await toolbar.hover();
+    await page.mouse.wheel(0, 120);
+
+    await expect.poll(() => toolbar.evaluate((element) => element.scrollLeft)).toBeGreaterThan(initial.scrollLeft);
+  });
+
   test("Auto-detection hides Split and Mindmap when content is unstructured, shows them when structured", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);

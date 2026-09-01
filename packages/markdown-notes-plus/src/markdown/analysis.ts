@@ -27,6 +27,8 @@ export {
 } from "./analysisCore.ts";
 export type {
   CommandResult,
+  MovableTaskPayload,
+  MovableTaskSubtree,
   HeadingInfo,
   HeadingSyntax,
   MarkdownAnalysis,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { MarkdownAnalysis } from "../markdown/analysis.ts";
+import type { AppMode } from "../app/AppModeTransition.ts";
 import {
   type InsertLibrary,
   type TemplateDefinition,
@@ -24,7 +25,8 @@ export interface NavigationPaletteModalProps {
   onClose: () => void;
   analysis: MarkdownAnalysis;
   onSelectHeading: (anchor: number) => void;
-  onSetMode: (mode: "writing" | "source" | "split" | "mindmap") => void;
+  onSetMode: (mode: AppMode) => void;
+  kanbanSuitable?: boolean;
   onToggleSidebar: () => void;
   onOpenTemplates: () => void;
   onFixAllIssues?: () => void;
@@ -39,6 +41,7 @@ export function NavigationPaletteModal({
   analysis,
   onSelectHeading,
   onSetMode,
+  kanbanSuitable = false,
   onToggleSidebar,
   onOpenTemplates,
   onFixAllIssues,
@@ -93,6 +96,14 @@ export function NavigationPaletteModal({
       subtitle: "Visual Outline Graph",
       badge: "Mode",
       action: () => { onSetMode("mindmap"); onClose(); },
+    });
+    if (kanbanSuitable) items.push({
+      id: "cmd-mode-kanban",
+      kind: "command",
+      title: "Switch to Kanban Mode",
+      subtitle: "Heading-based task board",
+      badge: "Mode",
+      action: () => { onSetMode("kanban"); onClose(); },
     });
     items.push({
       id: "cmd-toggle-sidebar",
@@ -172,7 +183,7 @@ export function NavigationPaletteModal({
     }
 
     return items;
-  }, [analysis, library, onClose, onFixAllIssues, onInsertSnippet, onInsertTemplate, onOpenTemplates, onSelectHeading, onSetMode, onToggleSidebar]);
+  }, [analysis, kanbanSuitable, library, onClose, onFixAllIssues, onInsertSnippet, onInsertTemplate, onOpenTemplates, onSelectHeading, onSetMode, onToggleSidebar]);
 
   const filteredItems = useMemo(() => {
     const q = query.toLowerCase().trim();

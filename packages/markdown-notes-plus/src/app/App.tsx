@@ -42,6 +42,7 @@ import type { WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
 import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
 import {
+  type AppMode,
   armWritingEnableAttempt,
   createWritingEnableAttemptState,
   modeAfterRequest,
@@ -65,8 +66,11 @@ import {
 import { ReviewPanel } from "../review/ReviewPanel.tsx";
 import { NavigationPaletteModal } from "../navigation/NavigationPaletteModal.tsx";
 import { useVisualViewport } from "./useVisualViewport.ts";
+import { scrollToolbarWithWheel } from "../utils/toolbarWheel.ts";
+import { analyzeKanban } from "../kanban/KanbanModel.ts";
+import { moveKanbanCard } from "../kanban/KanbanMove.ts";
+import { KanbanView, type KanbanMoveCommand } from "../kanban/KanbanView.tsx";
 
-type Mode = "writing" | "split" | "source" | "mindmap";
 type MindMapScope = "entire-note" | "current-section";
 
 function SidebarToggleButton({
@@ -99,17 +103,17 @@ function EditorNavigationControls({
   onUndo,
   onRedo,
   mindmapSuitable = true,
+  kanbanSuitable = false,
 }: {
-  mode: Mode;
-  onModeChange: (mode: Mode) => void;
+  mode: AppMode;
+  onModeChange: (mode: AppMode) => void;
   historyDisabled: boolean;
   onUndo: () => void;
   onRedo: () => void;
   mindmapSuitable?: boolean;
+  kanbanSuitable?: boolean;
 }) {
-  const availableModes: Mode[] = mindmapSuitable
-    ? ["writing", "source", "mindmap", "split"]
-    : ["writing", "source"];
+  const availableModes: AppMode[] = ["writing", "source", ...(mindmapSuitable ? ["mindmap", "split"] as AppMode[] : []), ...(kanbanSuitable ? ["kanban"] as AppMode[] : [])];
 
   return <>
     <div className="mode-buttons" role="toolbar" aria-label="Editor mode">
@@ -190,7 +194,7 @@ export function App() {
   // listener exists before the host can deliver that one-shot message. The
   // deterministic harness can still request a deliberately manual start.
   if (bridgeStartMode !== "manual") bridge.start();
-  const [mode, setMode] = useState<Mode>("writing");
+  const [mode, setMode] = useState<AppMode>("writing");
   const [todayKey, setTodayKey] = useState(() => formatIsoDate(new Date()));
   const [filter, setFilter] = useState<MindMapFilter>("all");
   const [mindMapScope, setMindMapScope] = useState<MindMapScope>("entire-note");
@@ -226,6 +230,8 @@ export function App() {
   };
   const snapshot = canonical.snapshot();
   const analysis = analyzeMarkdown(snapshot.text);
+  const kanban = analyzeKanban(snapshot.text, analysis);
+  const kanbanSuitable = kanban.candidates.length > 0;
   const mindmapSuitable = isMindmapSuitable(snapshot.text, analysis);
   const currentSection = activeSectionAnchor === undefined ? undefined : analysis.sectionByAnchor(activeSectionAnchor);
   const focusedSection = focusedSectionAnchor === undefined ? undefined : analysis.sectionByAnchor(focusedSectionAnchor);
@@ -338,22 +344,19 @@ export function App() {
     }
   }, [canonical, mode]);
 
-  const requestMode = (nextMode: Mode) => {
+  const requestMode = useCallback((nextMode: AppMode) => {
     // A rejected Writing serialization is only a Source-visible user input.
     // Keep it outside canonical state until an explicit Source edit resolves it.
     const resolvedMode = modeAfterRequest(nextMode, appLifecycle.hasFallback);
-    if (resolvedMode !== nextMode) {
-      setMode(resolvedMode);
-      return;
-    }
     setMode(resolvedMode);
-  };
+  }, [appLifecycle]);
 
   useEffect(() => {
     if (!mindmapSuitable && (mode === "mindmap" || mode === "split")) {
       requestMode("writing");
     }
-  }, [mindmapSuitable, mode]);
+    if (!kanbanSuitable && mode === "kanban") requestMode("writing");
+  }, [kanbanSuitable, mindmapSuitable, mode, requestMode]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -473,9 +476,9 @@ export function App() {
     });
     writingEnableAttemptRef.current = outcome.state;
     if (outcome.enableWriting) {
-      setMode((currentMode) => currentMode === "writing" || currentMode === "split" ? currentMode : "writing");
+      requestMode("writing");
     }
-  }, [canonical]);
+  }, [canonical, requestMode]);
   const handleNormalizeBareUrls = useCallback(() => {
     if (snapshot.locked || !appLifecycle.canApplyLocal()) return;
     const result = normalizeBareUrls(canonical.text);
@@ -491,12 +494,29 @@ export function App() {
     if (applied) bridge.notifyLocalChange(canonical.text);
     else writingEnableAttemptRef.current = armWritingEnableAttempt(writingEnableAttemptRef.current, result.markdown, before.resetGeneration, false);
   }, [appLifecycle, canonical, snapshot.locked]);
+  const handleToolbarWheel = (event: React.WheelEvent<HTMLDivElement>): void => {
+    if (scrollToolbarWithWheel(event.currentTarget, event.nativeEvent)) {
+      event.preventDefault();
+    }
+  };
   const editSource = (next: string, changeSet?: TextChangeSet) => {
     // CodeMirror's change set is relative to the temporary fallback text, not
     // to canonical.text. The first explicit Source edit therefore crosses the
     // existing canonical boundary as an opaque full-text replacement; all
     // subsequent edits use the normal exact CodeMirror map path.
     if (appLifecycle.applySourceEdit(next, changeSet)) bridge.notifyLocalChange(canonical.text);
+  };
+  const handleMoveKanbanCard = ({ source, target, token }: KanbanMoveCommand) => {
+    const currentText = canonical.text;
+    const currentAnalysis = analyzeMarkdown(currentText);
+    const result = moveKanbanCard({
+      markdown: currentText,
+      analysis: currentAnalysis,
+      locked: canonical.locked,
+      fallback: appLifecycle.hasFallback,
+      conflicted: canonical.pendingRemote !== undefined,
+    }, source, target);
+    if (result.changed && appLifecycle.applyLocalIfCurrent(token, result.markdown, result.changeSet)) bridge.notifyLocalChange(canonical.text);
   };
   const mutate = (command: (text: string) => { markdown: string; changeSet?: TextChangeSet }) => {
     const result = command(canonical.text);
@@ -639,9 +659,9 @@ export function App() {
       ) : null}
       <section className="editing-grid">
         {/* Keep Milkdown mounted across mode changes so its selection/history stay local. */}
-        <section className="writing-pane pane" hidden={!writingVisible}><div className={`pane-toolbar ${writingVisible ? "app-toolbar" : ""}`} role="toolbar" aria-label="Writing tools">
+        <section className="writing-pane pane" hidden={!writingVisible}><div className={`pane-toolbar ${writingVisible ? "app-toolbar" : ""}`} role="toolbar" aria-label="Writing tools" onWheel={handleToolbarWheel}>
           <SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} />
-          <EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} />
+          <EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} />
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("task")} title="Task list">Task</button>
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("heading")} title="Heading 1">H1</button>
           <button disabled={writingReadOnly} onMouseDown={(e) => e.preventDefault()} onClick={() => runWritingCommand("heading2")} title="Heading 2">H2</button>
@@ -657,8 +677,9 @@ export function App() {
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
         </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); requestMode("source"); }} /></ErrorBoundary></section>
-        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools"><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
-        {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools">{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} deadlineDay={todayKey} /></ErrorBoundary></section> : null}
+        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
+        {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools" onWheel={handleToolbarWheel}>{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} deadlineDay={todayKey} /></ErrorBoundary></section> : null}
+        {mode === "kanban" ? <section className="kanban-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Kanban tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><KanbanView markdown={snapshot.text} analysis={analysis} token={canonical.token} locked={snapshot.locked} fallback={appLifecycle.hasFallback} conflicted={snapshot.pendingRemote !== undefined} onMove={handleMoveKanbanCard} /></ErrorBoundary></section> : null}
       </section>
       {mode !== "mindmap" ? <>
         {sidebarOpen ? <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" /> : null}
@@ -794,6 +815,7 @@ export function App() {
       isOpen={paletteOpen}
       onClose={() => setPaletteOpen(false)}
       analysis={analysis}
+      kanbanSuitable={kanbanSuitable}
       onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
       onSetMode={requestMode}
       onToggleSidebar={toggleSidebar}
