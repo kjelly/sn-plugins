@@ -17,7 +17,7 @@ import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoun
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
-import { REPEAT_TAG_REGEX, DONE_TAG_REGEX, formatIsoDate } from "../tasks/RecurringTasks.ts";
+import { REPEAT_TAG_REGEX, DONE_TAG_REGEX, deadlineStatus, formatIsoDate } from "../tasks/RecurringTasks.ts";
 import { createWritingFoldingPlugin } from "./WritingFolding.ts";
 import { createWritingShortcutsPlugin } from "./WritingShortcuts.ts";
 import { createWritingSmartKeysPlugin } from "./WritingSmartKeys.ts";
@@ -47,6 +47,7 @@ export type WritingEditorProps = {
   command?: WritingCommand;
   insertPayload?: InsertPayload;
   library?: InsertLibrary;
+  deadlineDay?: string;
   onCapabilityChange?: (result: WritingRoundTripResult, proofSource?: string) => void;
   onLosslessFallback?: (value: string, result: WritingRoundTripResult) => void;
 };
@@ -65,9 +66,13 @@ function setTaskListItemAttributes(dom: HTMLElement, node: ProseNode): void {
   if (node.attrs.checked != null) {
     dom.dataset.checked = String(Boolean(node.attrs.checked));
     dom.dataset.writingHidden = String(writingTaskIsHidden(Boolean(node.attrs.checked)));
+    const status = deadlineStatus(node.textContent);
+    if (status) dom.dataset.deadlineStatus = status;
+    else delete dom.dataset.deadlineStatus;
   } else {
     delete dom.dataset.checked;
     delete dom.dataset.writingHidden;
+    delete dom.dataset.deadlineStatus;
   }
 }
 
@@ -686,6 +691,7 @@ export function WritingEditor({
   command,
   insertPayload,
   library,
+  deadlineDay,
   onCapabilityChange,
   onLosslessFallback,
 }: WritingEditorProps) {
@@ -722,6 +728,15 @@ export function WritingEditor({
   onCapabilityChangeRef.current = onCapabilityChange;
   const onLosslessFallbackRef = useRef(onLosslessFallback);
   onLosslessFallbackRef.current = onLosslessFallback;
+
+  useEffect(() => {
+    const today = deadlineDay ? new Date(`${deadlineDay}T00:00:00`) : new Date();
+    host.current?.querySelectorAll<HTMLElement>('li[data-item-type="task"]').forEach((task) => {
+      const status = deadlineStatus(task.textContent ?? "", today);
+      if (status) task.dataset.deadlineStatus = status;
+      else delete task.dataset.deadlineStatus;
+    });
+  }, [deadlineDay]);
 
   const cancelLinkDialog = useCallback(() => setLinkDialog(undefined), []);
   const requestLink = useCallback((view: ProseEditorView, range?: SlashMatch) => {

@@ -12,6 +12,7 @@ import {
   isRecurringTaskOverdue,
   updateTaskTextForToggle,
   evaluateRecurringTasks,
+  deadlineStatus,
 } from "../src/tasks/RecurringTasks.ts";
 
 Deno.test("RecurringTasks - parseRepeatInterval parses units and aliases", () => {
@@ -32,6 +33,18 @@ Deno.test("RecurringTasks - calculateNextDueDate computes future dates", () => {
   assertEquals(due?.getFullYear(), 2026);
   assertEquals(due?.getMonth(), 7); // Aug
   assertEquals(due?.getDate(), 25);
+});
+
+Deno.test("RecurringTasks - weekday repeats calculate the next fixed weekday", () => {
+  // 2026-09-01 is Tuesday; the next Monday is 2026-09-07.
+  const due = calculateNextDueDate("2026-09-01", "monday");
+  assertEquals(due?.getFullYear(), 2026);
+  assertEquals(due?.getMonth(), 8); // Sep
+  assertEquals(due?.getDate(), 7);
+
+  // Completing on Monday still means the following Monday, not the same day.
+  const following = calculateNextDueDate("2026-09-07", "monday");
+  assertEquals(following?.getDate(), 14);
 });
 
 Deno.test("RecurringTasks - isRecurringTaskOverdue compares dates correctly", () => {
@@ -69,6 +82,17 @@ Deno.test("RecurringTasks - updateTaskTextForToggle appends @done on complete an
     updateTaskTextForToggle("Buy groceries", false, fixedToday),
     "Buy groceries",
   );
+});
+
+Deno.test("RecurringTasks - deadlineStatus marks due dates by urgency", () => {
+  const today = new Date(2026, 8, 1); // Sep 1
+  assertEquals(deadlineStatus("Submit report @deadline(2026-08-31)", today), "red");
+  assertEquals(deadlineStatus("Submit report @deadline(2026-09-01)", today), "red");
+  assertEquals(deadlineStatus("Submit report @deadline(2026-09-02)", today), "yellow");
+  assertEquals(deadlineStatus("Submit report @deadline(2026-09-04)", today), "green");
+  assertEquals(deadlineStatus("Submit report @deadline(2026-09-05)", today), undefined);
+  assertEquals(deadlineStatus("Submit report @due(2026-09-02)", today), "yellow");
+  assertEquals(deadlineStatus("Submit report", today), undefined);
 });
 
 Deno.test("RecurringTasks - evaluateRecurringTasks resets overdue tasks only", () => {

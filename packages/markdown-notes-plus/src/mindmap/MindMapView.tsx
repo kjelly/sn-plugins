@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Transformer } from "markmap-lib";
 import { Markmap } from "markmap-view";
-import { projectMindmapMarkdown } from "../markdown/analysis";
+import { analyzeMarkdown, projectMindmapMarkdown } from "../markdown/analysis";
 import { openExternalLink } from "../utils/linkOpener";
+import { deadlineStatus } from "../tasks/RecurringTasks.ts";
 
 export type MindMapFilter = "all" | "open" | "hide";
 export const MINDMAP_RENDER_DEBOUNCE_MS = 350;
@@ -15,10 +16,12 @@ export function MindMapView({
   markdown,
   readOnly = false,
   onToggleTask,
+  deadlineDay,
 }: {
   markdown: string;
   readOnly?: boolean;
   onToggleTask?: (taskIndex: number, checked: boolean) => void;
+  deadlineDay?: string;
 }) {
   const svg = useRef<SVGSVGElement>(null);
   const map = useRef<Markmap>();
@@ -125,6 +128,15 @@ export function MindMapView({
         const { root } = transformer.transform(markdown);
         map.current?.setData(root).then(() => {
           if (!cancelled) {
+            const today = deadlineDay ? new Date(`${deadlineDay}T00:00:00`) : new Date();
+            const statuses = analyzeMarkdown(markdown).tasks.map((task) => deadlineStatus(task.text, today));
+            const taskNodes = Array.from(svg.current?.querySelectorAll<SVGForeignObjectElement>("foreignObject") ?? [])
+              .filter((node) => node.querySelector('input[type="checkbox"], svg[viewBox="0 -3 24 24"]'));
+            taskNodes.forEach((node, index) => {
+              node.removeAttribute("data-deadline-status");
+              const status = statuses[index];
+              if (status) node.setAttribute("data-deadline-status", status);
+            });
             enableCheckboxes();
             void map.current?.fit();
           }
@@ -137,7 +149,7 @@ export function MindMapView({
       }
     }, MINDMAP_RENDER_DEBOUNCE_MS);
     return () => { cancelled = true; globalThis.clearTimeout(timer); };
-  }, [markdown, transformer, readOnly]);
+  }, [deadlineDay, markdown, transformer, readOnly]);
 
   return <div className="mindmap-wrap">{error ? <div className="error-box" role="alert">{error}</div> : null}<svg ref={svg} className="mindmap-svg" aria-label="Markdown mind map" /></div>;
 }

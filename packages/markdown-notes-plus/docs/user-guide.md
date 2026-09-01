@@ -348,6 +348,7 @@ Writing 模式只會在「呈現結果能逐字還原成原始 Markdown」時才
 | `@repeat(1m)`、`@repeat(monthly)` | 每月 |
 | `@repeat(1y)`、`@repeat(yearly)` | 每年 |
 | `@repeat(daily)`、`@repeat(weekly)` | 每天、每週 |
+| `@repeat(monday)`（以及其他星期名稱） | 固定在下一個指定星期幾 |
 
 **行為規則**
 
@@ -375,6 +376,24 @@ Writing 模式只會在「呈現結果能逐字還原成原始 Markdown」時才
 - [ ] 月度結算 @repeat(monthly)
 - [x] 普通一次性任務
 ```
+
+### 7.3 截止日期
+
+在任務文字中加入 `@deadline(YYYY-MM-DD)` 即可設定截止日期；也支援較短的 `@due(YYYY-MM-DD)` 寫法：
+
+```markdown
+- [ ] 準備週報 @repeat(monday) @deadline(2026-09-07)
+```
+
+在 Writing 模式、Mindmap 與已完成任務面板中，截止日期會依距離今天的天數顯示顏色：
+
+| 時間 | 顏色 |
+|------|------|
+| 到期日當天或已逾期 | 紅色 |
+| 到期日前 1 天 | 黃色 |
+| 到期日前 2–3 天 | 綠色 |
+
+截止日期目前只提供視覺提示，不會發送通知；筆記必須開啟後才能依當天日期更新顏色。
 
 ---
 

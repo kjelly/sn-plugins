@@ -3,10 +3,31 @@ import { scanMarkdownStructure } from "../markdown/structureScanner.ts";
 export type RepeatInterval = {
   amount: number;
   unit: "d" | "w" | "m" | "y";
+  weekday?: number;
 };
 
 export const REPEAT_TAG_REGEX = /@repeat\(([^)]+)\)/i;
 export const DONE_TAG_REGEX = /@done\((\d{4}-\d{2}-\d{2})\)/i;
+export const DEADLINE_TAG_REGEX = /@(?:deadline|due)\((\d{4}-\d{2}-\d{2})\)/i;
+
+const weekdayNames: Record<string, number> = {
+  sunday: 0,
+  sun: 0,
+  monday: 1,
+  mon: 1,
+  tuesday: 2,
+  tue: 2,
+  tues: 2,
+  wednesday: 3,
+  wed: 3,
+  thursday: 4,
+  thu: 4,
+  thurs: 4,
+  friday: 5,
+  fri: 5,
+  saturday: 6,
+  sat: 6,
+};
 
 export function formatIsoDate(date: Date): string {
   const year = date.getFullYear();
@@ -27,6 +48,9 @@ export function parseIsoDate(dateStr: string): Date | undefined {
 export function parseRepeatInterval(repeatStr: string): RepeatInterval | undefined {
   if (!repeatStr) return undefined;
   const normalized = repeatStr.trim().toLowerCase();
+
+  const weekday = weekdayNames[normalized];
+  if (weekday !== undefined) return { amount: 1, unit: "w", weekday };
 
   if (normalized === "daily") return { amount: 1, unit: "d" };
   if (normalized === "weekly") return { amount: 1, unit: "w" };
@@ -51,7 +75,10 @@ export function calculateNextDueDate(doneDateStr: string, repeatStr: string): Da
   if (!interval) return undefined;
 
   const due = new Date(doneDate.getFullYear(), doneDate.getMonth(), doneDate.getDate());
-  if (interval.unit === "d") {
+  if (interval.weekday !== undefined) {
+    const daysUntil = (interval.weekday - due.getDay() + 7) % 7 || 7;
+    due.setDate(due.getDate() + daysUntil);
+  } else if (interval.unit === "d") {
     due.setDate(due.getDate() + interval.amount);
   } else if (interval.unit === "w") {
     due.setDate(due.getDate() + interval.amount * 7);
@@ -70,6 +97,23 @@ export function isRecurringTaskOverdue(doneDateStr: string, repeatStr: string, t
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const dueStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()).getTime();
   return todayStart >= dueStart;
+}
+
+export type DeadlineStatus = "red" | "yellow" | "green" | undefined;
+
+export function deadlineStatus(taskText: string, today: Date = new Date()): DeadlineStatus {
+  const match = taskText.match(DEADLINE_TAG_REGEX);
+  if (!match) return undefined;
+  const deadline = parseIsoDate(match[1]);
+  if (!deadline) return undefined;
+
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const deadlineStart = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate()).getTime();
+  const daysUntil = Math.round((deadlineStart - todayStart) / (24 * 60 * 60 * 1000));
+  if (daysUntil <= 0) return "red";
+  if (daysUntil === 1) return "yellow";
+  if (daysUntil <= 3) return "green";
+  return undefined;
 }
 
 export function updateTaskTextForToggle(taskText: string, nextChecked: boolean, today: Date = new Date()): string {
