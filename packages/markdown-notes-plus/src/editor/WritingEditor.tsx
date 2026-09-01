@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Ctx, MilkdownPlugin } from "@milkdown/ctx";
 import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx, rootCtx, serializerCtx, SerializerReady } from "@milkdown/core";
-import { commonmark, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
+import { commonmark, linkSchema, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
 import { gfm } from "@milkdown/preset-gfm";
 import { history } from "@milkdown/plugin-history";
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
@@ -54,9 +54,33 @@ export type WritingEditorProps = {
 
 /** Writing must not enable CommonMark's synthetic empty-line HTML marker. */
 const excludedWritingCommonmark = new Set(remarkPreserveEmptyLinePlugin);
-export const writingCommonmark: MilkdownPlugin[] = commonmark.filter(
+const filteredWritingCommonmark = commonmark.filter(
   (plugin) => !excludedWritingCommonmark.has(plugin),
 );
+
+/** Prevent sanitized empty hrefs from remaining native navigation sinks. */
+export const writingLinkSchema = linkSchema.extendSchema((previous) => (ctx) => {
+  const schema = previous(ctx);
+  const previousToDOM = schema.toDOM;
+  if (!previousToDOM) return schema;
+  return {
+    ...schema,
+    toDOM: (mark, inline) => {
+      const rendered = previousToDOM(mark, inline);
+      if (!Array.isArray(rendered)) return rendered;
+      const attrs = rendered[1];
+      if (!attrs || typeof attrs !== "object" || Array.isArray(attrs)) return rendered;
+      return [rendered[0], { ...attrs, href: attrs.href || null }, ...rendered.slice(2)] as typeof rendered;
+    },
+  };
+});
+
+/** Writing's CommonMark preset, with the link renderer owned by Writing. */
+export const writingCommonmark: MilkdownPlugin[] = filteredWritingCommonmark.map((plugin) => {
+  if (plugin === linkSchema[0]) return writingLinkSchema[0];
+  if (plugin === linkSchema[1]) return writingLinkSchema[1];
+  return plugin;
+});
 
 function setTaskListItemAttributes(dom: HTMLElement, node: ProseNode): void {
   dom.dataset.itemType = node.attrs.checked == null ? "list" : "task";

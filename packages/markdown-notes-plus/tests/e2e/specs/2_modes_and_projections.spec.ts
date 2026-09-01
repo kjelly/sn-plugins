@@ -107,7 +107,7 @@ test.describe("Modes and Projections", () => {
 
     // Edit in Source mode
     await editor.sourceEditor.click();
-    await page.keyboard.type("\n\nExtra source text");
+    await page.keyboard.type("\nExtra source text");
 
     // Switch back to Writing mode
     await editor.switchMode("Writing");
@@ -123,6 +123,22 @@ test.describe("Modes and Projections", () => {
     await editor.writingEditor.locator("p").first().click();
     await editor.writingTaskButton.click();
     await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toBeVisible();
+  });
+
+  test("Writing mode remains read-only when Source edit adds an extra blank paragraph", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Dynamic Note\n\nInitial paragraph.\n", "note-mode-toggle-lossy", false);
+
+    await editor.switchMode("Source");
+    await editor.sourceEditor.click();
+    await page.keyboard.type("\n\nExtra source text");
+
+    await editor.switchMode("Writing");
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.status).toHaveText("Writing read-only · Writing serializer changed the source; use Source mode for exact Markdown.");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
   });
 
   test("Host theme changes and system dark mode adapt editor colors seamlessly", async ({ page }) => {

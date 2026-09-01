@@ -5,7 +5,7 @@ import { Editor } from "@milkdown/core";
 import { remarkPreserveEmptyLinePlugin, schema as commonmarkSchema } from "@milkdown/preset-commonmark";
 import { schema as gfmSchema } from "@milkdown/preset-gfm";
 import { splitBlock } from "@milkdown/prose/commands";
-import { Schema, type Node as ProseNode } from "@milkdown/prose/model";
+import { DOMSerializer, Schema, type Node as ProseNode } from "@milkdown/prose/model";
 import { history, undo, undoDepth } from "@milkdown/prose/history";
 import { EditorState, TextSelection } from "@milkdown/prose/state";
 import { ParserState, SerializerState } from "@milkdown/transformer";
@@ -17,7 +17,7 @@ import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoun
 import { writingCommandPlan, type WritingCommandName } from "../src/editor/WritingCommandPlan";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry } from "../src/editor/WritingTaskControls";
 import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/EditorKitBridge";
-import { configureWritingEditor, replaceAllWithOrigin, synchronizeWritingEditorValue, writingCommonmark } from "../src/editor/WritingEditor";
+import { configureWritingEditor, replaceAllWithOrigin, synchronizeWritingEditorValue, writingCommonmark, writingLinkSchema } from "../src/editor/WritingEditor";
 import { analyzeMarkdown, deleteTask } from "../src/markdown/analysis.ts";
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
 
@@ -27,7 +27,7 @@ function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark,
   // Mirror the production Writing preset's schema boundary. This helper does
   // not run Milkdown's browser lifecycle; it only makes parser/serializer
   // assertions against the same filtered preset that WritingEditor installs.
-  const writingCommonmarkSchema = plugins.filter((plugin) => commonmarkSchema.includes(plugin));
+  const writingCommonmarkSchema = plugins.filter((plugin) => commonmarkSchema.includes(plugin) || plugin === writingLinkSchema[0] || plugin === writingLinkSchema[1]);
   for (const plugin of [...writingCommonmarkSchema, ...gfmSchema]) {
     const handler = plugin(context);
     if (handler) void handler();
@@ -38,6 +38,78 @@ function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark,
   const serialize = SerializerState.create!(schema, processor);
   context.inject(editorViewCtx, {} as never);
   return { context, schema, parse, serialize };
+}
+
+type RecordedNode = RecordedElement | RecordedFragment | RecordedText;
+
+class RecordedElement {
+  readonly nodeType = 1;
+  readonly childNodes: RecordedNode[] = [];
+  readonly attributes = new Map<string, string>();
+
+  constructor(readonly tagName: string) {}
+
+  appendChild(child: RecordedNode): RecordedNode {
+    this.childNodes.push(child);
+    return child;
+  }
+
+  setAttribute(name: string, value: unknown): void {
+    this.attributes.set(name, String(value));
+  }
+
+  hasAttribute(name: string): boolean {
+    return this.attributes.has(name);
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+}
+
+class RecordedFragment {
+  readonly nodeType = 11;
+  readonly childNodes: RecordedNode[] = [];
+
+  appendChild(child: RecordedNode): RecordedNode {
+    this.childNodes.push(child);
+    return child;
+  }
+}
+
+class RecordedText {
+  readonly nodeType = 3;
+
+  constructor(readonly textContent: string) {}
+}
+
+function recordedDocument(): Document {
+  return {
+    createDocumentFragment: () => new RecordedFragment(),
+    createElement: (tagName: string) => new RecordedElement(tagName),
+    createElementNS: (_namespace: string, tagName: string) => new RecordedElement(tagName),
+    createTextNode: (text: string) => new RecordedText(text),
+  } as unknown as Document;
+}
+
+function findRecordedElement(node: RecordedNode, tagName: string): RecordedElement | undefined {
+  if (node instanceof RecordedElement && node.tagName === tagName) return node;
+  if (!(node instanceof RecordedElement) && !(node instanceof RecordedFragment)) return undefined;
+  for (const child of node.childNodes) {
+    const match = findRecordedElement(child, tagName);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+function serializeWritingLinkDom(source: string): { anchor: RecordedElement; markdown: string; rawHref: unknown } {
+  const { schema, parse, serialize } = createWritingEnvironment();
+  const parsed = parse(source);
+  const document = recordedDocument();
+  const fragment = DOMSerializer.fromSchema(schema).serializeFragment(parsed.content, { document });
+  const anchor = findRecordedElement(fragment as unknown as RecordedFragment, "a");
+  assert(anchor, "Writing DOM serialization must produce an anchor");
+  return { anchor, markdown: serialize(parsed), rawHref: parsed.firstChild?.firstChild?.marks[0]?.attrs.href };
 }
 
 function testWritingEditorPresetLifecycle(): void {
@@ -123,6 +195,16 @@ function testWritingEditorPresetLifecycle(): void {
 }
 
 testWritingEditorPresetLifecycle();
+
+{
+  const unsafe = serializeWritingLinkDom("[Malicious](javascript:alert(1))\n");
+  assert.equal(unsafe.anchor.hasAttribute("href"), false, "unsafe Writing links must omit the href attribute");
+  assert.equal(unsafe.rawHref, "javascript:alert(1)", "unsafe link mark value must remain lossless");
+  assert.match(unsafe.markdown, /javascript:alert/, "unsafe link Markdown must retain its destination");
+
+  const safe = serializeWritingLinkDom("[Safe](https://example.test/path)\n");
+  assert.equal(safe.anchor.getAttribute("href"), "https://example.test/path", "safe Writing links must retain their href");
+}
 
 {
   assert.equal(writingCommonmark.includes(remarkPreserveEmptyLinePlugin.options), false, "Writing preset must exclude the synthetic empty-line options context");

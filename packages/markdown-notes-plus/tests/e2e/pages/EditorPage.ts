@@ -91,7 +91,7 @@ export class EditorPage {
     this.writingQuoteButton = writingToolbar.getByRole("button", { name: "Quote" });
     this.writingCodeButton = writingToolbar.getByRole("button", { name: "Code" });
     this.writingTableButton = writingToolbar.getByRole("button", { name: "Table" });
-    this.writingLinkButton = writingToolbar.getByRole("button", { name: "Link" });
+    this.writingLinkButton = writingToolbar.getByRole("button", { name: "Link", exact: true });
     this.writingDividerButton = writingToolbar.getByRole("button", { name: "Divider" });
 
     this.sourcePane = this.frame.locator(".source-pane");

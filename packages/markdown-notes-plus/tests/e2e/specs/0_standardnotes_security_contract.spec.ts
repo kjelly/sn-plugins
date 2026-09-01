@@ -349,6 +349,15 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
 
     // 9. Debounced Save Cycle & Verification
     await editor.switchMode("Writing");
+    await expect(editor.status).toHaveText("Writing read-only · Writing cannot preserve this Markdown exactly; use Source mode.");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
+
+    // Structural operations above intentionally exercise the read-only boundary.
+    // Load a lossless fixture before verifying the normal debounced save path.
+    await host.setNote("# Save verification\n\nReady for final verification.\n", "sec-final-save", false);
+    await expect(editor.status).toHaveText("Ready");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+
     const savePromise = host.waitForNextSave(4000);
     await editor.writingEditor.click();
     await page.keyboard.type("\nFinal verified text.");
