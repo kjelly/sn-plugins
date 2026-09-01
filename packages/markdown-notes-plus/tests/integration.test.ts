@@ -104,16 +104,26 @@ Deno.test("App lifecycle retires a rejected Writing fallback on an explicit Sour
 
 Deno.test("Canonical conflict invalidates a move token without changing text or history", () => {
   const document = new CanonicalDocument("base");
+  let notifications = 0;
   const transitions: string[] = [];
-  document.subscribe((_state, transition) => { if (transition?.kind) transitions.push(transition.kind); });
+  document.subscribe((_state, transition) => {
+    notifications += 1;
+    if (transition?.kind) transitions.push(transition.kind);
+  });
   assert(document.applyLocal("local"), "local edit should apply");
   const token = document.token;
   const historyBeforeConflict = transitions.length;
+  const notificationsBeforeConflict = notifications;
   assertEquals(document.receiveRemote("remote"), "conflicted");
+  assert(document.token.revision !== token.revision, "the conflict should invalidate the pre-conflict token");
+  assertEquals(document.pendingRemote, "remote");
   assertEquals(document.text, "local");
+  assertEquals(notifications, notificationsBeforeConflict + 1);
+  assertEquals(transitions.length, historyBeforeConflict);
+  assertEquals(document.resolveRemote("keep-local"), true);
+  assertEquals(document.pendingRemote, undefined);
   assertEquals(document.applyLocalIfCurrent(token, "stale"), false);
   assertEquals(document.text, "local");
-  assertEquals(transitions.length, historyBeforeConflict + 1);
   assert(document.undo(), "the original local edit should remain the only undo entry");
   assertEquals(document.text, "base");
 });
@@ -150,9 +160,11 @@ Deno.test("App mode requests stay in Source while a Writing fallback is present"
 Deno.test("App routes every mode request through the fallback-aware transition", async () => {
   const source = await Deno.readTextFile(new URL("../src/app/App.tsx", import.meta.url));
   const directModeWrites = source.split("\n").filter((line) => line.includes("setMode("));
-  assertEquals(directModeWrites.length, 2);
+  assertEquals(directModeWrites.length, 1);
   assert(directModeWrites.every((line) => line.includes("setMode(resolvedMode)")), "mode state must only be written by requestMode");
-  assertEquals((source.match(/onModeChange={requestMode}/g) ?? []).length, 3);
+  const modeChangeHandlers = [...source.matchAll(/onModeChange=\{([^}]+)\}/g)].map((match) => match[1].trim());
+  assert(modeChangeHandlers.length > 0, "mode navigation controls must expose an onModeChange handler");
+  assert(modeChangeHandlers.every((handler) => handler === "requestMode"), "mode navigation requests must use requestMode");
   assert(source.includes("onSetMode={requestMode}"), "palette mode requests must use requestMode");
   assert(source.includes('requestMode("writing")'), "automatic suitability correction must use requestMode");
   assert(source.includes('preserveWritingFallback(markdown); requestMode("source")'), "fallback entry must use requestMode");

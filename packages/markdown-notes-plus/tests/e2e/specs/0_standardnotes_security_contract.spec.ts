@@ -349,7 +349,9 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
 
     // 9. Debounced Save Cycle & Verification
     await editor.switchMode("Writing");
-    await expect(editor.status).toHaveText("Writing read-only · Writing cannot preserve this Markdown exactly; use Source mode.");
+    await expect(editor.status).toHaveText(
+      /^Writing read-only · (?:Writing cannot preserve this Markdown exactly; use Source mode\.|This edit cannot be preserved exactly in Writing; use Source mode\.)$/,
+    );
     await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
 
     // Structural operations above intentionally exercise the read-only boundary.

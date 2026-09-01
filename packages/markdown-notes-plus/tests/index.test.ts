@@ -655,6 +655,17 @@ Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove l
   assertEquals(assessWritingMutation("plain", "plain\r\nedit").editable, false);
 });
 
+Deno.test("Writing lifecycle distinguishes initial and mutation losslessness reasons", () => {
+  assertEquals(assessWritingRoundTrip("+ unsafe bullet", "+ unsafe bullet"), {
+    editable: false,
+    reason: "Writing cannot preserve this Markdown exactly; use Source mode.",
+  });
+  assertEquals(assessWritingMutation("plain", "plain\n+ unsafe bullet"), {
+    editable: false,
+    reason: "This edit cannot be preserved exactly in Writing; use Source mode.",
+  });
+});
+
 Deno.test("normalizes only GFM-confirmed bare HTTP(S) URLs with exact UTF-16 changes", () => {
   const source = "😀 https://one.test/a, [two](https://two.test) <https://three.test> https://四.test/路.";
   const result = normalizeBareUrls(source);
