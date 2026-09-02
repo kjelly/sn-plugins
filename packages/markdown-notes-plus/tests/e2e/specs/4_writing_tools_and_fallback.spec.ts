@@ -32,7 +32,38 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await expect(editor.sourceEditor).toContainText("|");
   });
 
-  test("Writing mode enforces read-only for lexically unsafe or raw HTML Markdown", async ({ page }) => {
+  test("Writing stays editable across consecutive canonical commits and saves both edits", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Consecutive Writing edits\n\nInitial paragraph.\n", "note-writing-consecutive-edits", false);
+    await expect(editor.status).toHaveText("Ready");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+
+    const firstSave = host.waitForNextSave();
+    await editor.writingEditor.locator("p").click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" first");
+    await expect(editor.writingEditor.locator("p")).toContainText("Initial paragraph. first");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await firstSave;
+    expect(await host.getLatestSavedText()).toContain("Initial paragraph. first");
+
+    const secondSave = host.waitForNextSave();
+    await editor.writingEditor.locator("p").click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" second");
+    await expect(editor.writingEditor.locator("p")).toContainText("Initial paragraph. first second");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await secondSave;
+    expect(await host.getLatestSavedText()).toContain("Initial paragraph. first second");
+
+    const savedTexts = (await host.getSaves()).map((save) => save.items[0]?.content?.text);
+    expect(savedTexts.some((text) => text?.includes("Initial paragraph. first"))).toBe(true);
+    expect(savedTexts.some((text) => text?.includes("Initial paragraph. first second"))).toBe(true);
+  });
+
+  test("Writing mode keeps raw HTML Source-only and preserves the source", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
@@ -40,22 +71,21 @@ test.describe("Writing Tools & Lossless Guard", () => {
     const rawHtmlMarkdown = "# Note with Raw HTML\n\n<div class=\"custom-tag\">Custom HTML Content</div>\n";
     await host.goto(rawHtmlMarkdown, "note-unsafe-html", false);
 
-    // Status shows Writing read-only warning
-    await expect(editor.status).toContainText("Writing read-only");
-
-    // Toolbar buttons are disabled in Writing mode to prevent lossy serialization
-    await expect(editor.writingH1Button).toBeDisabled();
-    await expect(editor.writingTableButton).toBeDisabled();
-
-    // Switch to Source mode -> Source mode is fully editable
-    await editor.switchMode("Source");
-    await expect(editor.status).toHaveText("Ready");
+    // Unsupported syntax is admitted directly to Source mode, not a readonly
+    // Writing projection.
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
+    await expect(editor.sourceEditor).toContainText("<div class=\"custom-tag\">Custom HTML Content</div>");
 
     // Can edit in Source mode
     await editor.typeInSource("\n\nAppended source line.");
     const updatedSource = await editor.getSourceText();
     expect(updatedSource).toContain("Custom HTML Content");
     expect(updatedSource).toContain("Appended source line.");
+
+    await editor.switchMode("Writing");
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
   });
 
   test("Slash commands: typing /task and pressing Enter converts block to task item", async ({ page }) => {
@@ -97,21 +127,16 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await expect(editor.sourceEditor).toContainText("- [ ] Buy groceries");
   });
 
-  test("Writing mode permits notes with multiple trailing empty lines to be edited normally", async ({ page }) => {
+  test("Writing mode asks before normalizing multiple trailing empty lines", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
     const docWithTrailingBlankLines = "# Notes with Blank Lines\n\nContent paragraph.\n\n\n\n\n\n";
     await host.goto(docWithTrailingBlankLines, "note-trailing-blank-lines", false);
 
-    // Writing editor is Ready and fully editable
-    await expect(editor.status).toHaveText("Ready");
-    await expect(editor.writingH1Button).toBeEnabled();
-    await expect(editor.writingTaskButton).toBeEnabled();
-
-    // Can edit in writing mode
-    await editor.writingEditor.locator("p").click();
-    await editor.writingTaskButton.click();
-    await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toBeVisible();
+    const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "留在 Source" }).click();
+    await expect(editor.sourcePane).toBeVisible();
   });
 });

@@ -114,42 +114,18 @@ test.describe("Link Navigation in New Tab", () => {
     expect(opened.all[0].url).toBe("https://standardnotes.com/help");
   });
 
-  test("Security - dangerous javascript: scheme is blocked and never opened", async ({ page }) => {
+  test("Security - dangerous javascript: scheme remains Source-only and preserves Markdown", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
     await host.goto("[Malicious Link](javascript:alert(1))\n", "note-links-4");
 
-    await interceptOpenedLinks(page);
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
+    expect(await editor.getSourceText()).toContain("[Malicious Link](javascript:alert(1))");
 
-    const expectedReadOnlyStatus = "Writing read-only · Writing serializer changed the source; use Source mode for exact Markdown.";
-    await expect(editor.status).toHaveText(expectedReadOnlyStatus);
-    const editorFrame = findEditorFrame(page);
-    const editorStateBeforeClick = {
-      frameUrl: editorFrame.url(),
-      status: await editor.status.textContent(),
-      writingContent: await editor.writingPane.textContent(),
-    };
-    const link = editor.writingPane.locator("a", { hasText: "Malicious Link" });
-    await expect(link).toBeVisible();
-    await expect(link).not.toHaveAttribute("href");
-    const frameNavigation = page.waitForEvent("framenavigated", {
-      predicate: (frame) => frame === editorFrame,
-      timeout: 500,
-    });
-    await link.click();
-    await expect(frameNavigation).rejects.toThrow(/Timeout/);
-
-    await expect(editor.writingPane).toBeVisible();
-    await expect(editor.status).toHaveText(expectedReadOnlyStatus);
-    expect(editorFrame.url()).toBe(editorStateBeforeClick.frameUrl);
-    expect(await editor.status.textContent()).toBe(editorStateBeforeClick.status);
-    expect(await editor.writingPane.textContent()).toBe(editorStateBeforeClick.writingContent);
-
-    const opened = await readOpenedLinks(page);
-
-    expect(opened.all).toHaveLength(0);
-    expect(opened.top).toHaveLength(0);
-    expect(opened.editorFrame).toHaveLength(0);
+    await editor.switchMode("Writing");
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
   });
 });

@@ -89,7 +89,7 @@ test.describe("Modes and Projections", () => {
     await expect(editor.sourceEditor).toBeFocused();
   });
 
-  test("Switching from Source back to Writing preserves full editability and toolbar buttons", async ({ page }) => {
+  test("Formatting-only Source edits stay in Source until Writing normalization is confirmed", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
@@ -98,19 +98,23 @@ test.describe("Modes and Projections", () => {
     // Initial state: Writing mode is active and editable
     await expect(editor.writingPane).toBeVisible();
     await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
-    await expect(editor.writingH1Button).toBeEnabled();
 
     // Switch to Source mode
     await editor.switchMode("Source");
     await expect(editor.sourcePane).toBeVisible();
     await expect(editor.writingPane).toBeHidden();
 
-    // Edit in Source mode
-    await editor.sourceEditor.click();
-    await page.keyboard.type("\nExtra source text");
+    // Edit only Markdown formatting (remove the blank line and final newline).
+    await editor.selectAllAndTypeInSource("# Dynamic Note\nInitial paragraph.");
 
-    // Switch back to Writing mode
+    // Admission remains Source-only until the user confirms normalization.
     await editor.switchMode("Writing");
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
+    const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole("button", { name: "套用並進入 Writing" }).click();
     await expect(editor.writingPane).toBeVisible();
     await expect(editor.sourcePane).toHaveCount(0);
 
@@ -118,6 +122,7 @@ test.describe("Modes and Projections", () => {
     await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
     await expect(editor.writingH1Button).toBeEnabled();
     await expect(editor.writingTaskButton).toBeEnabled();
+    await expect(editor.status).toHaveText("Edited · save requested; host confirmation unavailable");
 
     // Type in Writing mode and verify toolbar action works
     await editor.writingEditor.locator("p").first().click();
@@ -125,7 +130,7 @@ test.describe("Modes and Projections", () => {
     await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toBeVisible();
   });
 
-  test("Writing mode remains read-only when Source edit adds an extra blank paragraph", async ({ page }) => {
+  test("Writing mode asks for confirmation when Source edit only changes formatting", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
@@ -136,9 +141,86 @@ test.describe("Modes and Projections", () => {
     await page.keyboard.type("\n\nExtra source text");
 
     await editor.switchMode("Writing");
+    const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "套用並進入 Writing" }).click();
     await expect(editor.writingPane).toBeVisible();
-    await expect(editor.status).toHaveText("Writing read-only · Writing serializer changed the source; use Source mode for exact Markdown.");
-    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
+    await expect(editor.status).toHaveText("Edited · save requested; host confirmation unavailable");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+  });
+
+  test("Safe Writing to Source edit keeps protected content Source-only", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("# Protected transition\n\nSafe paragraph.\n", "note-mode-protected-transition", false);
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+
+    await editor.switchMode("Source");
+    const protectedMarkdown = "# Protected transition\n\n<div>Protected HTML</div>\n";
+    await editor.selectAllAndTypeInSource(protectedMarkdown);
+
+    await editor.switchMode("Writing");
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
+    await expect(editor.sourceEditor).toContainText("<div>Protected HTML</div>");
+    expect(await editor.getSourceText()).toContain("<div>Protected HTML</div>");
+  });
+
+  test("Unsupported initial note can re-admit Writing after a same-note safe remote replacement", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("<div>Protected HTML</div>\n", "note-remote-safe-replacement", false);
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
+
+    await host.updateCurrentNote("# Safe replacement\n\nRemote paragraph.\n");
+    await editor.switchMode("Writing");
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor.locator("h1")).toHaveText("Safe replacement");
+  });
+
+  test("System-forced Source automatically re-admits Writing after a safe same-note revision", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("<div>Protected HTML</div>\n", "note-remote-safe-auto-replacement", false);
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
+
+    await host.updateCurrentNote("# Safe revision B\n\nRemote paragraph.\n");
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.writingPane).not.toHaveAttribute("hidden", "true");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor.locator("h1")).toHaveText("Safe revision B");
+    await expect(editor.writingEditor.locator("p")).toContainText("Remote paragraph.");
+  });
+
+  test("Dirty same-note remote merge re-proves Writing eligibility", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("<div>protected</div>\nkeep\n", "note-dirty-remote-merge-writing", false);
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeHidden();
+
+    await editor.sourceEditor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("local\n");
+    await expect(editor.sourceEditor).toContainText("local");
+
+    await host.updateCurrentNote("keep\n");
+    await expect(editor.sourceEditor).toContainText("keep");
+    await expect(editor.sourceEditor).not.toContainText("protected");
+    await expect(editor.sourceEditor).toContainText("local");
+
+    await editor.switchMode("Writing");
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor.locator("p")).toContainText("keep");
+    await expect(editor.writingEditor.locator("p")).toContainText("local");
   });
 
   test("Host theme changes and system dark mode adapt editor colors seamlessly", async ({ page }) => {
