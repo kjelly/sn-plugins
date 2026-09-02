@@ -1,5 +1,11 @@
 import type { WritingCommandName } from "./WritingCommandPlan.ts";
 import type { Transaction } from "@milkdown/prose/state";
+import {
+  proveWritingNormalization,
+  scanWritingNormalization,
+  type WritingCodec,
+  type WritingNormalizationChange,
+} from "../markdown/writingNormalization.ts";
 
 export const WRITING_TRANSACTION_ORIGIN_META = "markdown-notes-plus/writing-origin";
 export const WRITING_STRUCTURAL_CONTEXT_META = "markdown-notes-plus/writing-structural-context";
@@ -97,7 +103,46 @@ export class WritingEditorChangeGate {
   get renderedMarkdown(): string { return this.rendered; }
 }
 
-export type WritingRoundTripResult = { editable: boolean; reason?: string };
+export type WritingCapability =
+  | { kind: "lossless"; editable: true }
+  | {
+    kind: "normalizable";
+    editable: false;
+    proofSource: string;
+    normalizedMarkdown: string;
+    changes: WritingNormalizationChange[];
+    reason: string;
+  }
+  | { kind: "unsupported"; editable: false; reason: string };
+
+export type WritingRoundTripResult = WritingCapability;
+
+/** Identifies the document/editor instance that produced a capability proof. */
+export type WritingCapabilityProof = {
+  documentInstanceId: string;
+  documentRevision: number;
+  documentGeneration: number;
+  editorGeneration: number;
+};
+
+function losslessCapability(): WritingCapability {
+  return { kind: "lossless", editable: true };
+}
+
+function unsupportedCapability(reason: string): WritingCapability {
+  return { kind: "unsupported", editable: false, reason };
+}
+
+function normalizationCapability(source: string, normalizedMarkdown: string, changes: WritingNormalizationChange[]): WritingCapability {
+  return {
+    kind: "normalizable",
+    editable: false,
+    proofSource: source,
+    normalizedMarkdown,
+    changes,
+    reason: "Writing needs format normalization before editing.",
+  };
+}
 
 function hasFencedCodeBlock(markdown: string): boolean {
   const lines = markdown.split("\n");
@@ -150,6 +195,10 @@ function newlineKind(markdown: string): "lf" | "crlf" | "cr" | "none" | "mixed" 
   return [...kinds][0] as "lf" | "crlf" | "cr";
 }
 
+function stripTerminalLineEndings(markdown: string): string {
+  return markdown.replace(/(?:\r\n|\r|\n)+$/, "");
+}
+
 /**
  * Milkdown is a structural editor, not a lossless Markdown editor. This
  * conservative profile is the explicit proof boundary for Writing mode.
@@ -181,24 +230,32 @@ export function preservesWritingStructuralContext(context: WritingStructuralCont
   return hasThematicBreak(markdown);
 }
 
-function stripWritingSuffix(text: string): string {
-  let end = text.length;
-  while (end > 0 && text[end - 1] === "\n" && (end < 2 || text[end - 2] !== "\r")) end -= 1;
-  return text.slice(0, end);
-}
-
-/** Reattach the canonical document's exact terminal line-ending suffix. */
-export function reconnectWritingSuffix(source: string, serialized: string): string {
-  return stripWritingSuffix(serialized) + source.slice(stripWritingSuffix(source).length);
-}
-
 /** Prove that the initial document survived Milkdown's actual serializer. */
-export function assessWritingRoundTrip(source: string, serialized: string): WritingRoundTripResult {
-  if (!isWritingLexicallySafe(source)) return { editable: false, reason: "Writing cannot preserve this Markdown exactly; use Source mode." };
-  if (source !== serialized) {
-    return { editable: false, reason: "Writing serializer changed the source; use Source mode for exact Markdown." };
+export function assessWritingRoundTrip(source: string, serialized: string, codec?: WritingCodec): WritingRoundTripResult {
+  const scan = scanWritingNormalization(source);
+  if (scan.unsupportedReason) return unsupportedCapability(scan.unsupportedReason);
+  if (!codec) return unsupportedCapability("Writing codec proof is unavailable; use Source mode.");
+  if (source === serialized && scan.changes.length === 0) {
+    if (!isWritingLexicallySafe(source)) return unsupportedCapability("Writing cannot prove this Markdown is lossless; use Source mode.");
+    return losslessCapability();
   }
-  return { editable: true };
+  if (scan.changes.length === 0) {
+    if (stripTerminalLineEndings(source) !== stripTerminalLineEndings(serialized)) {
+      return unsupportedCapability("Writing serializer changed the source; use Source mode for exact Markdown.");
+    }
+    const proofFailure = proveWritingNormalization(source, serialized, codec);
+    if (proofFailure) return unsupportedCapability(proofFailure);
+    return losslessCapability();
+  }
+  // The live serializer may omit terminal line endings, but it must otherwise
+  // match the policy's normalized Markdown exactly. A body mismatch (such as
+  // a javascript: link serializer change) remains Source-only.
+  if (stripTerminalLineEndings(serialized) !== stripTerminalLineEndings(scan.markdown)) {
+    return unsupportedCapability("Writing serializer changed the source; use Source mode for exact Markdown.");
+  }
+  const proofFailure = proveWritingNormalization(source, serialized, codec);
+  if (proofFailure) return unsupportedCapability(proofFailure);
+  return normalizationCapability(source, serialized, scan.changes);
 }
 
 /**
@@ -214,11 +271,11 @@ export function assessWritingMutation(
 ): WritingRoundTripResult {
   // Structural command proofs must not admit serializer output containing CR
   // or CRLF. The only line-ending exception is LF-only blank-note materialization.
-  if (next.includes("\r")) return { editable: false, reason: "Writing changed line endings; use Source mode for exact Markdown." };
+  if (next.includes("\r")) return unsupportedCapability("Writing changed line endings; use Source mode for exact Markdown.");
   const safe = origin !== "user"
     ? origin.kind === "external-replace" ? false : isCommandOutputSafe(origin.command, next)
     : isWritingLexicallySafe(next) || (structuralContext !== undefined && preservesWritingStructuralContext(structuralContext, next));
-  if (!safe) return { editable: false, reason: "This edit cannot be preserved exactly in Writing; use Source mode." };
+  if (!safe) return unsupportedCapability("This edit cannot be preserved exactly in Writing; use Source mode.");
   // A structural command is allowed to introduce the line breaks required by
   // its output (for example a new table in a one-line paragraph). Once the
   // source already contains line endings, preserve their exact kind too.
@@ -228,7 +285,7 @@ export function assessWritingMutation(
   // for non-empty notes.
   const isEmptyInitialMaterialization = previous === "" && newlineKind(next) === "lf";
   if ((origin === "user" && !isEmptyInitialMaterialization) || newlineKind(previous) !== "none") {
-    if (newlineKind(previous) !== newlineKind(next)) return { editable: false, reason: "Writing changed line endings; use Source mode for exact Markdown." };
+    if (newlineKind(previous) !== newlineKind(next)) return unsupportedCapability("Writing changed line endings; use Source mode for exact Markdown.");
   }
-  return { editable: true };
+  return losslessCapability();
 }
