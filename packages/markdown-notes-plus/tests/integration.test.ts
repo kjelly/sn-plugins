@@ -24,6 +24,7 @@ import { reconcileSectionAnchor } from "../src/document/SectionAnchor.ts";
 import { AppDocumentLifecycle } from "../src/app/AppDocumentLifecycle.ts";
 import { modeAfterRequest } from "../src/app/AppModeTransition.ts";
 import { findMarkdownLinkAtOffset } from "../src/editor/SourceLinks.ts";
+import type { WritingCapabilityProof } from "../src/editor/WritingEditorLifecycle.ts";
 
 declare const Deno: { test(name: string, fn: () => void | Promise<void>): void; readTextFile(path: string | URL): Promise<string> };
 
@@ -76,13 +77,7 @@ async function deliverBridgeContext(harness: FakeBridgeHarness, text: string, uu
 }
 
 function attachAppLifecycle(document: CanonicalDocument): AppDocumentLifecycle {
-  const appLifecycle = new AppDocumentLifecycle(document);
-  let previousText = document.text;
-  document.subscribe((next, transition) => {
-    appLifecycle.observeCanonicalTransition(previousText, next, transition);
-    previousText = next.text;
-  });
-  return appLifecycle;
+  return new AppDocumentLifecycle(document);
 }
 
 Deno.test("App lifecycle retires a rejected Writing fallback on an explicit Source no-op", async () => {
@@ -160,8 +155,15 @@ Deno.test("App mode requests stay in Source while a Writing fallback is present"
 Deno.test("App routes every mode request through the fallback-aware transition", async () => {
   const source = await Deno.readTextFile(new URL("../src/app/App.tsx", import.meta.url));
   const directModeWrites = source.split("\n").filter((line) => line.includes("setMode("));
-  assertEquals(directModeWrites.length, 1);
-  assert(directModeWrites.every((line) => line.includes("setMode(resolvedMode)")), "mode state must only be written by requestMode");
+  assert(directModeWrites.length > 0, "App must have an explicit mode transition owner");
+  assert(directModeWrites.every((line) =>
+    line.includes("setMode(resolvedMode)") ||
+    line.includes("setMode(transition.mode)") ||
+    line.includes('setMode("source")') ||
+    line.includes('setMode("writing")'),
+  ), "every direct mode write must be an approved explicit transition");
+  assert(directModeWrites.some((line) => line.includes("setMode(resolvedMode)")), "ordinary mode requests must use the fallback-aware requestMode path");
+  assert(directModeWrites.some((line) => line.includes("setMode(transition.mode)")), "verified Writing normalization must use the explicit enable transition");
   const modeChangeHandlers = [...source.matchAll(/onModeChange=\{([^}]+)\}/g)].map((match) => match[1].trim());
   assert(modeChangeHandlers.length > 0, "mode navigation controls must expose an onModeChange handler");
   assert(modeChangeHandlers.every((handler) => handler === "requestMode"), "mode navigation requests must use requestMode");
@@ -259,11 +261,93 @@ Deno.test("mode switch keeps a Writing transaction observable at the canonical b
   const external = gate.suppressExternalUpdate(generation, document.text);
   assert(!!external, "external replacement must be tagged");
 
-  // A queued Writing transaction that follows the source replacement is not
-  // an echo and must reach the canonical owner.
+  // A queued transaction from the old Writing document is stale after the
+  // replacement and must not reach the canonical owner.
   const userMarkdown = "source edit + writing edit";
-  if (gate.markdownUpdated(generation, userMarkdown)) document.applyLocal(userMarkdown);
-  assert(document.text === userMarkdown, "Writing edit was lost during mode switch");
+  const staleToken = { instanceId: document.token.instanceId, revision: document.token.revision - 1 };
+  if (gate.markdownUpdated(generation, userMarkdown)) assertEquals(document.applyLocalIfCurrent(staleToken, userMarkdown), false);
+  assert(document.text === "source edit", "stale Writing edit must not overwrite the replacement");
+});
+
+Deno.test("stale Writing proof cannot add canonical history or bridge save", async () => {
+  const harness = fakeBridgeHarness();
+  const noteId = "note-stale-writing-proof";
+  await deliverBridgeContext(harness, "base\n", noteId);
+  const lifecycle = attachAppLifecycle(harness.document);
+  const currentProof: WritingCapabilityProof = {
+    documentInstanceId: harness.document.token.instanceId,
+    documentRevision: harness.document.token.revision,
+    documentGeneration: harness.document.snapshot().resetGeneration,
+    editorGeneration: lifecycle.writingEditorEpoch,
+  };
+  assert(lifecycle.applyWritingLocalIfCurrent(currentProof, currentProof.editorGeneration, "base\nlocal\n"), "the current Writing edit must be admitted");
+  const staleProof = currentProof;
+
+  await deliverBridgeContext(harness, "remote\nbase\n", noteId);
+  assertEquals(harness.document.text, "remote\nbase\nlocal\n");
+  const applied = lifecycle.applyWritingLocalIfCurrent(staleProof, staleProof.editorGeneration, "stale old editor mutation");
+  assertEquals(applied, false);
+  harness.clock.runAll();
+  assertEquals(harness.saves.map((save) => save.text), ["remote\nbase\nlocal\n"]);
+  assert(harness.document.undo(), "the current merge history entry must remain available");
+  assertEquals(harness.document.text, "base\nlocal\n");
+});
+
+Deno.test("Writing epoch retires the pre-sync DOM after undo/redo but admits the new session", async () => {
+  const harness = fakeBridgeHarness();
+  await deliverBridgeContext(harness, "base\n", "note-writing-epoch");
+  const lifecycle = attachAppLifecycle(harness.document);
+  const oldEditorGate = new WritingEditorChangeGate();
+  const oldGateGeneration = oldEditorGate.begin(harness.document.text);
+  oldEditorGate.finish(oldGateGeneration, harness.document.text);
+  const oldProof: WritingCapabilityProof = {
+    documentInstanceId: harness.document.token.instanceId,
+    documentRevision: harness.document.token.revision,
+    documentGeneration: harness.document.snapshot().resetGeneration,
+    editorGeneration: lifecycle.writingEditorEpoch,
+  };
+
+  assert(oldEditorGate.markdownUpdated(oldGateGeneration, "base\nwriting\n"), "the old Writing session should report its edit");
+  assert(lifecycle.applyWritingLocalIfCurrent(oldProof, oldProof.editorGeneration, "base\nwriting\n"), "the current Writing edit should apply");
+  harness.bridge.notifyLocalChange(harness.document.text);
+  assertEquals(lifecycle.writingEditorEpoch, oldProof.editorGeneration);
+
+  assert(lifecycle.applyHistory(() => harness.document.undo()), "undo should apply");
+  harness.bridge.notifyLocalChange(harness.document.text);
+  const epochAfterUndo = lifecycle.writingEditorEpoch;
+  assert(epochAfterUndo > oldProof.editorGeneration, "undo must retire the old Writing editor");
+  assert(lifecycle.applyHistory(() => harness.document.redo()), "redo should apply");
+  harness.bridge.notifyLocalChange(harness.document.text);
+  assert(lifecycle.writingEditorEpoch > epochAfterUndo, "redo must retire the intervening Writing editor");
+  harness.clock.runAll();
+
+  // React's epoch key remounts Writing here. The old DOM callback can still
+  // carry the new proof during the pre-sync window, but its old editor gate
+  // must prevent admission before the proof reaches canonical state.
+  const currentProof: WritingCapabilityProof = {
+    documentInstanceId: harness.document.token.instanceId,
+    documentRevision: harness.document.token.revision,
+    documentGeneration: harness.document.snapshot().resetGeneration,
+    editorGeneration: lifecycle.writingEditorEpoch,
+  };
+  const newEditorGateGeneration = oldEditorGate.begin(harness.document.text);
+  oldEditorGate.finish(newEditorGateGeneration, harness.document.text);
+  const historyTextBeforeStaleCallback = harness.document.text;
+  const revisionBeforeStaleCallback = harness.document.token.revision;
+  const savesBeforeStaleCallback = harness.saves.length;
+  if (oldEditorGate.markdownUpdated(oldGateGeneration, "stale pre-sync DOM mutation")) {
+    lifecycle.applyWritingLocalIfCurrent(currentProof, currentProof.editorGeneration, "stale pre-sync DOM mutation");
+  }
+  assertEquals(harness.document.text, historyTextBeforeStaleCallback);
+  assertEquals(harness.document.token.revision, revisionBeforeStaleCallback);
+  harness.clock.runAll();
+  assertEquals(harness.saves.length, savesBeforeStaleCallback);
+
+  assert(lifecycle.applyWritingLocalIfCurrent(currentProof, currentProof.editorGeneration, "base\nwriting\nnew session\n"), "the remounted Writing session should still edit");
+  harness.bridge.notifyLocalChange(harness.document.text);
+  harness.clock.runAll();
+  assertEquals(harness.document.text, "base\nwriting\nnew session\n");
+  assertEquals(harness.saves.at(-1)?.text, "base\nwriting\nnew session\n");
 });
 
 Deno.test("SourceEditor change metadata reaches the canonical transition contract", () => {
@@ -404,7 +488,7 @@ Deno.test("writing command plans preserve structural nodes and selection context
 });
 
 Deno.test("Writing integration gate keeps unsupported source in Source mode", () => {
-  assert(assessWritingRoundTrip("- safe task", "- safe task").editable, "safe round-trip should be editable");
+  assert(!assessWritingRoundTrip("- safe task", "- safe task").editable, "round-trip without the live codec must fail closed");
   assert(!assessWritingRoundTrip("+ unsafe bullet", "+ unsafe bullet").editable, "plus bullets need Source mode");
   assert(!assessWritingMutation("a\nb", "a\r\nb").editable, "line-ending change needs Source mode");
 });

@@ -638,7 +638,7 @@ Deno.test("EditorKit lifecycle initializes a different note and preserves unknow
 });
 
 Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove lossless", () => {
-  assertEquals(assessWritingRoundTrip("- task", "- task").editable, true);
+  assertEquals(assessWritingRoundTrip("- task", "- task").editable, false);
   assertEquals(assessWritingRoundTrip("# Title\n\nParagraph\n\n\n\n\n\n", "# Title\n\nParagraph\n").editable, false);
   for (const source of [
     "+ task",
@@ -648,7 +648,7 @@ Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove l
     "<div>raw</div>",
     "```md\nraw\n```",
   ]) {
-    assertEquals(assessWritingRoundTrip(source, source), { editable: false, reason: "Writing cannot preserve this Markdown exactly; use Source mode." });
+    assertEquals(assessWritingRoundTrip(source, source).kind, "unsupported");
   }
   assertEquals(assessWritingRoundTrip("plain\r\n", "plain\r\n").editable, false);
   assertEquals(assessWritingMutation("plain\r\n", "plain\r\n").editable, false);
@@ -657,10 +657,12 @@ Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove l
 
 Deno.test("Writing lifecycle distinguishes initial and mutation losslessness reasons", () => {
   assertEquals(assessWritingRoundTrip("+ unsafe bullet", "+ unsafe bullet"), {
+    kind: "unsupported",
     editable: false,
-    reason: "Writing cannot preserve this Markdown exactly; use Source mode.",
+    reason: "plus bullets are not supported in Writing mode; use Source mode.",
   });
   assertEquals(assessWritingMutation("plain", "plain\n+ unsafe bullet"), {
+    kind: "unsupported",
     editable: false,
     reason: "This edit cannot be preserved exactly in Writing; use Source mode.",
   });
