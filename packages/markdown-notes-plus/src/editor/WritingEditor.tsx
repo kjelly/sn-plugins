@@ -13,7 +13,8 @@ import type { EditorView as ProseEditorView } from "@milkdown/prose/view";
 import { SlashProvider } from "@milkdown/plugin-slash";
 import { toggleMark } from "@milkdown/prose/commands";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry, writingControlIsDisabled, writingTaskIsHidden, type WritingControlState } from "./WritingTaskControls";
-import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, reconnectWritingSuffix, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
+import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingCapabilityProof, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
+import { scanWritingNormalization, WRITING_CODEC_OPTIONS, type WritingCodec } from "../markdown/writingNormalization.ts";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
@@ -41,15 +42,16 @@ export type InsertPayload = { id: number; markdown: string; cursorOffset?: numbe
 export type WritingEditorProps = {
   value: string;
   readOnly: boolean;
-  onChange: (value: string) => void;
+  writingProof: WritingCapabilityProof;
+  onChange: (value: string, proof: WritingCapabilityProof) => void;
   onToggleTask?: (ordinal: number, renderedMarkdown?: string) => void;
   onDeleteTask?: (ordinal: number, renderedMarkdown?: string) => void;
   command?: WritingCommand;
   insertPayload?: InsertPayload;
   library?: InsertLibrary;
   deadlineDay?: string;
-  onCapabilityChange?: (result: WritingRoundTripResult, proofSource?: string) => void;
-  onLosslessFallback?: (value: string, result: WritingRoundTripResult) => void;
+  onCapabilityChange?: (result: WritingRoundTripResult, proofSource?: string, proof?: WritingCapabilityProof) => void;
+  onLosslessFallback?: (value: string, result: WritingRoundTripResult, proof: WritingCapabilityProof) => void;
 };
 
 /** Writing must not enable CommonMark's synthetic empty-line HTML marker. */
@@ -591,6 +593,7 @@ type WritingEditorValueSync = {
   value: string;
   replace: (value: string, origin: WritingMutationOrigin) => void;
   serialize: () => string;
+  codec?: WritingCodec;
   report: (result: WritingRoundTripResult) => void;
 };
 
@@ -618,6 +621,13 @@ type PendingLinkDialog = {
   sourceValue: string;
 };
 
+function sameWritingCapabilityProof(left: WritingCapabilityProof, right: WritingCapabilityProof): boolean {
+  return left.documentInstanceId === right.documentInstanceId &&
+    left.documentRevision === right.documentRevision &&
+    left.documentGeneration === right.documentGeneration &&
+    left.editorGeneration === right.editorGeneration;
+}
+
 /** Own the complete pre-create Writing editor composition. */
 export function configureWritingEditor(editor: Editor, {
   host,
@@ -640,10 +650,7 @@ export function configureWritingEditor(editor: Editor, {
       ctx.set(defaultValueCtx, value);
       ctx.update(remarkStringifyOptionsCtx, (options) => ({
         ...options,
-        bullet: "-" as const,
-        bulletOther: "*" as const,
-        listItemIndent: "one" as const,
-        resourceLink: true,
+        ...WRITING_CODEC_OPTIONS,
       }));
       ctx.update(editorViewOptionsCtx, (options) => ({
         ...options,
@@ -660,7 +667,7 @@ export function configureWritingEditor(editor: Editor, {
             () => {
               try {
                 const serialize = ctx.get(serializerCtx);
-                return reconnectWritingSuffix(valueRef.current, serialize(view.state.doc));
+                return serialize(view.state.doc);
               } catch {
                 return undefined;
               }
@@ -677,12 +684,12 @@ export function configureWritingEditor(editor: Editor, {
     .use(history)
     .use(listener)
     .config((ctx) => {
-      ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, reconnectWritingSuffix(valueRef.current, markdown)));
+      ctx.get(listenerCtx).markdownUpdated((listenerContext, markdown) => onMarkdownUpdated(listenerContext, markdown));
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use((ctx) => async () => {
       await ctx.wait(SerializerReady);
-      if (serializerRef) serializerRef.current = (doc: ProseNode) => reconnectWritingSuffix(valueRef.current, ctx.get(serializerCtx)(doc));
+      if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use($prose(() => writingOriginPlugin))
@@ -695,20 +702,33 @@ export function configureWritingEditor(editor: Editor, {
 }
 
 /** Keep the Milkdown document and capability proof aligned with canonical text. */
-export function synchronizeWritingEditorValue({ gate, generation, value, replace, serialize, report }: WritingEditorValueSync): WritingRoundTripResult {
-  if (gate.renderedMarkdown !== value) {
-    const origin = gate.suppressExternalUpdate(generation, value);
-    if (origin) replace(value, origin);
+export function synchronizeWritingEditorValue({ gate, generation, value, replace, serialize, codec, report }: WritingEditorValueSync): WritingRoundTripResult {
+  const preflight = scanWritingNormalization(value);
+  if (preflight.unsupportedReason) {
+    const proof: WritingRoundTripResult = { kind: "unsupported", editable: false, reason: preflight.unsupportedReason };
+    report(proof);
+    return proof;
   }
-  const proof = assessWritingRoundTrip(value, serialize());
-  report(proof);
-  return proof;
+  try {
+    if (gate.renderedMarkdown !== value) {
+      const origin = gate.suppressExternalUpdate(generation, value);
+      if (origin) replace(value, origin);
+    }
+    const proof = assessWritingRoundTrip(value, serialize(), codec);
+    report(proof);
+    return proof;
+  } catch {
+    const proof: WritingRoundTripResult = { kind: "unsupported", editable: false, reason: "Writing could not parse this Markdown; use Source mode." };
+    report(proof);
+    return proof;
+  }
 }
 
 /** Milkdown CommonMark + GFM writing mode. Source remains the canonical owner. */
 export function WritingEditor({
   value,
   readOnly,
+  writingProof,
   onChange,
   onToggleTask,
   onDeleteTask,
@@ -752,6 +772,7 @@ export function WritingEditor({
   onCapabilityChangeRef.current = onCapabilityChange;
   const onLosslessFallbackRef = useRef(onLosslessFallback);
   onLosslessFallbackRef.current = onLosslessFallback;
+  const writingProofRef = useRef(writingProof);
 
   useEffect(() => {
     const today = deadlineDay ? new Date(`${deadlineDay}T00:00:00`) : new Date();
@@ -776,25 +797,51 @@ export function WritingEditor({
   }, []);
   onRequestLinkRef.current = requestLink;
 
-  const reportCapability = (result: WritingRoundTripResult, force = false) => {
-    const next = result.editable;
-    if (!force && capabilityRef.current === next) return;
-    capabilityRef.current = next;
-    onCapabilityChangeRef.current?.(result, valueRef.current);
+  const reportCapability = (
+    result: WritingRoundTripResult,
+    _force = false,
+    proofSource = valueRef.current,
+    proof = writingProofRef.current,
+  ) => {
+    capabilityRef.current = result.editable;
+    onCapabilityChangeRef.current?.(result, proofSource, proof);
   };
 
-  const synchronizeEditorValue = (target: string, forceReport = false) => {
+  const synchronizeEditorValue = (
+    target: string,
+    forceReport = false,
+    proof = writingProofRef.current,
+  ): WritingRoundTripResult | undefined => {
     const editor = editorRef.current;
-    if (!editor) return;
+    if (!editor) return undefined;
     if (gate.current.renderedMarkdown !== target) documentGenerationRef.current += 1;
-    synchronizeWritingEditorValue({
+    const result = synchronizeWritingEditorValue({
       gate: gate.current,
       generation: generationRef.current,
       value: target,
       replace: (next, origin) => editor.action((ctx) => replaceAllWithOrigin(ctx, next, origin)),
-      serialize: () => editor.action((ctx) => reconnectWritingSuffix(target, ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc))),
-      report: (result) => reportCapability(result, forceReport),
+      serialize: () => editor.action((ctx) => ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc)),
+      codec: {
+        parse: (markdown) => editor.action((ctx) => ctx.get(parserCtx)(markdown)),
+        serialize: (document) => editor.action((ctx) => ctx.get(serializerCtx)(document)),
+      },
+      report: (result) => {
+        // The replacement and its serializer round-trip have completed in the
+        // passive sync that called this function. Publish the matching proof
+        // before notifying App; stale editor callbacks keep their old proof.
+        if (result.kind !== "unsupported" && editorRef.current === editor) writingProofRef.current = proof;
+        reportCapability(result, forceReport, target, proof);
+      },
     });
+    if (result.kind === "unsupported" && editorRef.current === editor) {
+      // Do not leave a stale projection visible while App admits the document
+      // to Source-only mode. This also handles a protected update that lands
+      // before an async Milkdown create() promise has settled.
+      editorRef.current = undefined;
+      void editor.destroy();
+    }
+    if (result.kind !== "unsupported" && editorRef.current === editor) writingProofRef.current = proof;
+    return result;
   };
 
   const applyPendingCommand = () => {
@@ -827,6 +874,12 @@ export function WritingEditor({
     let cancelled = false;
     const generation = gate.current.begin(value);
     generationRef.current = generation;
+    const preflight = scanWritingNormalization(value);
+    if (preflight.unsupportedReason) {
+      capabilityRef.current = false;
+      onCapabilityChangeRef.current?.({ kind: "unsupported", editable: false, reason: preflight.unsupportedReason }, value, writingProof);
+      return () => { cancelled = true; };
+    }
     const editor = configureWritingEditor(Editor.make(), {
       host: hostElement,
       value,
@@ -841,7 +894,7 @@ export function WritingEditor({
       editability: { readOnlyRef, capabilityRef },
       onRequestLinkRef,
       onMarkdownUpdated: (ctx, markdown) => {
-        if (serializerRef) serializerRef.current = (doc: ProseNode) => reconnectWritingSuffix(valueRef.current, ctx.get(serializerCtx)(doc));
+        if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
         if (parserRef) parserRef.current = (docText: string) => ctx.get(parserCtx)(docText);
         const view = ctx.get(editorViewCtx);
         if (view.composing) return;
@@ -852,12 +905,12 @@ export function WritingEditor({
         const proof = assessWritingMutation(valueRef.current, markdown, origin, originState.structural?.context);
         if (!proof.editable) {
           capabilityRef.current = false;
-          onCapabilityChangeRef.current?.(proof, valueRef.current);
-          onLosslessFallbackRef.current?.(markdown, proof);
+          onCapabilityChangeRef.current?.(proof, valueRef.current, writingProofRef.current);
+          onLosslessFallbackRef.current?.(markdown, proof, writingProofRef.current);
           return;
         }
         if (markdown === valueRef.current) return;
-        onChangeRef.current(markdown);
+        onChangeRef.current(markdown, writingProofRef.current);
       },
     });
     editor.create().then(() => {
@@ -868,7 +921,8 @@ export function WritingEditor({
       editorRef.current = editor;
       gate.current.finish(generation, value);
       editor.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));
-      synchronizeEditorValue(valueRef.current, true);
+      const result = synchronizeEditorValue(valueRef.current, true, writingProofRef.current);
+      if (result?.kind === "unsupported" || editorRef.current !== editor) return;
       applyPendingCommand();
       applyPendingInsert();
     }).catch(() => { /* isolate editor initialization failure in its ErrorBoundary */ });
@@ -880,9 +934,20 @@ export function WritingEditor({
 
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor || gate.current.renderedMarkdown === value) return;
-    synchronizeEditorValue(value);
-  }, [value]);
+    if (!editor) return;
+    if (gate.current.renderedMarkdown === value) {
+      // The canonical value already arrived through the current editor's
+      // transaction. Re-run the live serializer/codec proof only when React
+      // committed a new canonical/editor identity. The proof callback is what
+      // re-admits the next Writing mutation; merely replacing the ref would
+      // leave App's identity-scoped capability unproven forever.
+      if (!sameWritingCapabilityProof(writingProofRef.current, writingProof)) {
+        synchronizeEditorValue(value, true, writingProof);
+      }
+      return;
+    }
+    synchronizeEditorValue(value, false, writingProof);
+  }, [value, writingProof]);
 
   useEffect(() => { applyPendingCommand(); }, [command?.id]);
   useEffect(() => { applyPendingInsert(); }, [insertPayload?.id]);
