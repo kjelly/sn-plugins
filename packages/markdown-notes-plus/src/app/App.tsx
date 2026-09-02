@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { EditorView, type EditorView as EditorViewType } from "@codemirror/view";
 import { CanonicalDocument, type DocumentState } from "../document/CanonicalDocument";
 import { EditorKitBridge } from "../standardnotes/EditorKitBridge";
@@ -38,16 +38,22 @@ import {
 import { installThemeBridge } from "../theme/theme";
 import { SourceEditor, openSourceSearch } from "../editor/SourceEditor";
 import { WritingEditor, type WritingCommand, type WritingCommandName } from "../editor/WritingEditor";
-import type { WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
+import type { WritingCapabilityProof, WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
 import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
 import {
   type AppMode,
   armWritingEnableAttempt,
+  createWritingAdmissionState,
   createWritingEnableAttemptState,
   modeAfterRequest,
   observeWritingCanonical,
   observeWritingCapability,
+  rebaseWritingAdmission,
+  sameWritingAdmissionIdentity,
+  writingEnableTransition,
+  type WritingAdmissionCapability,
+  type WritingAdmissionIdentity,
 } from "./AppModeTransition";
 import {
   type InsertLibrary,
@@ -135,7 +141,7 @@ function StatusInfo({
   currentSection?: { path: string[] };
   snapshot: DocumentState;
   sourceFallbackText?: string;
-  writingCapability: WritingRoundTripResult;
+  writingCapability: WritingAdmissionCapability;
   writingVisible: boolean;
   bridgeState: { saveRequested: boolean };
 }) {
@@ -149,8 +155,12 @@ function StatusInfo({
           ? "Locked · read-only"
           : sourceFallbackText !== undefined
           ? "Source fallback · edit to apply"
-          : !writingCapability.editable && writingVisible
-          ? `Writing read-only · ${writingCapability.reason ?? "use Source mode for exact Markdown"}`
+          : writingCapability.kind === "normalizable" && writingVisible
+          ? "Writing 需要正規化格式"
+          : writingCapability.kind === "unsupported" && writingVisible
+          ? `Writing 僅支援 Source mode：${writingCapability.reason}`
+          : writingCapability.kind === "unproven" && writingVisible
+          ? writingCapability.reason
           : snapshot.pendingRemote !== undefined
           ? "Remote update pending"
           : snapshot.dirty
@@ -161,6 +171,31 @@ function StatusInfo({
       </span>
     </div>
   );
+}
+
+function WritingNormalizationDialog({
+  capability,
+  onApply,
+  onSource,
+  onCancel,
+}: {
+  capability: Extract<WritingAdmissionCapability, { kind: "normalizable" }>;
+  onApply: () => void;
+  onSource: () => void;
+  onCancel: () => void;
+}) {
+  const summary = capability.changes.map((change) => `${change.category}: ${change.count}`).join(", ");
+  return <div className="writing-normalization-dialog" role="dialog" aria-modal="true" aria-label="Writing normalization required">
+    <h2>Writing 需要正規化格式</h2>
+    <p>這份 Markdown 需要整理格式後才能使用 Writing mode。正規化可能會統一清單符號、換行格式與空白行。</p>
+    <p>發現的格式差異：{summary || "格式差異"}</p>
+    <pre aria-label="Normalized Markdown preview">{capability.normalizedMarkdown}</pre>
+    <div className="writing-normalization-actions">
+      <button type="button" onClick={onApply}>套用並進入 Writing</button>
+      <button type="button" onClick={onSource}>留在 Source</button>
+      <button type="button" onClick={onCancel}>取消</button>
+    </div>
+  </div>;
 }
 
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
@@ -216,8 +251,35 @@ export function App() {
   const [library, setLibrary] = useState<InsertLibrary>(() => createEmptyLibrary());
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [insertPayload, setInsertPayload] = useState<{ id: number; markdown: string; cursorOffset?: number }>();
-  const [writingResetEpoch, setWritingResetEpoch] = useState(0);
-  const [writingCapability, setWritingCapability] = useState<WritingRoundTripResult>({ editable: false, reason: "Writing is checking whether this source can be preserved exactly." });
+  const subscribeWritingEditorEpoch = useCallback(
+    (listener: (epoch: number) => void) => appLifecycle.subscribeWritingEditorEpoch(listener),
+    [appLifecycle],
+  );
+  const writingResetEpoch = useSyncExternalStore(
+    subscribeWritingEditorEpoch,
+    () => appLifecycle.writingEditorEpoch,
+    () => appLifecycle.writingEditorEpoch,
+  );
+  const [, rerenderWritingAdmission] = useState(0);
+  const writingAdmissionIdentity: WritingAdmissionIdentity = {
+    documentInstanceId: canonical.token.instanceId,
+    documentRevision: canonical.token.revision,
+    documentGeneration: canonical.snapshot().resetGeneration,
+    writingEpoch: appLifecycle.writingEditorEpoch,
+  };
+  const writingAdmissionRef = useRef(createWritingAdmissionState(writingAdmissionIdentity));
+  if (!sameWritingAdmissionIdentity(writingAdmissionRef.current.identity, writingAdmissionIdentity)) {
+    writingAdmissionRef.current = rebaseWritingAdmission(writingAdmissionRef.current, writingAdmissionIdentity);
+  }
+  const writingCapability = writingAdmissionRef.current.capability;
+  const publishWritingAdmission = (next: typeof writingAdmissionRef.current) => {
+    writingAdmissionRef.current = next;
+    rerenderWritingAdmission((version) => version + 1);
+  };
+  const [writingNormalizationPrompt, setWritingNormalizationPrompt] = useState(false);
+  const writingNormalizationProofRef = useRef<{ source: string; normalizedMarkdown: string; proof: WritingCapabilityProof }>();
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const writingEnableAttemptRef = useRef(createWritingEnableAttemptState());
   const nextCommandId = useRef(1);
   const sourceViewRef = useRef<EditorViewType>();
@@ -225,7 +287,7 @@ export function App() {
   const pendingJump = useRef<{ from: number; to: number }>();
   const bridgeLifecycleGeneration = useRef(0);
   writingHistoryResetRef.current = () => {
-    setWritingResetEpoch((epoch) => epoch + 1);
+    appLifecycle.retireWritingEditor();
     setWritingCommand(undefined);
   };
   const snapshot = canonical.snapshot();
@@ -344,12 +406,41 @@ export function App() {
     }
   }, [canonical, mode]);
 
-  const requestMode = useCallback((nextMode: AppMode) => {
+  const requestMode = useCallback((nextMode: AppMode, options: { preserveSystemSourceAdmission?: boolean } = {}) => {
+    if (nextMode === "source" && !options.preserveSystemSourceAdmission) {
+      publishWritingAdmission({
+        ...writingAdmissionRef.current,
+        intent: { actor: "user", pendingWriting: false },
+        systemSourceAdmission: undefined,
+      });
+    }
     // A rejected Writing serialization is only a Source-visible user input.
     // Keep it outside canonical state until an explicit Source edit resolves it.
     const resolvedMode = modeAfterRequest(nextMode, appLifecycle.hasFallback);
+    if (resolvedMode === "writing" || resolvedMode === "split") {
+      if (writingCapability.kind === "unproven") {
+        publishWritingAdmission({
+          ...writingAdmissionRef.current,
+          intent: { actor: "user", pendingWriting: true },
+        });
+        setWritingNormalizationPrompt(false);
+        setMode("source");
+        return;
+      }
+      if (writingCapability.kind === "unsupported") {
+        setWritingNormalizationPrompt(false);
+        setMode("source");
+        return;
+      }
+      if (writingCapability.kind === "normalizable") {
+        setWritingNormalizationPrompt(true);
+        setMode("source");
+        return;
+      }
+    }
+    if (resolvedMode === "source") setWritingNormalizationPrompt(false);
     setMode(resolvedMode);
-  }, [appLifecycle]);
+  }, [appLifecycle, writingCapability.kind]);
 
   useEffect(() => {
     if (!mindmapSuitable && (mode === "mindmap" || mode === "split")) {
@@ -382,9 +473,10 @@ export function App() {
         currentCanonicalText: next.text,
         documentGeneration: next.resetGeneration,
         initialized: transition?.kind === "initialize",
+        documentInstanceId: canonical.token.instanceId,
+        documentRevision: canonical.token.revision,
       });
       canonicalTextRef.current = next.text;
-      appLifecycle.observeCanonicalTransition(previous, next, transition);
       if (previous !== next.text) {
         setActiveSectionAnchor((anchor) => {
           return reconcileSectionAnchor(next.text, transition?.changeSet, anchor);
@@ -462,28 +554,164 @@ export function App() {
     };
   }, [bridge]);
 
-  const edit = (next: string, changeSet?: TextChangeSet) => {
-    if (appLifecycle.applyLocal(next, changeSet)) bridge.notifyLocalChange(canonical.text);
+  const edit = (next: string, changeSet?: TextChangeSet, proof?: WritingCapabilityProof) => {
+    if (!proof) {
+      if (appLifecycle.applyLocal(next, changeSet)) bridge.notifyLocalChange(canonical.text);
+      return;
+    }
+    const applied = appLifecycle.applyWritingLocalIfCurrent(proof, writingResetEpoch, next, changeSet);
+    if (applied) bridge.notifyLocalChange(canonical.text);
   };
-  const handleWritingCapabilityChange = useCallback((result: WritingRoundTripResult, proofSource?: string) => {
-    setWritingCapability(result);
+  const handleWritingCapabilityChange = useCallback((result: WritingRoundTripResult, proofSource?: string, proof?: WritingCapabilityProof) => {
     const current = canonical.snapshot();
+    const currentToken = canonical.token;
+    if (
+      proof === undefined ||
+      proof.documentInstanceId !== currentToken.instanceId ||
+      proof.documentRevision !== currentToken.revision ||
+      proof.documentGeneration !== current.resetGeneration ||
+      proof.editorGeneration !== writingResetEpoch ||
+      proof.editorGeneration !== appLifecycle.writingEditorEpoch
+    ) return;
+    const source = proofSource ?? (result.kind === "normalizable" ? result.proofSource : current.text);
+    if (result.kind === "normalizable" && source === current.text) {
+      writingNormalizationProofRef.current = { source, normalizedMarkdown: result.normalizedMarkdown, proof };
+    } else {
+      writingNormalizationProofRef.current = undefined;
+    }
+    let admission = writingAdmissionRef.current;
+    admission = { ...admission, capability: result };
+    if (result.kind === "unsupported") {
+      setWritingNormalizationPrompt(false);
+      if (mode === "writing" || mode === "split") {
+        admission = {
+          ...admission,
+          intent: { actor: "system", pendingWriting: true },
+          systemSourceAdmission: writingAdmissionIdentity,
+        };
+        requestMode("source", { preserveSystemSourceAdmission: true });
+      }
+    } else if (result.kind === "normalizable" && (mode === "writing" || mode === "split")) {
+      admission = {
+        ...admission,
+        intent: { actor: "system", pendingWriting: true },
+        systemSourceAdmission: writingAdmissionIdentity,
+      };
+      requestMode("source", { preserveSystemSourceAdmission: true });
+      setWritingNormalizationPrompt(true);
+    } else if (result.kind !== "normalizable") {
+      setWritingNormalizationPrompt(false);
+    }
     const outcome = observeWritingCapability(writingEnableAttemptRef.current, {
       editable: result.editable,
-      proofSource,
+      proofSource: source,
       currentCanonicalText: current.text,
       documentGeneration: current.resetGeneration,
+      documentInstanceId: canonical.token.instanceId,
+      documentRevision: canonical.token.revision,
     });
     writingEnableAttemptRef.current = outcome.state;
-    if (outcome.enableWriting) {
-      requestMode("writing");
+    publishWritingAdmission(admission);
+    const systemSourceAdmission = admission.systemSourceAdmission;
+    const admissionIsExpired = systemSourceAdmission !== undefined &&
+      !sameWritingAdmissionIdentity(systemSourceAdmission, writingAdmissionIdentity);
+    const canRestoreSystemForcedWriting = result.kind === "lossless" &&
+      modeRef.current === "source" &&
+      !appLifecycle.hasFallback &&
+      admissionIsExpired;
+    const canRestoreUserRequestedWriting = result.kind === "lossless" &&
+      admission.intent.actor === "user" && admission.intent.pendingWriting;
+    const transition = writingEnableTransition(outcome.enableWriting || canRestoreSystemForcedWriting || canRestoreUserRequestedWriting);
+    if (transition) {
+      publishWritingAdmission({
+        ...writingAdmissionRef.current,
+        intent: { actor: "user", pendingWriting: false },
+        systemSourceAdmission: undefined,
+      });
+      setWritingNormalizationPrompt(transition.normalizationPrompt);
+      setMode(transition.mode);
     }
-  }, [canonical, requestMode]);
+  }, [appLifecycle, canonical, mode, requestMode, writingCapability.kind, writingResetEpoch, writingAdmissionIdentity]);
+  const handleApplyWritingNormalization = useCallback(() => {
+    const proof = writingNormalizationProofRef.current;
+    const capability = writingCapability;
+    const currentToken = canonical.token;
+    if (
+      capability.kind !== "normalizable" ||
+      proof === undefined ||
+      proof.source !== canonical.text ||
+      proof.normalizedMarkdown !== capability.normalizedMarkdown ||
+      proof.proof.documentInstanceId !== currentToken.instanceId ||
+      proof.proof.documentRevision !== currentToken.revision ||
+      proof.proof.documentGeneration !== canonical.snapshot().resetGeneration ||
+      proof.proof.editorGeneration !== appLifecycle.writingEditorEpoch ||
+      canonical.locked ||
+      canonical.pendingRemote !== undefined
+    ) {
+      setWritingNormalizationPrompt(false);
+      requestMode("source");
+      return;
+    }
+    const before = canonical.snapshot();
+    publishWritingAdmission({
+      ...writingAdmissionRef.current,
+      intent: { actor: "user", pendingWriting: true },
+      systemSourceAdmission: undefined,
+    });
+    const armed = armWritingEnableAttempt(
+      writingEnableAttemptRef.current,
+      capability.normalizedMarkdown,
+      before.resetGeneration,
+      true,
+      {
+        instanceId: proof.proof.documentInstanceId,
+        revision: proof.proof.documentRevision,
+      },
+    );
+    writingEnableAttemptRef.current = armed;
+    const applied = appLifecycle.applyLocalIfCurrent({
+      instanceId: proof.proof.documentInstanceId,
+      revision: proof.proof.documentRevision,
+    }, capability.normalizedMarkdown);
+    if (!applied) {
+      writingEnableAttemptRef.current = armWritingEnableAttempt(writingEnableAttemptRef.current, capability.normalizedMarkdown, before.resetGeneration, false, {
+        instanceId: proof.proof.documentInstanceId,
+        revision: proof.proof.documentRevision,
+      });
+      setWritingNormalizationPrompt(false);
+      requestMode("source");
+      return;
+    }
+    bridge.notifyLocalChange(canonical.text);
+  }, [appLifecycle, bridge, canonical, requestMode, writingCapability]);
+  const handleLeaveWritingNormalizationInSource = useCallback(() => {
+    publishWritingAdmission({
+      ...writingAdmissionRef.current,
+      intent: { actor: "user", pendingWriting: false },
+      systemSourceAdmission: undefined,
+    });
+    setWritingNormalizationPrompt(false);
+    setMode("source");
+  }, []);
+  const handleCancelWritingNormalization = useCallback(() => {
+    publishWritingAdmission({
+      ...writingAdmissionRef.current,
+      intent: { actor: "user", pendingWriting: false },
+      systemSourceAdmission: undefined,
+    });
+    setWritingNormalizationPrompt(false);
+    setMode("source");
+  }, []);
   const handleNormalizeBareUrls = useCallback(() => {
     if (snapshot.locked || !appLifecycle.canApplyLocal()) return;
     const result = normalizeBareUrls(canonical.text);
     if (!result.changed) return;
     const before = canonical.snapshot();
+    publishWritingAdmission({
+      ...writingAdmissionRef.current,
+      intent: { actor: "user", pendingWriting: true },
+      systemSourceAdmission: undefined,
+    });
     writingEnableAttemptRef.current = armWritingEnableAttempt(
       writingEnableAttemptRef.current,
       result.markdown,
@@ -500,6 +728,13 @@ export function App() {
     }
   };
   const editSource = (next: string, changeSet?: TextChangeSet) => {
+    // Any explicit Source edit is a user choice to keep Source in control;
+    // later safe remote revisions must not auto-select Writing over it.
+    publishWritingAdmission({
+      ...writingAdmissionRef.current,
+      intent: { actor: "user", pendingWriting: false },
+      systemSourceAdmission: undefined,
+    });
     // CodeMirror's change set is relative to the temporary fallback text, not
     // to canonical.text. The first explicit Source edit therefore crosses the
     // existing canonical boundary as an opaque full-text replacement; all
@@ -628,6 +863,12 @@ export function App() {
   }, [jumpToSource, mode]);
 
   return <main className={`app-shell mode-${mode}`}>
+    {writingNormalizationPrompt && writingCapability.kind === "normalizable" ? <WritingNormalizationDialog
+      capability={writingCapability}
+      onApply={handleApplyWritingNormalization}
+      onSource={handleLeaveWritingNormalizationInSource}
+      onCancel={handleCancelWritingNormalization}
+    /> : null}
     {snapshot.pendingRemote !== undefined ? <aside className="conflict" role="alert"><span>Another device changed this note.</span><button onClick={() => bridge.resolveConflict("keep-local")} title="Keep local edits (Standard Notes creates a Conflicted Copy if needed)">Keep local</button><button onClick={() => bridge.resolveConflict("accept-remote")} title="Discard local changes and use remote version">Accept remote</button></aside> : null}
     <div className={`workspace-layout ${sidebarOpen && mode !== "mindmap" ? "with-sidebar" : "sidebar-collapsed"}`}>
       {focusedSection ? (
@@ -676,7 +917,19 @@ export function App() {
           <button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} onChange={edit} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown) => { appLifecycle.preserveWritingFallback(markdown); requestMode("source"); }} /></ErrorBoundary></section>
+        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof) => edit(next, undefined, proof)} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
+          const currentProof = canonical.snapshot();
+          if (proof.documentInstanceId !== canonical.token.instanceId ||
+            proof.documentRevision !== canonical.token.revision ||
+          proof.documentGeneration !== currentProof.resetGeneration ||
+            proof.editorGeneration !== appLifecycle.writingEditorEpoch) return;
+          publishWritingAdmission({
+            ...writingAdmissionRef.current,
+            intent: { actor: "user", pendingWriting: false },
+            systemSourceAdmission: undefined,
+          });
+          appLifecycle.preserveWritingFallback(markdown); requestMode("source");
+        }} /></ErrorBoundary></section>
         {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
         {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools" onWheel={handleToolbarWheel}>{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} deadlineDay={todayKey} /></ErrorBoundary></section> : null}
         {mode === "kanban" ? <section className="kanban-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Kanban tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><KanbanView markdown={snapshot.text} analysis={analysis} token={canonical.token} locked={snapshot.locked} fallback={appLifecycle.hasFallback} conflicted={snapshot.pendingRemote !== undefined} onMove={handleMoveKanbanCard} /></ErrorBoundary></section> : null}
