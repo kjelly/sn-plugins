@@ -214,7 +214,7 @@
                 action: "reply",
                 original: { messageId: streamContextMessageId },
                 data: {
-                  item: currentNote
+                  item: { ...currentNote, isMetadataUpdate: true }
                 }
               });
             }

@@ -208,18 +208,24 @@ export class AndroidCompatibleEditorKit {
     this.relay.streamContextItem(async (note) => {
       const previous = this.note;
       this.note = note;
-      if (note.isMetadataUpdate === true) return;
+      const isNewNote = previous === undefined || previous.uuid !== note.uuid;
+
+      const previousLocked = this.locked(previous);
+      const nextLocked = this.locked(note);
+
+      // Standard Notes may deliver Prevent Editing changes as metadata-only
+      // context updates. The lock state above must be handled even when there
+      // is no new text to render.
+      if (note.isMetadataUpdate === true) {
+        if (previousLocked !== nextLocked) delegate.onNoteLockToggle?.(nextLocked);
+        return;
+      }
 
       const text = typeof note.content?.text === "string" ? note.content.text : "";
       await delegate.onNoteValueChange?.(note);
       delegate.setEditorRawText(text);
-
-      if (delegate.onNoteLockToggle) {
-        const previousLocked = this.locked(previous);
-        const nextLocked = this.locked(note);
-        if (previousLocked !== nextLocked) delegate.onNoteLockToggle(nextLocked);
-      }
-      if (previous?.uuid !== undefined && previous.uuid !== note.uuid) delegate.clearUndoHistory?.();
+      if (previousLocked !== nextLocked) delegate.onNoteLockToggle?.(nextLocked);
+      if (isNewNote) delegate.clearUndoHistory?.();
     });
   }
 
