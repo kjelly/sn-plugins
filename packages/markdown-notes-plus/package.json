@@ -18,6 +18,7 @@
     "test:unit": "deno test --allow-read --allow-write --allow-net --allow-run --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/smart-paste.test.ts tests/toolbar-wheel.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts tests/extension-manifest.test.ts tests/apk-downloader.test.ts tests/e2e-harness.test.ts tests/vite-manifest-serving.test.ts tests/kanban-model.test.ts tests/kanban-move.test.ts",
     "test:integration": "deno test --allow-read --no-prompt tests/integration.test.ts && node tests/run-source-history-boundary.mjs && node tests/run-milkdown-boundary.mjs",
     "test:e2e": "playwright test --project=chromium",
+    "test:e2e:standardnotes-web": "npm run build && E2E_PROD=1 E2E_PORT=5173 playwright test tests/e2e/specs/14_standardnotes_web.spec.ts --project=chromium",
     "test:mobile-protocol": "npm run build && E2E_PROD=1 E2E_MOBILE_PROTOCOL=1 E2E_PORT=4174 playwright test tests/e2e/specs/12_mobile_protocol_harness.spec.ts --project=chromium",
     "test:e2e:android-app": "wdio run tests/e2e-android/wdio.conf.ts",
     "test:artifacts": "deno test --allow-read --no-prompt tests/build-artifact.test.ts",

@@ -64,6 +64,32 @@ node --check dist/assets/<generated-index>.js
 regression suite. It does not claim full browser or Standard Notes host
 integration coverage.
 
+## Standard Notes Web host E2E
+
+The Web-host smoke test uses a real running fork of
+[`standardnotes/app`](https://github.com/standardnotes/app), not the local
+mock host. It installs `Markdown Notes+` from a test-only manifest, creates a
+note, changes that note's type, and writes through the actual host transport.
+
+Start Standard Notes Web in one terminal (the upstream README uses port 3001),
+then run this package's test in another:
+
+```sh
+E2E_STANDARDNOTES_WEB_URL=http://127.0.0.1:3001 npm run test:e2e:standardnotes-web
+```
+
+The script builds this editor, starts its static preview at `127.0.0.1:5173`, and exposes
+`/e2e/standardnotes-web.ext.json`. That manifest is generated only for this
+test and points at the local editor URL; `public/ext.json` remains the Android
+emulator manifest (`10.0.2.2`). The test creates an offline workspace when the
+first-run **Use Offline** action is displayed. For a preconfigured account,
+open the host URL in the same browser profile or set up its initial state
+before running the test.
+
+If the editor must be served from a different reachable origin (for example,
+when the Standard Notes host runs in a container), set `E2E_EDITOR_ORIGIN`; the
+test-only manifest and iframe assertion use that same origin.
+
 ## Android E2E Testing with Official Standard Notes APK
 
 To run end-to-end integration tests using the official release APK of Standard Notes on an Android device or emulator:
@@ -90,4 +116,3 @@ To run end-to-end integration tests using the official release APK of Standard N
    ```bash
    adb reverse tcp:5173 tcp:5173
    ```
-
