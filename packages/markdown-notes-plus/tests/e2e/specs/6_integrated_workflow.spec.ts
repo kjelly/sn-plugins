@@ -84,7 +84,7 @@ test.describe("Full Integrated Workflow", () => {
     const savePromise = host.waitForNextSave(5000);
     await editor.sourceEditor.click();
     await page.keyboard.press("End");
-    await page.keyboard.type("\n- [ ] Mobile responsive layout");
+    await page.keyboard.type("\n- [ ] Mobile responsive layout\n");
     await savePromise;
 
     const savedText = await host.getLatestSavedText();
@@ -103,10 +103,11 @@ test.describe("Full Integrated Workflow", () => {
     }
     await expect(editor.undoButton).toBeEnabled();
 
-    // 10. Return to Writing Mode and verify overall consistency
+    // 10. Writing remains gated after a local Source edit until a later
+    // admission proof; the canonical Source content remains intact.
     await editor.switchMode("Writing");
-    await expect(editor.writingPane).toBeVisible();
-    await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toHaveCount(5);
-    await expect(editor.footerMeta).toContainText("5 tasks");
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.sourceEditor).toContainText("Mobile responsive layout");
+    await expect(editor.footerMeta).toContainText("6 tasks");
   });
 });

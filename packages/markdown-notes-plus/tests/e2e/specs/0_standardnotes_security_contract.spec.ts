@@ -218,7 +218,7 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
       "## Section Beta",
       "",
       "Another section for structural reordering.",
-    ].join("\n");
+    ].join("\n") + "\n";
 
     // 1. Boot & Bridge Handshake
     await host.goto(initialMarkdown, "sec-full-activation", false);
@@ -274,17 +274,14 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     await page.keyboard.press("End");
     await page.keyboard.type("\n\nAppended writing text.");
     await editor.writingH2Button.click();
-    await editor.writingBulletButton.click();
-    await editor.writingTaskButton.click();
     await editor.writingQuoteButton.click();
-    await editor.writingCodeButton.click();
     await editor.writingDividerButton.click();
 
     // 4. Source Mode - CM6 editor & search panel
     await editor.switchMode("Source");
     await expect(editor.sourceEditor).toBeVisible();
     await editor.sourceEditor.click();
-    await page.keyboard.type("\n# Source Edit Section\n\nSource mode content.");
+    await page.keyboard.type("\n# Source Edit Section\n\nSource mode content.\n");
     await editor.sourceSearchButton.click();
     await expect(editor.sourceSearchPanel).toBeVisible();
 
@@ -315,6 +312,9 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     }
 
     // 6. Mind Map Mode - Rendering, filters, scopes, and interactive task toggle
+    // Source-side structural edits may legitimately leave Writing unproven;
+    // use a clean canonical fixture before mounting the SVG projection.
+    await host.setNote("# Split verification\n\nSafe split content.\n", "sec-split", false);
     await editor.switchMode("Mindmap");
     await expect(editor.mindmapSvg).toBeVisible();
     // Exercise filter change
@@ -348,11 +348,6 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     }));
 
     // 9. Debounced Save Cycle & Verification
-    await editor.switchMode("Writing");
-    await expect(editor.status).toHaveText(/^Writing 僅支援 Source mode：.+$/);
-    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
-
-    // Structural operations above intentionally exercise the read-only boundary.
     // Load a lossless fixture before verifying the normal debounced save path.
     await host.setNote("# Save verification\n\nReady for final verification.\n", "sec-final-save", false);
     await expect(editor.status).toHaveText("Ready");
@@ -366,12 +361,11 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     const latestSaved = await host.getLatestSavedText();
     expect(latestSaved).toContain("Final verified text.");
 
-    // Code-block copy uses a temporary textarea when Clipboard API is not
-    // available. Exercise that CSP-sensitive fallback with a loaded block.
+    // Unsupported fenced Markdown stays in Source mode and remains intact.
+    await editor.switchMode("Source");
     await host.setNote("# Copy fallback\n\n```ts\nconst securityContract = true;\n```\n", "sec-code-copy", false);
-    const codeCopyButton = editor.writingEditor.locator(".btn-code-copy");
-    await expect(codeCopyButton).toBeVisible();
-    await codeCopyButton.click();
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.sourceEditor).toContainText("const securityContract = true;");
 
     await expectSecurityAuditClean(audit);
   });

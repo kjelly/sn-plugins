@@ -7,7 +7,7 @@ test.describe("Advanced Features: Templates, Review, Palette, Callouts & Code Bl
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
-    await host.goto("# Initial Note\n\n", "doc-tpl-1", false);
+    await host.goto("# Initial Note\n\nInitial content.\n", "doc-tpl-1", false);
 
     // Open Templates modal from toolbar
     const tplBtn = editor.frame.locator('button:has-text("Templates")').first();
@@ -93,22 +93,15 @@ test.describe("Advanced Features: Templates, Review, Palette, Callouts & Code Bl
     await expect(editor.sourceEditor).toBeVisible();
   });
 
-  test("Writing mode - callout cards and code block tools rendering", async ({ page }) => {
+  test("Unsupported callouts and code blocks stay intact in Source mode", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
     const markdown = `# Callouts & Code\n\n> [!NOTE]\n> This is a callout note\n\n\`\`\`javascript\nconst a = 1;\n\`\`\`\n`;
     await host.goto(markdown, "doc-callout-1", false);
 
-    // Verify callout card rendering in writing mode
-    const callout = editor.writingEditor.locator("blockquote.callout-card");
-    await expect(callout).toBeVisible();
-    await expect(callout).toHaveClass(/callout-type-note/);
-
-    // Verify code block tools rendering
-    const codeBlockWrapper = editor.writingEditor.locator(".code-block-wrapper");
-    await expect(codeBlockWrapper).toBeVisible();
-    await expect(codeBlockWrapper.locator(".btn-code-copy")).toBeVisible();
-    await expect(codeBlockWrapper.locator(".btn-code-wrap")).toBeVisible();
+    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.sourceEditor).toContainText("> [!NOTE]");
+    await expect(editor.sourceEditor).toContainText("const a = 1;");
   });
 });

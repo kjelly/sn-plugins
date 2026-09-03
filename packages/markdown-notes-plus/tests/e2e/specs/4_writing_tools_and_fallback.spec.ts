@@ -27,7 +27,8 @@ test.describe("Writing Tools & Lossless Guard", () => {
     // Wait for Table to be rendered in Writing editor DOM
     await expect(editor.writingEditor.locator("table")).toBeVisible();
 
-    // Switch to Source mode to inspect generated markdown table
+    // Switch to Source mode to inspect generated markdown table. The table
+    // command may already have triggered a safe Source fallback.
     await editor.switchMode("Source");
     await expect(editor.sourceEditor).toContainText("|");
   });

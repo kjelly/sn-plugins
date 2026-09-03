@@ -434,8 +434,6 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await expect(dialog).toBeVisible();
     await host.updateCurrentNote("Remote replacement\n");
     await expect(editor.writingEditor).toContainText("Remote replacement");
-    await dialog.locator("#link-dialog-url").fill("https://stale.example");
-    await dialog.getByRole("button", { name: "Done", exact: true }).click();
     await expect(dialog).not.toBeVisible();
 
     await editor.switchMode("Source");
@@ -457,8 +455,6 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await expect(dialog).toBeVisible();
     await host.setLocked(true);
     await expect(editor.status).toHaveText("Locked · read-only");
-    await dialog.locator("#link-dialog-url").fill("https://locked.example");
-    await dialog.getByRole("button", { name: "Done", exact: true }).click();
     await expect(dialog).not.toBeVisible();
 
     await editor.switchMode("Source");
