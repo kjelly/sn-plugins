@@ -203,7 +203,17 @@ export class EditorPage {
     // Closing it models the real user interaction and avoids force-clicking
     // through an overlay that Standard Notes users cannot bypass.
     await this.closeSidebar();
-    await this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first().click();
+    const modeButton = this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first();
+    if (await modeButton.getAttribute("class") === "active") return;
+    try {
+      await modeButton.click({ timeout: 2000 });
+    } catch (error) {
+      // A lossless fallback can activate Source between the state check and
+      // Playwright's pointer dispatch. In that case the requested transition
+      // has already completed and the active button is the source of truth.
+      if (await modeButton.getAttribute("class") === "active") return;
+      throw error;
+    }
   }
 
   async typeInSource(text: string): Promise<void> {
