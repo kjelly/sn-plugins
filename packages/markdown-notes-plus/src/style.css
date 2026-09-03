@@ -703,6 +703,61 @@ body.outline-pointer-dragging .outline-drag-handle { touch-action: none; }
   gap: 8px;
 }
 
+/* Writing mode never changes imported Markdown without confirmation. Keep the
+ * source escape hatch reachable even when the normalized preview is long. */
+.writing-normalization-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+.writing-normalization-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 100%);
+  max-height: min(85vh, 85dvh);
+  overflow: hidden;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--editor-fg) 20%, transparent);
+}
+.writing-normalization-dialog h2,
+.writing-normalization-dialog p {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 10px 16px 0;
+}
+.writing-normalization-dialog h2 { padding-top: 14px; font-size: 1.05rem; }
+.writing-normalization-dialog p { color: var(--editor-muted); font-size: 0.9rem; }
+.writing-normalization-dialog pre {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 12px 16px;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--editor-border);
+  border-radius: 5px;
+  background: var(--editor-code-bg);
+}
+.writing-normalization-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-top: 1px solid var(--editor-border);
+  background: color-mix(in srgb, var(--editor-fg) 3%, var(--editor-bg));
+}
+
 /* Link dialog. Keep this separate from TemplateManager's modal content. */
 .link-dialog-backdrop {
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));

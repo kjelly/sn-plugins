@@ -185,15 +185,28 @@ function WritingNormalizationDialog({
   onCancel: () => void;
 }) {
   const summary = capability.changes.map((change) => `${change.category}: ${change.count}`).join(", ");
-  return <div className="writing-normalization-dialog" role="dialog" aria-modal="true" aria-label="Writing normalization required">
-    <h2>Writing 需要正規化格式</h2>
-    <p>這份 Markdown 需要整理格式後才能使用 Writing mode。正規化可能會統一清單符號、換行格式與空白行。</p>
-    <p>發現的格式差異：{summary || "格式差異"}</p>
-    <pre aria-label="Normalized Markdown preview">{capability.normalizedMarkdown}</pre>
-    <div className="writing-normalization-actions">
-      <button type="button" onClick={onApply}>套用並進入 Writing</button>
-      <button type="button" onClick={onSource}>留在 Source</button>
-      <button type="button" onClick={onCancel}>取消</button>
+  return <div className="writing-normalization-backdrop">
+    <div
+      className="writing-normalization-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Writing normalization required"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+    >
+      <h2>Writing 需要正規化格式</h2>
+      <p>這份 Markdown 需要整理格式後才能使用 Writing mode。正規化可能會統一清單符號、換行格式與空白行。</p>
+      <p>發現的格式差異：{summary || "格式差異"}</p>
+      <pre aria-label="Normalized Markdown preview">{capability.normalizedMarkdown}</pre>
+      <div className="writing-normalization-actions">
+        <button type="button" autoFocus onClick={onSource}>留在 Source</button>
+        <button type="button" onClick={onApply}>套用並進入 Writing</button>
+        <button type="button" onClick={onCancel}>取消</button>
+      </div>
     </div>
   </div>;
 }
