@@ -80,6 +80,15 @@ async function createNoteAndSelectEditor(page: Page): Promise<void> {
   await page.getByText("Markdown Notes+", { exact: true }).last().click();
 }
 
+async function preventEditingInHost(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Note options menu", exact: true }).click();
+  const preventEditing = page.getByRole("menuitemcheckbox", { name: "Prevent editing", exact: true });
+  await expect(preventEditing).toHaveAttribute("aria-checked", "false");
+  await preventEditing.click();
+  await expect(preventEditing).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByText("Note editing disabled.", { exact: true })).toBeVisible();
+}
+
 test.describe("Standard Notes Web host integration", () => {
   // The first webpack-dev-server load of a freshly built Standard Notes
   // checkout can take longer than Playwright's default 30s while it compiles
@@ -87,7 +96,7 @@ test.describe("Standard Notes Web host integration", () => {
   test.setTimeout(120_000);
   test.skip(!standardNotesUrl, "Set E2E_STANDARDNOTES_WEB_URL to a running Standard Notes Web fork.");
 
-  test("installs Markdown Notes+, selects it for a note, and saves through the real host", async ({ page }) => {
+  test("installs Markdown Notes+, saves through the real host, and honors its read-only lock", async ({ page }) => {
     await page.goto(standardNotesUrl!);
     await prepareOfflineWorkspace(page);
     await installEditor(page);
@@ -113,5 +122,18 @@ test.describe("Standard Notes Web host integration", () => {
     await expect(reloadedEditorFrame.locator("#app")).toBeVisible({ timeout: 20_000 });
     await reloadedEditorFrame.getByRole("button", { name: "Source" }).click();
     await expect(reloadedEditorFrame.locator(".source-pane .cm-content")).toContainText("Saved by the real host.");
+
+    // This is a real host-side mutation, not a message injected by the test.
+    // Standard Notes updates the note's `locked` appData and streams it to the
+    // already-running editor iframe.
+    await preventEditingInHost(page);
+    await expect(reloadedEditorFrame.locator(".status")).toHaveText("Locked · read-only");
+
+    const lockedSource = reloadedEditorFrame.locator(".source-pane .cm-content");
+    await expect(lockedSource).toHaveAttribute("contenteditable", "false");
+    const textBeforeAttempt = await lockedSource.textContent();
+    await lockedSource.click();
+    await page.keyboard.type(" This must not be saved.");
+    await expect(lockedSource).toHaveText(textBeforeAttempt ?? "");
   });
 });
