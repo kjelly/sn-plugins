@@ -13,7 +13,7 @@ import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import { CanonicalDocument } from "../src/document/CanonicalDocument";
 import { applyWritingCommand, writingLinkHref } from "../src/editor/WritingCommands";
-import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState } from "../src/editor/WritingEditorLifecycle";
+import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, isWritingLexicallySafe, WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState } from "../src/editor/WritingEditorLifecycle";
 import { writingCommandPlan, type WritingCommandName } from "../src/editor/WritingCommandPlan";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry } from "../src/editor/WritingTaskControls";
 import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/EditorKitBridge";
@@ -198,6 +198,12 @@ function testWritingEditorPresetLifecycle(): void {
 }
 
 testWritingEditorPresetLifecycle();
+
+{
+  const nestedLists = "- Process\n  - Focus\n    - Rehearse\n      - Pressure\n        - Execute\n";
+  assert.equal(isWritingLexicallySafe(nestedLists), true, "valid deeply nested lists must remain editable in Writing mode");
+  assert.equal(isWritingLexicallySafe("    - code-like content\n"), false, "a root-level four-space list marker remains protected as indented code");
+}
 
 {
   const { parse, serialize } = createWritingEnvironment();

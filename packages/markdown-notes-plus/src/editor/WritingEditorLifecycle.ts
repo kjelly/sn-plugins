@@ -6,6 +6,7 @@ import {
   type WritingCodec,
   type WritingNormalizationChange,
 } from "../markdown/writingNormalization.ts";
+import { scanMarkdownStructure } from "../markdown/structureScanner.ts";
 
 export const WRITING_TRANSACTION_ORIGIN_META = "markdown-notes-plus/writing-origin";
 export const WRITING_STRUCTURAL_CONTEXT_META = "markdown-notes-plus/writing-structural-context";
@@ -213,7 +214,11 @@ export function isWritingLexicallySafe(markdown: string): boolean {
   if (/(?:^|\n)[ \t]{0,3}\|/m.test(markdown)) return false;
   if (/(?:^|\n)[ \t]{0,3}(?:<|>\s*<|<\/?[A-Za-z])/m.test(markdown)) return false;
   if (/(?:^|\n)[ \t]{0,3}(?:=+|-{3,})[ \t]*$/m.test(markdown)) return false;
-  if (/(?:^|\n)[ \t]{4,}(?:[-+*]|\d+[.)])[ \t]+/m.test(markdown)) return false;
+  // Four spaces may be either an indented code block or a nested list. The
+  // former is Source-only, but the latter is safe when the shared Markdown
+  // scanner proves the item belongs to an active list container.
+  const structure = scanMarkdownStructure(markdown);
+  if (structure.lines.some((line, index) => /^[ \t]{4,}(?:[-+*]|\d+[.)])[ \t]+/.test(line.text) && !structure.taskEligible[index])) return false;
   return true;
 }
 
