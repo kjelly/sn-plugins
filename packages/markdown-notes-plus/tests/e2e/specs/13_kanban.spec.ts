@@ -36,7 +36,10 @@ test.describe("Kanban projection", () => {
     const document = "# Project Board\n\n## Backlog\n\n- [ ] Draft proposal\n\n## Doing\n\n## Review\n\n## Done";
 
     await host.goto(document, "note-kanban-eof-e2e", false);
+    const normalizationDialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    await expect(normalizationDialog).toBeVisible();
     await editor.switchMode("Kanban");
+    await expect(normalizationDialog).toBeHidden();
     await expect(editor.kanbanPane).toBeVisible();
 
     const savePromise = host.waitForNextSave(5000);

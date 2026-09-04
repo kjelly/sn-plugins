@@ -138,6 +138,7 @@ export class EditorPage {
   }
 
   async openSidebar(): Promise<void> {
+    await this.dismissWritingNormalizationIfVisible();
     if (!(await this.frame.locator(".sidebar-pane.open").isVisible())) {
       const toggle = this.frame.locator('.sidebar-toggle-btn:visible').first();
       await toggle.click();
@@ -166,7 +167,22 @@ export class EditorPage {
     await this.reviewTabBtn.click();
   }
 
+  /**
+   * A document which Writing can only represent after harmless formatting
+   * normalization opens a modal and returns to Source. Generic navigation
+   * helpers must resolve that real user decision before attempting to click
+   * controls behind the modal.
+   */
+  private async dismissWritingNormalizationIfVisible(): Promise<void> {
+    const dialog = this.frame.getByRole("dialog", { name: "Writing normalization required" });
+    if (!(await dialog.isVisible().catch(() => false))) return;
+
+    await dialog.getByRole("button", { name: "留在 Source", exact: true }).click();
+    await expect(dialog).toBeHidden();
+  }
+
   async closeSidebar(): Promise<void> {
+    await this.dismissWritingNormalizationIfVisible();
     if (!(await this.frame.locator(".sidebar-pane.open").isVisible())) return;
 
     const closeButton = this.frame.locator(".sidebar-close-btn:visible").first();

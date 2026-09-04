@@ -957,6 +957,13 @@ export function WritingEditor({
     controlsRef.current.refresh();
   }, [readOnly]);
 
+  // A link request captures an editable selection. Once the host locks the
+  // note, that selection can no longer be acted on, so close the modal rather
+  // than leaving a stale editing affordance over the read-only document.
+  useEffect(() => {
+    if (readOnly) setLinkDialog(undefined);
+  }, [readOnly]);
+
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (readOnlyRef.current) return;
     const target = event.target as HTMLElement;
