@@ -46,7 +46,7 @@ test.describe("Modes and Projections", () => {
     await expect(editor.sourceSearchPanel).toBeVisible();
   });
 
-  test("Outline heading click jumps to Source mode and highlights section", async ({ page }) => {
+  test("Outline heading click preserves Writing mode and highlights section", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
@@ -68,8 +68,9 @@ test.describe("Modes and Projections", () => {
     // Click Second Section
     await editor.outlineHeadings.nth(1).click();
 
-    // Editor switches to Source mode and updates Current Section in toolbar
-    await expect(editor.sourcePane).toBeVisible();
+    // Outline navigation must not force the editor into Source mode.
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toHaveCount(0);
     await expect(editor.currentSection).toContainText("Second Section");
   });
 

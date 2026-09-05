@@ -517,9 +517,10 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await editor.outlineHeadings.nth(1).click();
     // Sidebar should automatically close on heading navigation
     await expect(editor.sidebarPane).not.toBeVisible();
-    // Source editor should be displayed
-    await expect(editor.sourceEditor).toBeVisible();
-    await expect(editor.sourceEditor).toContainText("Section Beta");
+    // Outline navigation stays in Writing mode.
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toHaveCount(0);
+    await expect(editor.writingEditor).toContainText("Section Beta");
   });
 
   test("Mobile outline navigation keeps the sidebar closed across the desktop breakpoint", async ({ page }) => {

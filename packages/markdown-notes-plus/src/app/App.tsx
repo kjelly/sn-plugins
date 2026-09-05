@@ -37,7 +37,7 @@ import {
 } from "../markdown/structuralEditing.ts";
 import { installThemeBridge } from "../theme/theme";
 import { SourceEditor, openSourceSearch } from "../editor/SourceEditor";
-import { WritingEditor, type WritingCommand, type WritingCommandName } from "../editor/WritingEditor";
+import { WritingEditor, type WritingCommand, type WritingCommandName, type WritingHeadingNavigation } from "../editor/WritingEditor";
 import type { WritingCapabilityProof, WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
 import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
@@ -259,6 +259,7 @@ export function App() {
   const [sidebarTab, setSidebarTab] = useState<"outline" | "review" | "tasks">("outline");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
+  const [writingHeadingNavigation, setWritingHeadingNavigation] = useState<WritingHeadingNavigation>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
   const [writingCommand, setWritingCommand] = useState<WritingCommand>();
   const [library, setLibrary] = useState<InsertLibrary>(() => createEmptyLibrary());
@@ -828,14 +829,20 @@ export function App() {
   };
   const focusHeading = (from: number, to: number) => {
     setActiveSectionAnchor(from);
-    pendingJump.current = { from, to };
     if (typeof window !== "undefined" && window.innerWidth <= 768) {
       closeSidebar();
     }
-    requestMode("source");
-    const view = sourceViewRef.current;
-    if (!view) return;
-    jumpToSource(view);
+    if (mode === "source") {
+      pendingJump.current = { from, to };
+      jumpToSource(sourceViewRef.current);
+      return;
+    }
+    if (mode === "writing" || mode === "split") {
+      const index = headings.findIndex((heading) => heading.from === from);
+      if (index >= 0) {
+        setWritingHeadingNavigation((previous) => ({ id: (previous?.id ?? 0) + 1, index }));
+      }
+    }
   };
 
   const handleToggleOutlineFold = (anchor: number) => {
@@ -930,7 +937,7 @@ export function App() {
           <button onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof) => edit(next, undefined, proof)} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
+        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof) => edit(next, undefined, proof)} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
           const currentProof = canonical.snapshot();
           if (proof.documentInstanceId !== canonical.token.instanceId ||
             proof.documentRevision !== canonical.token.revision ||

@@ -66,7 +66,7 @@ test.describe("Full Integrated Workflow", () => {
       return await editor.mindmapSvg.innerHTML();
     }, { timeout: 5000 }).toContain("Configure SSL certificates");
 
-    // 7. Outline Section Navigation to Source Mode
+    // 7. Outline Section Navigation preserves Split Mode
     await editor.openOutlineTab();
     // The coarse-pointer layout deliberately enlarges the adjacent structural
     // controls. Invoke the heading button directly so pointer hover cannot
@@ -74,10 +74,13 @@ test.describe("Full Integrated Workflow", () => {
     await editor.outlineHeadings.nth(2).locator("..").evaluate((button) => {
       (button as HTMLButtonElement).click();
     }); // Frontend Features
-    await expect(editor.sourcePane).toBeVisible();
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.mindmapPane).toBeVisible();
+    await expect(editor.sourcePane).toHaveCount(0);
     await expect(editor.currentSection).toContainText("Frontend Features");
 
-    // 8. Source Mode Edit with Search Panel and Debounced Save
+    // 8. Deliberately switch to Source Mode for a source edit.
+    await editor.switchMode("Source");
     await editor.sourceSearchButton.click();
     await expect(editor.sourceSearchPanel).toBeVisible();
 

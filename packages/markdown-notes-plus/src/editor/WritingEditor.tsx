@@ -38,6 +38,7 @@ export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
 export type InsertPayload = { id: number; markdown: string; cursorOffset?: number };
+export type WritingHeadingNavigation = { id: number; index: number };
 
 export type WritingEditorProps = {
   value: string;
@@ -48,6 +49,7 @@ export type WritingEditorProps = {
   onDeleteTask?: (ordinal: number, renderedMarkdown?: string) => void;
   command?: WritingCommand;
   insertPayload?: InsertPayload;
+  headingNavigation?: WritingHeadingNavigation;
   library?: InsertLibrary;
   deadlineDay?: string;
   onCapabilityChange?: (result: WritingRoundTripResult, proofSource?: string, proof?: WritingCapabilityProof) => void;
@@ -734,6 +736,7 @@ export function WritingEditor({
   onDeleteTask,
   command,
   insertPayload,
+  headingNavigation,
   library,
   deadlineDay,
   onCapabilityChange,
@@ -951,6 +954,17 @@ export function WritingEditor({
 
   useEffect(() => { applyPendingCommand(); }, [command?.id]);
   useEffect(() => { applyPendingInsert(); }, [insertPayload?.id]);
+
+  useEffect(() => {
+    if (headingNavigation === undefined) return;
+    editorRef.current?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const heading = view.dom.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")[headingNavigation.index];
+      if (!heading) return;
+      heading.scrollIntoView({ block: "center" });
+      view.focus();
+    });
+  }, [headingNavigation]);
 
   useEffect(() => {
     editorRef.current?.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));
