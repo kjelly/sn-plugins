@@ -361,9 +361,9 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     const latestSaved = await host.getLatestSavedText();
     expect(latestSaved).toContain("Final verified text.");
 
-    // Unsupported fenced Markdown stays in Source mode and remains intact.
-    await editor.switchMode("Source");
-    await host.setNote("# Copy fallback\n\n```ts\nconst securityContract = true;\n```\n", "sec-code-copy", false);
+    // Raw HTML remains Source-only and must be shown intact in CodeMirror.
+    // Fenced code is intentionally supported by Writing mode as a GFM node.
+    await host.setNote("# Copy fallback\n\n<div>const securityContract = true;</div>\n", "sec-code-copy", false);
     await expect(editor.sourcePane).toBeVisible();
     await expect(editor.sourceEditor).toContainText("const securityContract = true;");
 

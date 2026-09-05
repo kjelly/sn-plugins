@@ -22,7 +22,12 @@ test.describe("Recurring Tasks with @repeat and @done", () => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
-    await host.goto("# Habits\n\n- [x] Morning run @repeat(7d) @done(2026-08-29)\n- [x] Read book\n", "habits-2");
+    // Keep the fixture inside its 7-day recurrence window. A fixed historical
+    // @done date becomes overdue as time passes and is correctly reset before
+    // this test can exercise the manual uncheck behavior.
+    const today = new Date();
+    const doneDate = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+    await host.goto(`# Habits\n\n- [x] Morning run @repeat(7d) @done(${doneDate})\n- [x] Read book\n`, "habits-2");
 
     const checkbox = editor.writingPane.locator(".task-checkbox").first();
     const savePromise = host.waitForNextSave();
