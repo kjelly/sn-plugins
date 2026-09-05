@@ -227,6 +227,12 @@ testWritingEditorPresetLifecycle();
     const result = assessWritingRoundTrip(source, serialize(parse(source)), { parse, serialize });
     assert.equal(result.kind, expected, "only complete fenced code can be proven safe for Writing");
   }
+
+  const hardBreakSource = "First line  \nSecond line\n";
+  const hardBreakSerialized = serialize(parse(hardBreakSource));
+  const hardBreakResult = assessWritingRoundTrip(hardBreakSource, hardBreakSerialized, { parse, serialize });
+  assert.notEqual(hardBreakResult.kind, "unsupported", "a codec-proven Markdown hard break must be admitted to Writing");
+  assert.equal(assessWritingMutation(hardBreakSerialized, hardBreakSerialized, "user").editable, true, "the serialized hard-break spelling must stay editable after the Writing handoff");
 }
 
 {

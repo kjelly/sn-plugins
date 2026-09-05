@@ -140,4 +140,35 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await dialog.getByRole("button", { name: "留在 Source" }).click();
     await expect(editor.sourcePane).toBeVisible();
   });
+
+  test("Writing mode admits a codec-proven Markdown hard break", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    const markdown = "# Hard break\n\nFirst line  \nSecond line\n";
+
+    await host.goto(markdown, "note-hard-break", false);
+    const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    const needsNormalization = await dialog.isVisible();
+    if (needsNormalization) {
+      await dialog.getByRole("button", { name: "套用並進入 Writing" }).click();
+      await expect(dialog).toBeHidden();
+      // Applying the codec's canonical hard-break spelling is itself a save.
+      // Wait for it so the assertion below observes the user's edit instead.
+      await expect.poll(async () => (await host.getSaves()).length).toBeGreaterThan(0);
+      await host.clearSaves();
+    }
+
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor).toContainText("First line");
+    await expect(editor.writingEditor).toContainText("Second line");
+
+    const savePromise = host.waitForNextSave();
+    await editor.writingEditor.locator("p").last().click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" updated");
+    await expect(editor.writingEditor.locator("p").last()).toContainText("updated");
+    await savePromise;
+    expect(await host.getLatestSavedText()).toContain("updated");
+  });
 });

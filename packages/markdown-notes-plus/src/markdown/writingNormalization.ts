@@ -14,6 +14,7 @@ export type WritingNormalizationCategory =
   | "blank-line"
   | "trailing-space"
   | "final-newline"
+  | "hard-break"
   | "gfm-structure";
 
 export type WritingNormalizationChange = {
@@ -36,7 +37,6 @@ type LineToken = { text: string; newline: string };
 
 const unsupported = {
   html: "Raw HTML",
-  hardBreak: "hard breaks",
   reference: "reference links",
   unknown: "unsupported Markdown extension",
 } as const;
@@ -82,12 +82,6 @@ function isAtxHeading(line: string): boolean {
   return /^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line);
 }
 
-function hasHardBreak(line: string): boolean {
-  if (/\\$/.test(line)) return true;
-  const trailing = line.match(/ +$/)?.[0].length ?? 0;
-  return trailing >= 2;
-}
-
 function makeChanges(changes: Map<WritingNormalizationCategory, number>): WritingNormalizationChange[] {
   return [...changes.entries()].filter(([, count]) => count > 0).map(([category, count]) => ({ category, count }));
 }
@@ -107,7 +101,6 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
   const lines: string[] = [];
   for (let index = 0; index < sourceLines.length; index += 1) {
     const line = sourceLines[index].text;
-    if (hasHardBreak(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.hardBreak) };
     if (isRawHtml(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) };
     if (isReferenceSyntax(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) };
     if (isUnknownExtension(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) };

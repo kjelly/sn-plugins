@@ -145,12 +145,14 @@ function normalizationCapability(source: string, normalizedMarkdown: string, cha
   };
 }
 
-function gfmStructureNormalizationCapability(
+function serializerNormalizationCapability(
   source: string,
   normalizedMarkdown: string,
   existingChanges: WritingNormalizationChange[] = [],
 ): WritingCapability {
-  const changes = [...existingChanges, { category: "gfm-structure" as const, count: 1 }];
+  const changes = [...existingChanges];
+  if (hasGfmStructure(source)) changes.push({ category: "gfm-structure", count: 1 });
+  if (hasHardBreak(source)) changes.push({ category: "hard-break", count: 1 });
   return normalizationCapability(source, normalizedMarkdown, changes);
 }
 
@@ -180,6 +182,29 @@ function hasTable(markdown: string): boolean {
 
 function hasThematicBreak(markdown: string): boolean {
   return markdown.split("\n").some((line) => /^ {0,3}(?:\*\s*){3,}$/.test(line) || /^ {0,3}(?:-\s*){3,}$/.test(line) || /^ {0,3}(?:_\s*){3,}$/.test(line));
+}
+
+function hasHardBreak(markdown: string): boolean {
+  return markdown.split("\n").some((line) => /(?: {2,}|\\)$/.test(line));
+}
+
+function hasGfmStructure(markdown: string): boolean {
+  return hasTable(markdown) || hasFencedCodeBlock(markdown) || hasThematicBreak(markdown);
+}
+
+function hasSerializerOwnedSyntax(markdown: string): boolean {
+  return hasGfmStructure(markdown) || hasHardBreak(markdown);
+}
+
+function hasUnsupportedTrailingWhitespace(markdown: string): boolean {
+  return markdown.split("\n").some((line) => {
+    const trailing = line.match(/[ \t]+$/)?.[0];
+    if (!trailing) return false;
+    // Two or more spaces after visible text are CommonMark's hard-break
+    // spelling. The live codec still has to prove the exact normalized form.
+    if (/^ {2,}$/.test(trailing) && line.length > trailing.length) return false;
+    return /(?:[^ \t\r\n])[ \t]+$/.test(line);
+  });
 }
 
 /** Structural outputs that are intentionally introduced by an explicit command. */
@@ -217,11 +242,11 @@ function stripTerminalLineEndings(markdown: string): string {
  */
 export function isWritingLexicallySafe(markdown: string): boolean {
   if (markdown.includes("\r")) return false;
-  if (/(?:[^ \t\r\n])[ \t]+(?:\n|$)/.test(markdown)) return false;
+  if (hasUnsupportedTrailingWhitespace(markdown)) return false;
   if (/(?:^|\n)[ \t]{0,3}(?:\+|\*)[ \t]+/m.test(markdown)) return false;
   if (/(?:^|\n)[ \t]{0,3}(?:<|>\s*<|<\/?[A-Za-z])/m.test(markdown)) return false;
-  // GFM tables, fenced code blocks, and thematic breaks are serializer-owned
-  // Writing nodes. Initial documents still need the exact live codec proof in
+  // GFM structures and hard breaks are serializer-owned Writing syntax.
+  // Initial documents still need the exact live codec proof in
   // assessWritingRoundTrip; later mutations are already serializer output.
   // Four spaces may be either an indented code block or a nested list. The
   // former is Source-only, but the latter is safe when the shared Markdown
@@ -257,14 +282,13 @@ export function assessWritingRoundTrip(source: string, serialized: string, codec
     const sourceBody = stripTerminalLineEndings(source);
     const serializedBody = stripTerminalLineEndings(serialized);
     if (sourceBody !== serializedBody) {
-      // GFM tables, fenced code blocks, and thematic breaks are represented by
-      // first-class Writing nodes. Their serializer spelling can differ from
-      // imported Markdown, so retain the source until the user explicitly
-      // accepts the live codec's AST-equivalent normalized result.
-      if (hasTable(source) || hasFencedCodeBlock(source) || hasThematicBreak(source)) {
+      // GFM structures and hard breaks can have an equivalent serializer
+      // spelling. Retain the source until the user explicitly accepts the
+      // live codec's AST-equivalent normalized result.
+      if (hasSerializerOwnedSyntax(source)) {
         const proofFailure = proveWritingNormalization(source, serialized, codec);
         if (proofFailure) return unsupportedCapability(proofFailure);
-        return gfmStructureNormalizationCapability(source, serialized);
+        return serializerNormalizationCapability(source, serialized);
       }
       return unsupportedCapability("Writing serializer changed the source; use Source mode for exact Markdown.");
     }
@@ -274,13 +298,14 @@ export function assessWritingRoundTrip(source: string, serialized: string, codec
   }
   // The live serializer may omit terminal line endings, but it must otherwise
   // match the policy's normalized Markdown exactly. A body mismatch from a
-  // proven GFM structure is an explicit normalization; other differences
-  // (such as a javascript: link serializer change) remain Source-only.
+  // proven serializer-owned syntax is an explicit normalization; other
+  // differences (such as a javascript: link serializer change) remain
+  // Source-only.
   if (stripTerminalLineEndings(serialized) !== stripTerminalLineEndings(scan.markdown)) {
-    if (hasTable(source) || hasFencedCodeBlock(source) || hasThematicBreak(source)) {
+    if (hasSerializerOwnedSyntax(source)) {
       const proofFailure = proveWritingNormalization(source, serialized, codec);
       if (proofFailure) return unsupportedCapability(proofFailure);
-      return gfmStructureNormalizationCapability(source, serialized, scan.changes);
+      return serializerNormalizationCapability(source, serialized, scan.changes);
     }
     return unsupportedCapability("Writing serializer changed the source; use Source mode for exact Markdown.");
   }
