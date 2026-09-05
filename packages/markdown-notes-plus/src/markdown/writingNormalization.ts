@@ -13,7 +13,8 @@ export type WritingNormalizationCategory =
   | "bullet"
   | "blank-line"
   | "trailing-space"
-  | "final-newline";
+  | "final-newline"
+  | "gfm-structure";
 
 export type WritingNormalizationChange = {
   category: WritingNormalizationCategory;
@@ -35,8 +36,6 @@ type LineToken = { text: string; newline: string };
 
 const unsupported = {
   html: "Raw HTML",
-  table: "tables",
-  code: "fenced code blocks",
   hardBreak: "hard breaks",
   reference: "reference links",
   unknown: "unsupported Markdown extension",
@@ -61,11 +60,6 @@ function tokenizeLines(markdown: string): LineToken[] {
   return lines;
 }
 
-function isFenceOpening(line: string): { marker: string; length: number } | undefined {
-  const match = line.match(/^ {0,3}(`{3,}|~{3,})/);
-  return match ? { marker: match[1][0], length: match[1].length } : undefined;
-}
-
 function isRawHtml(line: string): boolean {
   const withoutAutolinks = line.replace(/<(?:https?|mailto):[^>]+>/gi, "");
   return /<!--|<\/?[A-Za-z][^>]*>|<![A-Z]|<\?[A-Za-z]/.test(withoutAutolinks);
@@ -77,15 +71,6 @@ function isReferenceSyntax(line: string): boolean {
 
 function isUnknownExtension(line: string): boolean {
   return /^ {0,3}:::{3,}/.test(line) || /^ {0,3}\[\^[^\]]+\](?::|\s)/.test(line) || /(^|\s)\?\?[^?]+\?\?(?=\s|$)/.test(line);
-}
-
-function isTableDelimiter(line: string): boolean {
-  const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
-  return cells.length >= 2 && cells.every((cell) => /^:?-+:?$/.test(cell));
-}
-
-function isTableRow(line: string): boolean {
-  return line.includes("|") && line.trim() !== "|";
 }
 
 function listMarker(line: string): { marker: string; prefixLength: number } | undefined {
@@ -120,25 +105,17 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
   const sourceLines = tokenizeLines(markdown);
   const changes = new Map<WritingNormalizationCategory, number>();
   const lines: string[] = [];
-  let sawTableHeader = false;
-
   for (let index = 0; index < sourceLines.length; index += 1) {
     const line = sourceLines[index].text;
-    const opening = isFenceOpening(line);
-    if (opening) {
-      return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.code) };
-    }
     if (hasHardBreak(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.hardBreak) };
     if (isRawHtml(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) };
     if (isReferenceSyntax(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) };
     if (isUnknownExtension(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) };
 
-    if (isTableRow(line)) {
-      if (isTableDelimiter(line) && index > 0 && isTableRow(sourceLines[index - 1].text)) sawTableHeader = true;
-      if (sawTableHeader || (index + 1 < sourceLines.length && isTableDelimiter(sourceLines[index + 1].text))) {
-        return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.table) };
-      }
-    }
+    // Tables and fenced code blocks are first-class GFM nodes in the Writing
+    // preset. Their exact spelling is admitted later only when the live
+    // Milkdown parser and serializer prove an AST-equivalent, idempotent
+    // normalized result.
 
     let normalized = line;
     const marker = listMarker(normalized);

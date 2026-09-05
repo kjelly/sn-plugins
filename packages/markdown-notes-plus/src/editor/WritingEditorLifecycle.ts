@@ -145,6 +145,15 @@ function normalizationCapability(source: string, normalizedMarkdown: string, cha
   };
 }
 
+function gfmStructureNormalizationCapability(
+  source: string,
+  normalizedMarkdown: string,
+  existingChanges: WritingNormalizationChange[] = [],
+): WritingCapability {
+  const changes = [...existingChanges, { category: "gfm-structure" as const, count: 1 }];
+  return normalizationCapability(source, normalizedMarkdown, changes);
+}
+
 function hasFencedCodeBlock(markdown: string): boolean {
   const lines = markdown.split("\n");
   for (let index = 0; index < lines.length; index += 1) {
@@ -209,11 +218,11 @@ function stripTerminalLineEndings(markdown: string): string {
 export function isWritingLexicallySafe(markdown: string): boolean {
   if (markdown.includes("\r")) return false;
   if (/(?:[^ \t\r\n])[ \t]+(?:\n|$)/.test(markdown)) return false;
-  if (/(?:^|\n)[ \t]{0,3}(?:```|~~~)/m.test(markdown)) return false;
   if (/(?:^|\n)[ \t]{0,3}(?:\+|\*)[ \t]+/m.test(markdown)) return false;
-  if (/(?:^|\n)[ \t]{0,3}\|/m.test(markdown)) return false;
   if (/(?:^|\n)[ \t]{0,3}(?:<|>\s*<|<\/?[A-Za-z])/m.test(markdown)) return false;
-  if (/(?:^|\n)[ \t]{0,3}(?:=+|-{3,})[ \t]*$/m.test(markdown)) return false;
+  // GFM tables, fenced code blocks, and thematic breaks are serializer-owned
+  // Writing nodes. Initial documents still need the exact live codec proof in
+  // assessWritingRoundTrip; later mutations are already serializer output.
   // Four spaces may be either an indented code block or a nested list. The
   // former is Source-only, but the latter is safe when the shared Markdown
   // scanner proves the item belongs to an active list container.
@@ -245,7 +254,18 @@ export function assessWritingRoundTrip(source: string, serialized: string, codec
     return losslessCapability();
   }
   if (scan.changes.length === 0) {
-    if (stripTerminalLineEndings(source) !== stripTerminalLineEndings(serialized)) {
+    const sourceBody = stripTerminalLineEndings(source);
+    const serializedBody = stripTerminalLineEndings(serialized);
+    if (sourceBody !== serializedBody) {
+      // GFM tables, fenced code blocks, and thematic breaks are represented by
+      // first-class Writing nodes. Their serializer spelling can differ from
+      // imported Markdown, so retain the source until the user explicitly
+      // accepts the live codec's AST-equivalent normalized result.
+      if (hasTable(source) || hasFencedCodeBlock(source) || hasThematicBreak(source)) {
+        const proofFailure = proveWritingNormalization(source, serialized, codec);
+        if (proofFailure) return unsupportedCapability(proofFailure);
+        return gfmStructureNormalizationCapability(source, serialized);
+      }
       return unsupportedCapability("Writing serializer changed the source; use Source mode for exact Markdown.");
     }
     const proofFailure = proveWritingNormalization(source, serialized, codec);
@@ -253,9 +273,15 @@ export function assessWritingRoundTrip(source: string, serialized: string, codec
     return losslessCapability();
   }
   // The live serializer may omit terminal line endings, but it must otherwise
-  // match the policy's normalized Markdown exactly. A body mismatch (such as
-  // a javascript: link serializer change) remains Source-only.
+  // match the policy's normalized Markdown exactly. A body mismatch from a
+  // proven GFM structure is an explicit normalization; other differences
+  // (such as a javascript: link serializer change) remain Source-only.
   if (stripTerminalLineEndings(serialized) !== stripTerminalLineEndings(scan.markdown)) {
+    if (hasTable(source) || hasFencedCodeBlock(source) || hasThematicBreak(source)) {
+      const proofFailure = proveWritingNormalization(source, serialized, codec);
+      if (proofFailure) return unsupportedCapability(proofFailure);
+      return gfmStructureNormalizationCapability(source, serialized, scan.changes);
+    }
     return unsupportedCapability("Writing serializer changed the source; use Source mode for exact Markdown.");
   }
   const proofFailure = proveWritingNormalization(source, serialized, codec);

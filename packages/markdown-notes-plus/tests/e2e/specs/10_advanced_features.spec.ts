@@ -93,15 +93,18 @@ test.describe("Advanced Features: Templates, Review, Palette, Callouts & Code Bl
     await expect(editor.sourceEditor).toBeVisible();
   });
 
-  test("Unsupported callouts and code blocks stay intact in Source mode", async ({ page }) => {
+  test("Supported callouts and code blocks open in Writing mode", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
     const markdown = `# Callouts & Code\n\n> [!NOTE]\n> This is a callout note\n\n\`\`\`javascript\nconst a = 1;\n\`\`\`\n`;
     await host.goto(markdown, "doc-callout-1", false);
 
-    await expect(editor.sourcePane).toBeVisible();
-    await expect(editor.sourceEditor).toContainText("> [!NOTE]");
-    await expect(editor.sourceEditor).toContainText("const a = 1;");
+    const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "套用並進入 Writing" }).click();
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.writingEditor).toContainText("This is a callout note");
+    await expect(editor.writingEditor.locator("pre")).toContainText("const a = 1;");
   });
 });

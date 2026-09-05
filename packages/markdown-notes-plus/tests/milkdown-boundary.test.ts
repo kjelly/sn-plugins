@@ -220,9 +220,12 @@ testWritingEditorPresetLifecycle();
     assert.equal(result.normalizedMarkdown, normalizedMarkdown);
   }
 
-  for (const source of ["```md\nraw\n```\n", "```md\nraw\n"]) {
+  for (const [source, expected] of [
+    ["```md\nraw\n```\n", "lossless"],
+    ["```md\nraw\n", "unsupported"],
+  ] as const) {
     const result = assessWritingRoundTrip(source, serialize(parse(source)), { parse, serialize });
-    assert.equal(result.kind, "unsupported", "imported fenced code must remain Source-only");
+    assert.equal(result.kind, expected, "only complete fenced code can be proven safe for Writing");
   }
 }
 

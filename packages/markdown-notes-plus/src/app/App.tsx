@@ -155,10 +155,10 @@ function StatusInfo({
           ? "Locked · read-only"
           : sourceFallbackText !== undefined
           ? "Source fallback · edit to apply"
+          : writingCapability.kind === "unsupported"
+          ? `Writing 僅支援 Source mode：${writingCapability.reason}`
           : writingCapability.kind === "normalizable" && writingVisible
           ? "Writing 需要正規化格式"
-          : writingCapability.kind === "unsupported" && writingVisible
-          ? `Writing 僅支援 Source mode：${writingCapability.reason}`
           : writingCapability.kind === "unproven" && writingVisible
           ? writingCapability.reason
           : snapshot.pendingRemote !== undefined
@@ -199,7 +199,7 @@ function WritingNormalizationDialog({
       }}
     >
       <h2>Writing 需要正規化格式</h2>
-      <p>這份 Markdown 需要整理格式後才能使用 Writing mode。正規化可能會統一清單符號、換行格式與空白行。</p>
+      <p>這份 Markdown 需要整理格式後才能使用 Writing mode。正規化可能會統一清單符號、換行格式、空白行，以及支援的 GFM 區塊格式。</p>
       <p>發現的格式差異：{summary || "格式差異"}</p>
       <pre aria-label="Normalized Markdown preview">{capability.normalizedMarkdown}</pre>
       <div className="writing-normalization-actions">

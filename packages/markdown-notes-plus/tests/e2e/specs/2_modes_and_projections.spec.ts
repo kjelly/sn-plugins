@@ -167,6 +167,62 @@ test.describe("Modes and Projections", () => {
     expect(await editor.getSourceText()).toContain("<div>Protected HTML</div>");
   });
 
+  test("existing GFM tables, code blocks, and dividers can be normalized into Writing", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    const markdown = `# 沙茶牛肋條｜電子壓力鍋筆記
+
+## 總調味比例
+
+| 材料 | 總量 |
+|---|---:|
+| 沙茶醬 | **70 g** |
+| 醬油 | **45 ml** |
+
+---
+
+# 最佳流程摘要
+
+\`\`\`text
+今晚
+↓
+明早
+\`\`\`
+
+## 核心原則
+
+可以在 Writing mode 繼續編輯。
+`;
+
+    await host.goto(markdown, "note-existing-gfm-writing", false);
+
+    await expect(editor.sourcePane).toBeVisible();
+    const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("gfm-structure: 1");
+    await dialog.getByRole("button", { name: "套用並進入 Writing" }).click();
+
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toHaveCount(0);
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor.locator("table")).toBeVisible();
+    await expect(editor.writingEditor.locator("pre")).toContainText("今晚");
+
+    // Applying the Writing normalization saves the canonicalized document.
+    // Wait for that save before observing the subsequent user edit.
+    await expect.poll(async () => (await host.getSaves()).length).toBeGreaterThan(0);
+    const paragraph = editor.writingEditor.locator("p").last();
+    await paragraph.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" 已驗證");
+
+    await expect.poll(async () => await host.getLatestSavedText()).toContain("可以在 Writing mode 繼續編輯。 已驗證");
+    const saved = await host.getLatestSavedText();
+    expect(saved).toContain("沙茶醬");
+    expect(saved).toContain("```text");
+    expect(saved).toContain("可以在 Writing mode 繼續編輯。 已驗證");
+  });
+
   test("Unsupported initial note can re-admit Writing after a same-note safe remote replacement", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
