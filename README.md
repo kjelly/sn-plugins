@@ -123,8 +123,28 @@ to detect the new version.
 
 ## Local build
 
+All development and CI runtimes are pinned in [`mise.toml`](mise.toml).
+Install those runtimes and the locked npm dependency graph before building or
+testing:
+
 ```bash
-python3 scripts/build.py \
+mise install
+mise run deps
+```
+
+The normal local verification entry point is:
+
+```bash
+mise run test:verify
+```
+
+Individual checks are available through `mise tasks ls`, for example
+`mise run test:unit`, `mise run test:integration`, and
+`mise run test:e2e:release`. `mise.lock`, `package-lock.json`, and `deno.lock`
+pin the corresponding runtime and package dependency graphs.
+
+```bash
+mise exec -- python3 scripts/build.py \
   --owner kjelly \
   --base-url http://127.0.0.1:8000
 ```
@@ -138,7 +158,7 @@ package, the package-local build uses `npm run build` and requires Node 18+.
 Serve the generated Pages tree:
 
 ```bash
-python3 -m http.server 8000 -d dist-pages
+mise exec -- python3 -m http.server 8000 -d dist-pages
 ```
 
 Open:
@@ -152,8 +172,8 @@ The local manifest URLs will use the local base URL supplied above.
 ## Add another theme
 
 ```bash
-python3 scripts/new_plugin.py theme "Paper Gray" paper-gray
-python3 scripts/build.py --owner YOUR_GITHUB_USER --base-url http://127.0.0.1:8000
+mise exec -- python3 scripts/new_plugin.py theme "Paper Gray" paper-gray
+mise exec -- python3 scripts/build.py --owner YOUR_GITHUB_USER --base-url http://127.0.0.1:8000
 ```
 
 See [`docs/ADDING_PLUGIN.md`](docs/ADDING_PLUGIN.md) for package format and runtime file rules.
@@ -174,16 +194,15 @@ The generated `latest_url` always points to the current manifest. Standard Notes
 The package-level checks are:
 
 ```sh
-cd packages/markdown-notes-plus
-npm ci
-npm run lint
-npm run typecheck
-npm test
-npm run test:integration
-npm run build
+mise run lint
+mise run typecheck
+mise run test:unit
+mise run test:integration
+mise run test:e2e:release
+mise run build
 ```
 
-`npm test` is intentionally Deno-based for the existing projection and relay
+`mise run test:unit` is intentionally Deno-based for the existing projection and relay
 compatibility regressions; it is not full browser/host acceptance.
 
 ## Important security note

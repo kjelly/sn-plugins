@@ -53,14 +53,16 @@ Limitations:
 Install the package lock and run the local checks with:
 
 ```sh
-npm ci
-npm run typecheck
-npm test
-npm run build
-node --check dist/assets/<generated-index>.js
+mise install
+mise run deps
+mise run typecheck
+mise run test:unit
+mise run build
+mise exec -- node --check dist/assets/<generated-index>.js
 ```
 
-`npm test` intentionally runs the existing Deno compatibility/projection
+All documented test entry points are Mise tasks; use `mise tasks ls` to list
+them. `mise run test:unit` intentionally runs the existing Deno compatibility/projection
 regression suite. It does not claim full browser or Standard Notes host
 integration coverage.
 
@@ -75,7 +77,7 @@ Start Standard Notes Web in one terminal (the upstream README uses port 3001),
 then run this package's test in another:
 
 ```sh
-E2E_STANDARDNOTES_WEB_URL=http://127.0.0.1:3001 npm run test:e2e:standardnotes-web
+E2E_STANDARDNOTES_WEB_URL=http://127.0.0.1:3001 mise run test:e2e:standardnotes-web
 ```
 
 The script builds this editor, starts its static preview at `127.0.0.1:5173`, and exposes
@@ -104,13 +106,13 @@ To run end-to-end integration tests using the official release APK of Standard N
 
 3. **Start Local Dev Server**:
    ```bash
-   npm run dev -- --host 0.0.0.0 --port 5173
+   mise exec -- npm run dev -- --host 0.0.0.0 --port 5173
    ```
    (The server serves the editor at `/index.html` and the extension manifest at `/ext.json`).
 
 4. **Run Appium / WebdriverIO Android E2E Suite**:
    ```bash
-   npm run test:e2e:android-app
+   mise run test:e2e:android-app
    ```
    *For physical devices over USB*, forward the port first:
    ```bash

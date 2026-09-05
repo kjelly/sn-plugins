@@ -13,55 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - name: Set up Mise runtimes
+        uses: jdx/mise-action@v3
         with:
-          python-version: "3.13"
+          version: "2026.9.1"
+          cache: true
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: packages/markdown-notes-plus/package-lock.json
-
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v1.34.0
-
-      - name: Install Markdown Notes+ dependencies
-        working-directory: packages/markdown-notes-plus
-        run: npm ci
-
-      - name: Install Playwright browsers
-        working-directory: packages/markdown-notes-plus
-        run: npx playwright install --with-deps chromium firefox
-
-      - name: Test and build Markdown Notes+
-        working-directory: packages/markdown-notes-plus
-        run: |
-          npm run typecheck
-          for attempt in 1 2 3; do
-            if npm test; then
-              break
-            fi
-            if [[ "$attempt" == "3" ]]; then
-              exit 1
-            fi
-            sleep $((attempt * 5))
-          done
-          npm run test:unit
-          npm run test:integration
-          npm run test:e2e:release
-          npm run build
-          test -s dist/index.html
-          for asset in dist/assets/*.js; do node --check "$asset"; done
-
-      - name: Build and validate plugin repository
-        run: |
-          python3 scripts/build_test.py
-          python3 scripts/build.py \
-            --owner test-owner \
-            --base-url https://example.invalid/sn-plugins
-
-      - name: Verify production editor artifacts
-        working-directory: packages/markdown-notes-plus
-        run: npm run test:artifacts
+      - name: Verify plugins
+        run: mise run ci:verify

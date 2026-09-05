@@ -691,6 +691,7 @@ Deno.test("normalizer leaves code, HTML, existing links, and autolinks untouched
     "```",
     "<!-- https://comment.test -->",
     "<div>https://html.test</div>",
+    "",
     "outside https://visible.test!",
   ].join("\n");
   const result = normalizeBareUrls(source);

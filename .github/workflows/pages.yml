@@ -21,42 +21,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
+      - name: Set up Mise runtimes
+        uses: jdx/mise-action@v3
         with:
-          python-version: "3.13"
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: packages/markdown-notes-plus/package-lock.json
-
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v1.34.0
+          version: "2026.9.1"
+          cache: true
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Build plugin repository
         shell: bash
-        run: |
-          set -euo pipefail
-          npm ci --prefix packages/markdown-notes-plus
-          npx --prefix packages/markdown-notes-plus playwright install --with-deps chromium firefox
-          npm run --prefix packages/markdown-notes-plus test:e2e:release
-          REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          BASE_URL="${{ vars.PAGES_BASE_URL }}"
-          if [[ -z "${BASE_URL}" ]]; then
-            BASE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}"
-          fi
-
-          python3 scripts/build.py \
-            --owner "${GITHUB_REPOSITORY_OWNER}" \
-            --base-url "${BASE_URL}"
+        env:
+          PAGES_BASE_URL: ${{ vars.PAGES_BASE_URL }}
+        run: mise run ci:pages
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

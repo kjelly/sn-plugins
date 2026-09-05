@@ -33,8 +33,8 @@ Do not paste the repository URL, the Pages home URL, a `static/` URL, or a
 For local development, build the Pages tree with:
 
 ```bash
-python3 scripts/build.py --owner kjelly --base-url http://127.0.0.1:8000
-python3 -m http.server 8000 -d dist-pages
+mise exec -- python3 scripts/build.py --owner kjelly --base-url http://127.0.0.1:8000
+mise exec -- python3 -m http.server 8000 -d dist-pages
 ```
 
 The local manifest URLs are only for local testing and are not installable by

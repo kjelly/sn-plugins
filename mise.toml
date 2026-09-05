@@ -1,0 +1,159 @@
+min_version = "2026.9.1"
+
+[tools]
+node = "20.19.1"
+deno = "2.9.6"
+python = "3.13.7"
+
+# Runtime installation is intentionally separate from dependency installation:
+# `mise install` provisions Node, Deno, and Python, then `mise run deps`
+# restores the exact npm dependency graph from package-lock.json.
+[tasks.deps]
+description = "Install the locked Markdown Notes+ npm dependencies"
+dir = "packages/markdown-notes-plus"
+sources = ["packages/markdown-notes-plus/package.json", "packages/markdown-notes-plus/package-lock.json"]
+run = "npm ci"
+
+[tasks."playwright:install"]
+description = "Install Chromium and Firefox for local browser tests"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npx playwright install chromium firefox"
+
+[tasks."playwright:install:ci"]
+description = "Install browser binaries and Linux system dependencies for CI"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npx playwright install --with-deps chromium firefox"
+
+[tasks.lint]
+description = "Lint Markdown Notes+"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npm run lint"
+
+[tasks.typecheck]
+description = "Type-check Markdown Notes+"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npm run typecheck"
+
+[tasks."test:unit"]
+description = "Run the Deno unit and projection regression suite"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:unit"
+
+[tasks."test:integration"]
+description = "Run Milkdown and source-history integration boundaries"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:integration"
+
+[tasks."test:e2e"]
+description = "Run Chromium production browser end-to-end tests"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:e2e"
+
+[tasks."test:e2e:release"]
+description = "Run production browser end-to-end tests in Chromium and Firefox"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:e2e:release"
+
+[tasks."test:e2e:sn-contract"]
+description = "Run the Standard Notes production security-contract browser test"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:e2e:sn-contract"
+
+[tasks."test:e2e:standardnotes-web"]
+description = "Run the real Standard Notes Web-host smoke test"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:e2e:standardnotes-web"
+
+[tasks."test:mobile-protocol"]
+description = "Run the mobile protocol browser test"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:mobile-protocol"
+
+[tasks."test:e2e:android-app"]
+description = "Run the Android/Appium end-to-end suite"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:e2e:android-app"
+
+[tasks.build]
+description = "Build and package the complete Standard Notes plugin repository"
+depends = ["deps"]
+run = "python3 scripts/build.py"
+
+[tasks."test:artifacts"]
+description = "Validate the generated production editor artifacts"
+depends = ["build"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:artifacts"
+
+[tasks."test:verify"]
+description = "Run the complete local verification suite"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = '''
+npm run typecheck
+for attempt in 1 2 3; do
+  if npm test; then
+    break
+  fi
+  if [[ "$attempt" == "3" ]]; then
+    exit 1
+  fi
+  sleep $((attempt * 5))
+done
+npm run test:unit
+npm run test:integration
+npm run test:e2e:release
+npm run build
+test -s dist/index.html
+for asset in dist/assets/*.js; do node --check "$asset"; done
+'''
+
+[tasks."ci:verify"]
+description = "Run the pull-request verification workflow with Mise-managed tools"
+depends = ["playwright:install:ci"]
+run = '''
+npm --prefix packages/markdown-notes-plus run typecheck
+for attempt in 1 2 3; do
+  if npm --prefix packages/markdown-notes-plus test; then
+    break
+  fi
+  if [[ "$attempt" == "3" ]]; then
+    exit 1
+  fi
+  sleep $((attempt * 5))
+done
+npm --prefix packages/markdown-notes-plus run test:unit
+npm --prefix packages/markdown-notes-plus run test:integration
+npm --prefix packages/markdown-notes-plus run test:e2e:release
+npm --prefix packages/markdown-notes-plus run build
+test -s packages/markdown-notes-plus/dist/index.html
+for asset in packages/markdown-notes-plus/dist/assets/*.js; do node --check "$asset"; done
+python3 scripts/build_test.py
+python3 scripts/build.py --owner test-owner --base-url https://example.invalid/sn-plugins
+npm --prefix packages/markdown-notes-plus run test:artifacts
+'''
+
+[tasks."ci:pages"]
+description = "Build the GitHub Pages artifact with Mise-managed tools"
+depends = ["playwright:install:ci"]
+run = '''
+npm --prefix packages/markdown-notes-plus run test:e2e:release
+repo_name="${GITHUB_REPOSITORY#*/}"
+base_url="${PAGES_BASE_URL:-}"
+if [[ -z "$base_url" ]]; then
+  base_url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${repo_name}"
+fi
+python3 scripts/build.py --owner "${GITHUB_REPOSITORY_OWNER}" --base-url "$base_url"
+'''

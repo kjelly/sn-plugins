@@ -108,7 +108,7 @@ The manifest install URL is the `entries/*.json` URL.
 ## Adding a theme with the helper
 
 ```bash
-python3 scripts/new_plugin.py theme "My Theme" my-theme
+mise exec -- python3 scripts/new_plugin.py theme "My Theme" my-theme
 ```
 
 Then edit:

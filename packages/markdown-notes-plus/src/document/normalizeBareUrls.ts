@@ -24,6 +24,12 @@ function serializeResourceLink(source: string): string {
   return resourceLinkSerializer.stringify(root).replace(/\n$/, "");
 }
 
+function isIndentedCodeSource(markdown: string, offset: number): boolean {
+  const prefix = markdown.slice(0, offset);
+  const lineStart = Math.max(prefix.lastIndexOf("\n"), prefix.lastIndexOf("\r")) + 1;
+  return /^(?: {4}|\t)/.test(markdown.slice(lineStart, offset));
+}
+
 /**
  * Convert only GFM autolink-literal nodes whose source is a bare HTTP(S) URL.
  * The source equality check excludes explicit Markdown links and angle-bracket
@@ -39,7 +45,7 @@ export function normalizeBareUrls(markdown: string): CommandResult {
       const to = node.position?.end?.offset;
       if (typeof from === "number" && typeof to === "number" && Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from && to <= markdown.length) {
         const source = markdown.slice(from, to);
-        if (source === node.url && /^https?:\/\//i.test(source)) {
+        if (source === node.url && /^https?:\/\//i.test(source) && !isIndentedCodeSource(markdown, from)) {
           const replacement = serializeResourceLink(source);
           changes.push({ from, to, insertedLength: replacement.length });
         }
