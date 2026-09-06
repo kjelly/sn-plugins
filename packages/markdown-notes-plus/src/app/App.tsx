@@ -230,7 +230,7 @@ export function App() {
   const writingHistoryResetRef = useRef<() => void>(() => undefined);
   const bridgeStartMode = typeof window === "undefined"
     ? undefined
-    : new URLSearchParams(window.location.search).get("sn-bridge-start");
+    : new URLSearchParams(globalThis.location.search).get("sn-bridge-start");
   const bridge = useMemo(() => new EditorKitBridge(
     canonical,
     () => rerender(canonical.snapshot()),
@@ -252,8 +252,8 @@ export function App() {
   const [focusedSectionAnchor, setFocusedSectionAnchor] = useState<number>();
   const isNarrowViewport = () => {
     if (typeof window === "undefined") return false;
-    if (typeof window.matchMedia === "function") return window.matchMedia("(max-width: 900px)").matches;
-    return window.innerWidth < 900;
+    if (typeof globalThis.matchMedia === "function") return globalThis.matchMedia("(max-width: 900px)").matches;
+    return globalThis.innerWidth < 900;
   };
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrowViewport());
   const sidebarManualOverrideRef = useRef(false);
@@ -342,8 +342,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
-    const media = window.matchMedia("(max-width: 900px)");
+    if (typeof window === "undefined" || typeof globalThis.matchMedia !== "function") return undefined;
+    const media = globalThis.matchMedia("(max-width: 900px)");
     const applyResponsiveSidebar = () => {
       if (sidebarManualOverrideRef.current) return;
       setSidebarOpen(!media.matches);
@@ -508,7 +508,7 @@ export function App() {
     });
     const mobileProtocolParams = typeof window === "undefined"
       ? undefined
-      : new URLSearchParams(window.location.search);
+      : new URLSearchParams(globalThis.location.search);
     const mobileProtocolTest = mobileProtocolParams?.get("sn-mobile-protocol") === "1";
     const manualBridgeStart = mobileProtocolTest && mobileProtocolParams?.get("sn-bridge-start") === "manual";
     const bridgeReadyDelayMs = Math.max(0, Number(mobileProtocolParams?.get("sn-bridge-ready-delay-ms") ?? "0") || 0);
@@ -520,18 +520,18 @@ export function App() {
     };
     const startBridge = () => {
       bridge.start();
-      if (manualBridgeStart) window.parent.postMessage({ type: "sn-bridge-started" }, "*");
+      if (manualBridgeStart) globalThis.parent.postMessage({ type: "sn-bridge-started" }, "*");
       if (bridgeReadyDelayMs === 0) announceBridgeReady();
       else bridgeReadyTimer = globalThis.setTimeout(announceBridgeReady, bridgeReadyDelayMs);
     };
     const startBridgeOnRequest = (event: MessageEvent) => {
-      if (event.source !== window.parent || event.data?.type !== "sn-start-bridge") return;
+      if (event.source !== globalThis.parent || event.data?.type !== "sn-start-bridge") return;
       globalThis.removeEventListener("message", startBridgeOnRequest);
       startBridge();
     };
     if (manualBridgeStart) {
       globalThis.addEventListener("message", startBridgeOnRequest);
-      window.parent.postMessage({ type: "sn-bridge-start-pending" }, "*");
+      globalThis.parent.postMessage({ type: "sn-bridge-start-pending" }, "*");
     } else {
       startBridge();
     }
@@ -830,7 +830,7 @@ export function App() {
   };
   const focusHeading = (from: number, to: number) => {
     setActiveSectionAnchor(from);
-    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+    if (typeof window !== "undefined" && globalThis.innerWidth <= 768) {
       closeSidebar();
     }
     if (mode === "source") {

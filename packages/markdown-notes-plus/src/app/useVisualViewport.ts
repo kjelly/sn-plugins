@@ -7,7 +7,7 @@ export function useVisualViewport(): void {
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return undefined;
 
-    const viewport = window.visualViewport;
+    const viewport = globalThis.visualViewport;
     if (!viewport) return undefined;
 
     const root = document.documentElement;
