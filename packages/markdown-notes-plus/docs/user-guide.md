@@ -444,7 +444,7 @@ Writing 模式只編輯「它能逐字還原」的內容。特殊內容會以 `W
 |------|------|
 | 筆記健康度診斷面板（Review） | 尚未提供 |
 | Callout 卡片（`> [!NOTE]` 語意渲染） | 尚未提供 |
-| Smart Paste（HTML 貼上清洗） | 尚未提供 |
+| Smart Paste（URL/HTML 貼上清洗） | 已提供 |
 | 快速導航盤（Navigation Palette） | 尚未提供 |
 | UI Preferences 跨裝置同步 | 尚未提供 |
 

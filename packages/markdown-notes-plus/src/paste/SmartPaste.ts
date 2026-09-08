@@ -1,3 +1,5 @@
+import { normalizeBareUrls } from "../document/normalizeBareUrls.ts";
+
 export function isUrl(text: string): boolean {
   const trimmed = text.trim();
   if (!/^https?:\/\/[^\s$.?#].[^\s]*$/i.test(trimmed)) return false;
@@ -183,6 +185,16 @@ export function processSmartPaste(
     return {
       type: "link",
       content: `[${selectedText.trim()}](${plainText.trim()})`,
+    };
+  }
+
+  // Normalize bare URLs before they enter Writing's structural serializer.
+  if (isUrl(plainText)) {
+    const url = plainText.trim();
+    const normalized = normalizeBareUrls(url);
+    return {
+      type: "markdown",
+      content: normalized.changed ? normalized.markdown : `[${url}](${url})`,
     };
   }
 

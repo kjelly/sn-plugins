@@ -35,3 +35,14 @@ Deno.test("SmartPaste - falls back to plain text when no selection or non-URL", 
   assertEquals(result2.type, "text");
   assertEquals(result2.content, "Just plain text");
 });
+
+Deno.test("SmartPaste - normalizes a bare URL before Writing parses it", () => {
+  const result = processSmartPaste({
+    text: "https://chatgpt.com/g/g-p-6a6081c56d8c81919f379d1c979634e8-hufu/c/6a9fa1b0-dbe4-83e8-874c-650a658b5c8e",
+  });
+  assertEquals(result.type, "markdown");
+  assertEquals(
+    result.content,
+    "[https://chatgpt.com/g/g-p-6a6081c56d8c81919f379d1c979634e8-hufu/c/6a9fa1b0-dbe4-83e8-874c-650a658b5c8e](https://chatgpt.com/g/g-p-6a6081c56d8c81919f379d1c979634e8-hufu/c/6a9fa1b0-dbe4-83e8-874c-650a658b5c8e)",
+  );
+});

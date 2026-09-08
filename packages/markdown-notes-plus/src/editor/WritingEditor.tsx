@@ -22,6 +22,7 @@ import { REPEAT_TAG_REGEX, DONE_TAG_REGEX, deadlineStatus, formatIsoDate } from 
 import { createWritingFoldingPlugin } from "./WritingFolding.ts";
 import { createWritingShortcutsPlugin } from "./WritingShortcuts.ts";
 import { createWritingSmartKeysPlugin } from "./WritingSmartKeys.ts";
+import { processSmartPaste } from "../paste/SmartPaste.ts";
 import {
   type InsertLibrary,
   type TemplateDefinition,
@@ -570,6 +571,33 @@ function writingLinkClickHandlerPlugin() {
   }));
 }
 
+function writingPastePlugin(
+  editability: WritingEditability,
+  parserRef: { current?: (markdown: string) => ProseNode | undefined },
+) {
+  return $prose(() => new Plugin({
+    key: new PluginKey("markdown-notes-plus-smart-paste"),
+    props: {
+      handlePaste(view, event) {
+        if (editability.readOnlyRef.current || !editability.capabilityRef.current) return false;
+        const clipboard = event.clipboardData;
+        if (!clipboard) return false;
+
+        const plainText = clipboard.getData("text/plain");
+        const htmlText = clipboard.getData("text/html");
+        const selectedText = view.state.selection.empty
+          ? undefined
+          : view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, "\n");
+        const result = processSmartPaste({ text: plainText, html: htmlText }, selectedText);
+        if (result.type === "text" || !parserRef.current) return false;
+
+        event.preventDefault();
+        return insertWritingMarkdown(view, parserRef.current, result.content);
+      },
+    },
+  }));
+}
+
 const writingOriginPluginKey = new PluginKey<WritingOriginState>("markdown-notes-plus-writing-origin");
 const writingOriginPlugin = new Plugin({
   key: writingOriginPluginKey,
@@ -699,6 +727,7 @@ export function configureWritingEditor(editor: Editor, {
     .use($prose(() => createWritingShortcutsPlugin()))
     .use($prose(() => createWritingSmartKeysPlugin()))
     .use(writingLinkClickHandlerPlugin())
+    .use(writingPastePlugin(editability, parserRef ?? { current: undefined }))
     .use(slashMenuPlugin(editability, onRequestLinkRef, libraryRef, serializerRef, parserRef))
     .use(writingKeyboardShortcutsPlugin(editability, onRequestLinkRef));
 }
