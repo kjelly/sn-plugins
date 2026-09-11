@@ -43,13 +43,13 @@ import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
 import {
   type AppMode,
+  advanceWritingAdmissionIdentity,
   armWritingEnableAttempt,
   createWritingAdmissionState,
   createWritingEnableAttemptState,
   modeAfterRequest,
   observeWritingCanonical,
   observeWritingCapability,
-  rebaseWritingAdmission,
   sameWritingAdmissionIdentity,
   writingEnableTransition,
   type WritingAdmissionCapability,
@@ -284,7 +284,7 @@ export function App() {
   };
   const writingAdmissionRef = useRef(createWritingAdmissionState(writingAdmissionIdentity));
   if (!sameWritingAdmissionIdentity(writingAdmissionRef.current.identity, writingAdmissionIdentity)) {
-    writingAdmissionRef.current = rebaseWritingAdmission(writingAdmissionRef.current, writingAdmissionIdentity);
+    writingAdmissionRef.current = advanceWritingAdmissionIdentity(writingAdmissionRef.current, writingAdmissionIdentity);
   }
   const writingCapability = writingAdmissionRef.current.capability;
   const publishWritingAdmission = (next: typeof writingAdmissionRef.current) => {

@@ -55,6 +55,28 @@ export function rebaseWritingAdmission(state: WritingAdmissionState, identity: W
   };
 }
 
+/**
+ * Advance the identity for a revision bump that keeps the same document
+ * instance/generation and the same mounted Writing editor (unchanged
+ * writingEpoch). That combination only occurs for the Writing editor's own
+ * accepted mutation, which already proved itself lossless via
+ * assessWritingMutation before it was admitted into the canonical document.
+ * Re-deriving unprovenWritingCapability here would force writingReadOnly true
+ * (and Writing's contenteditable false) for the instant it takes the
+ * independent full-document round-trip re-check to confirm the same result,
+ * blurring the editor on every keystroke. Any other identity change (a new
+ * instance, a reset generation, or a retired writingEpoch — Source edits,
+ * remote merges, undo/redo) still rebases to unproven.
+ */
+export function advanceWritingAdmissionIdentity(state: WritingAdmissionState, identity: WritingAdmissionIdentity): WritingAdmissionState {
+  if (sameWritingAdmissionIdentity(state.identity, identity)) return state;
+  const isWritingOwnRevision = state.identity.documentInstanceId === identity.documentInstanceId &&
+    state.identity.documentGeneration === identity.documentGeneration &&
+    state.identity.writingEpoch === identity.writingEpoch;
+  if (isWritingOwnRevision) return { ...state, identity };
+  return rebaseWritingAdmission(state, identity);
+}
+
 export type PendingWritingEnableAttempt = {
   id: number;
   expectedCanonicalText: string;
