@@ -120,12 +120,47 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await expect(checkbox).toBeVisible();
     await expect(checkbox).not.toBeChecked();
 
+    // The listener's debounce is longer than a single command dispatch. The
+    // empty task must remain lossless after that pause instead of falling back
+    // to Source before the user can type its description.
+    await page.waitForTimeout(350);
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+
     // Type task description
+    await taskItem.locator(".task-content").click();
+    await page.keyboard.press("End");
     await page.keyboard.type("Buy groceries");
 
     // Switch to Source mode to verify generated markdown
     await editor.switchMode("Source");
     await expect(editor.sourceEditor).toContainText("- [ ] Buy groceries");
+  });
+
+  test("Toolbar task creation stays in Writing while an empty task settles", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("Initial paragraph.\n", "note-toolbar-task", false);
+    await expect(editor.status).toHaveText("Ready");
+
+    await editor.writingEditor.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    await editor.writingTaskButton.click();
+
+    const taskItem = editor.writingEditor.locator('li[data-item-type="task"]');
+    await expect(taskItem).toBeVisible();
+    await page.waitForTimeout(350);
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+
+    await taskItem.locator(".task-content").click();
+    await page.keyboard.press("End");
+    await page.keyboard.type("Follow up");
+    await expect(taskItem).toContainText("Follow up");
+    await editor.switchMode("Source");
+    await expect(editor.sourceEditor).toContainText("- [ ] Follow up");
   });
 
   test("Writing mode asks before normalizing multiple trailing empty lines", async ({ page }) => {

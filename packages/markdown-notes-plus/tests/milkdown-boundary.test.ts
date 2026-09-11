@@ -19,6 +19,7 @@ import { taskOrdinalAtDocumentPosition, WritingControlRegistry } from "../src/ed
 import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/EditorKitBridge";
 import { configureWritingEditor, replaceAllWithOrigin, synchronizeWritingEditorValue, writingCommonmark, writingLinkSchema } from "../src/editor/WritingEditor";
 import { WRITING_CODEC_OPTIONS } from "../src/markdown/writingNormalization.ts";
+import { remarkWritingEmptyTaskListItem } from "../src/markdown/writingTaskCodec.ts";
 import { analyzeMarkdown, deleteTask } from "../src/markdown/analysis.ts";
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
 
@@ -34,7 +35,10 @@ function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark,
     if (handler) void handler();
   }
   const schema = new Schema({ nodes: Object.fromEntries(context.get(nodesCtx)), marks: Object.fromEntries(context.get(marksCtx)) });
-  const processor = remark().use(remarkGfm).data("settings", { ...WRITING_CODEC_OPTIONS, resourceLink });
+  const processor = remark()
+    .use(remarkGfm)
+    .use(remarkWritingEmptyTaskListItem)
+    .data("settings", { ...WRITING_CODEC_OPTIONS, resourceLink });
   const parse = ParserState.create!(schema, processor);
   const serialize = SerializerState.create!(schema, processor);
   context.inject(editorViewCtx, {} as never);
@@ -338,6 +342,57 @@ function serializeCommandThroughCanonical(source: string, command: WritingComman
   return canonical.text;
 }
 
+{
+  const { schema, parse, serialize } = createWritingEnvironment();
+  let state = EditorState.create({ schema, doc: parse("") });
+  let origin: unknown;
+  const view = {
+    get state() { return state; },
+    dispatch(transaction: typeof state.tr) {
+      origin = transaction.getMeta(WRITING_TRANSACTION_ORIGIN_META);
+      state = state.apply(transaction);
+    },
+    focus() {},
+    editable: true,
+  };
+
+  assert.equal(applyWritingCommand(view as never, "task"), true, "task toolbar command must create an empty task");
+  assert.deepEqual(origin, { kind: "command", command: "task" });
+  const emptyTask = serialize(state.doc);
+  assert.equal(emptyTask, "- [ ]\n", "an empty task must retain its checkbox spelling");
+  assert.equal(assessWritingMutation("", emptyTask, { kind: "command", command: "task" }).editable, true, "an empty task must remain inside Writing");
+
+  const reloaded = parse(emptyTask);
+  let taskItem: ProseNode | undefined;
+  reloaded.descendants((node) => {
+    if (node.type.name === "list_item") taskItem = node;
+    return true;
+  });
+  assert.equal(taskItem?.attrs.checked, false, "an empty task must reload as an unchecked task node");
+  assert.equal(serialize(reloaded), emptyTask, "empty task parse/serialize must be idempotent");
+
+  state = state.apply(state.tr.insertText("Buy groceries", state.selection.from));
+  assert.equal(serialize(state.doc), "- [ ] Buy groceries\n", "typing after task creation must keep the task marker");
+}
+
+{
+  const { schema, parse, serialize } = createWritingEnvironment();
+  const source = "/task";
+  let state = EditorState.create({ schema, doc: parse(source) });
+  state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 6)));
+  const view = {
+    get state() { return state; },
+    dispatch(transaction: typeof state.tr) {
+      state = state.apply(transaction);
+    },
+    focus() {},
+    editable: true,
+  };
+
+  assert.equal(applyWritingCommand(view as never, "task", { from: 1, to: 6, query: "task" }), true, "slash task command must create an empty task");
+  assert.equal(serialize(state.doc), "- [ ]\n", "slash task must use the same reversible empty-task spelling");
+}
+
 function serializeCommandThenImmediateUserEdit(source: string, command: "code" | "table" | "divider"): string {
   const { context, schema, parse, serialize } = createWritingEnvironment();
   let state = EditorState.create({ schema, doc: parse(source) });
@@ -393,6 +448,8 @@ for (const [command, source] of [["code", "snippet"], ["table", "table"], ["divi
 for (const [command, output] of [["task", "- [ ] task\r\n"], ["table", "| a | b |\r\n| --- | --- |\r\n| c | d |\r\n"], ["link", "[label](target)\r\n"], ["divider", "---\r\n"]] as const) {
   assert.equal(assessWritingMutation("plain", output, { kind: "command", command }).editable, false, `${command} CRLF output must be rejected`);
 }
+
+assert.equal(assessWritingMutation("plain", "-\n", { kind: "command", command: "task" }).editable, false, "a plain empty bullet must remain unsafe task output");
 
 function makeLinkView(source: string, selectionFrom: number, selectionTo = selectionFrom) {
   const { schema, parse, serialize } = createWritingEnvironment();

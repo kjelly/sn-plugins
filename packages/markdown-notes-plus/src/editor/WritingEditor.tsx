@@ -15,6 +15,7 @@ import { toggleMark } from "@milkdown/prose/commands";
 import { WritingControlRegistry, writingTaskIsHidden, type WritingControlState } from "./WritingTaskControls";
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingCapabilityProof, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
 import { scanWritingNormalization, WRITING_CODEC_OPTIONS, type WritingCodec } from "../markdown/writingNormalization.ts";
+import { writingEmptyTaskListItem } from "../markdown/writingTaskCodec.ts";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
@@ -711,6 +712,7 @@ export function configureWritingEditor(editor: Editor, {
     })
     .use(writingCommonmark)
     .use(gfm)
+    .use(writingEmptyTaskListItem)
     .use(history)
     .use(listener)
     .config((ctx) => {
