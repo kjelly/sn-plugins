@@ -6,7 +6,7 @@ import {
   type WritingCodec,
   type WritingNormalizationChange,
 } from "../markdown/writingNormalization.ts";
-import { scanMarkdownStructure } from "../markdown/structureScanner.ts";
+import { isInOpaqueFencedRange, scanMarkdownStructure, type MarkdownLine, type MarkdownRange } from "../markdown/structureScanner.ts";
 
 export const WRITING_TRANSACTION_ORIGIN_META = "markdown-notes-plus/writing-origin";
 export const WRITING_STRUCTURAL_CONTEXT_META = "markdown-notes-plus/writing-structural-context";
@@ -196,14 +196,15 @@ function hasSerializerOwnedSyntax(markdown: string): boolean {
   return hasGfmStructure(markdown) || hasHardBreak(markdown);
 }
 
-function hasUnsupportedTrailingWhitespace(markdown: string): boolean {
-  return markdown.split("\n").some((line) => {
-    const trailing = line.match(/[ \t]+$/)?.[0];
+function hasUnsupportedTrailingWhitespace(lines: MarkdownLine[], opaqueFencedRanges: MarkdownRange[]): boolean {
+  return lines.some((line) => {
+    if (isInOpaqueFencedRange(line.start, opaqueFencedRanges)) return false;
+    const trailing = line.text.match(/[ \t]+$/)?.[0];
     if (!trailing) return false;
     // Two or more spaces after visible text are CommonMark's hard-break
     // spelling. The live codec still has to prove the exact normalized form.
-    if (/^ {2,}$/.test(trailing) && line.length > trailing.length) return false;
-    return /(?:[^ \t\r\n])[ \t]+$/.test(line);
+    if (/^ {2,}$/.test(trailing) && line.text.length > trailing.length) return false;
+    return /(?:[^ \t\r\n])[ \t]+$/.test(line.text);
   });
 }
 
@@ -242,9 +243,6 @@ function stripTerminalLineEndings(markdown: string): string {
  */
 export function isWritingLexicallySafe(markdown: string): boolean {
   if (markdown.includes("\r")) return false;
-  if (hasUnsupportedTrailingWhitespace(markdown)) return false;
-  if (/(?:^|\n)[ \t]{0,3}(?:\+|\*)[ \t]+/m.test(markdown)) return false;
-  if (/(?:^|\n)[ \t]{0,3}(?:<|>\s*<|<\/?[A-Za-z])/m.test(markdown)) return false;
   // GFM structures and hard breaks are serializer-owned Writing syntax.
   // Initial documents still need the exact live codec proof in
   // assessWritingRoundTrip; later mutations are already serializer output.
@@ -252,7 +250,10 @@ export function isWritingLexicallySafe(markdown: string): boolean {
   // former is Source-only, but the latter is safe when the shared Markdown
   // scanner proves the item belongs to an active list container.
   const structure = scanMarkdownStructure(markdown);
-  if (structure.lines.some((line, index) => /^[ \t]{4,}(?:[-+*]|\d+[.)])[ \t]+/.test(line.text) && !structure.taskEligible[index])) return false;
+  if (hasUnsupportedTrailingWhitespace(structure.lines, structure.opaqueFencedRanges)) return false;
+  if (structure.lines.some((line) => !isInOpaqueFencedRange(line.start, structure.opaqueFencedRanges) && /^[ \t]{0,3}(?:\+|\*)[ \t]+/.test(line.text))) return false;
+  if (structure.lines.some((line) => !isInOpaqueFencedRange(line.start, structure.opaqueFencedRanges) && /^[ \t]{0,3}(?:<|>\s*<|<\/?[A-Za-z])/.test(line.text))) return false;
+  if (structure.lines.some((line, index) => !isInOpaqueFencedRange(line.start, structure.opaqueFencedRanges) && /^[ \t]{4,}(?:[-+*]|\d+[.)])[ \t]+/.test(line.text) && !structure.taskEligible[index])) return false;
   return true;
 }
 

@@ -12,6 +12,10 @@ export type MarkdownLine = { start: number; contentEnd: number; end: number; tex
 export type MarkdownRange = { from: number; to: number };
 export type MarkdownStructure = { lines: MarkdownLine[]; opaqueFencedRanges: MarkdownRange[]; taskEligible: boolean[] };
 
+export function isInOpaqueFencedRange(offset: number, ranges: MarkdownRange[]): boolean {
+  return ranges.some((range) => offset >= range.from && offset < range.to);
+}
+
 export function splitPhysicalLines(markdown: string): PhysicalLine[] {
   const lines: PhysicalLine[] = [];
   let start = 0;

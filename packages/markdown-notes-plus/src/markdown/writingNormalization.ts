@@ -1,4 +1,5 @@
 import type { Node as ProseNode } from "@milkdown/prose/model";
+import { isInOpaqueFencedRange, scanMarkdownStructure } from "./structureScanner.ts";
 
 /** The stringify settings shared by the Writing editor and its proof tests. */
 export const WRITING_CODEC_OPTIONS = {
@@ -33,7 +34,8 @@ export type WritingNormalizationScan = {
   unsupportedReason?: string;
 };
 
-type LineToken = { text: string; newline: string };
+type LineToken = { start: number; text: string; newline: string };
+type NormalizedLine = { text: string; opaque: boolean };
 
 const unsupported = {
   html: "Raw HTML",
@@ -52,11 +54,11 @@ function tokenizeLines(markdown: string): LineToken[] {
     const character = markdown[index];
     if (character !== "\r" && character !== "\n") continue;
     const newline = character === "\r" && markdown[index + 1] === "\n" ? "\r\n" : character;
-    lines.push({ text: markdown.slice(start, index), newline });
+    lines.push({ start, text: markdown.slice(start, index), newline });
     index += newline.length - 1;
     start = index + 1;
   }
-  if (start < markdown.length || lines.length === 0) lines.push({ text: markdown.slice(start), newline: "" });
+  if (start < markdown.length || lines.length === 0) lines.push({ start, text: markdown.slice(start), newline: "" });
   return lines;
 }
 
@@ -97,13 +99,18 @@ function unsupportedScanReason(reason: string): string {
  */
 export function scanWritingNormalization(markdown: string): WritingNormalizationScan {
   const sourceLines = tokenizeLines(markdown);
+  const structure = scanMarkdownStructure(markdown);
   const changes = new Map<WritingNormalizationCategory, number>();
-  const lines: string[] = [];
+  const lines: NormalizedLine[] = [];
   for (let index = 0; index < sourceLines.length; index += 1) {
-    const line = sourceLines[index].text;
-    if (isRawHtml(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) };
-    if (isReferenceSyntax(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) };
-    if (isUnknownExtension(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) };
+    const sourceLine = sourceLines[index];
+    const line = sourceLine.text;
+    const opaque = isInOpaqueFencedRange(sourceLine.start, structure.opaqueFencedRanges);
+    if (!opaque) {
+      if (isRawHtml(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) };
+      if (isReferenceSyntax(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) };
+      if (isUnknownExtension(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) };
+    }
 
     // Tables and fenced code blocks are first-class GFM nodes in the Writing
     // preset. Their exact spelling is admitted later only when the live
@@ -111,28 +118,31 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
     // normalized result.
 
     let normalized = line;
-    const marker = listMarker(normalized);
-    if (marker?.marker === "*") {
-      normalized = `${normalized.slice(0, marker.prefixLength)}-${normalized.slice(marker.prefixLength + 1)}`;
-      addChange(changes, "bullet");
-    } else if (marker?.marker === "+") {
-      return { markdown, changes: [], unsupportedReason: unsupportedScanReason("plus bullets") };
+    if (!opaque) {
+      const marker = listMarker(normalized);
+      if (marker?.marker === "*") {
+        normalized = `${normalized.slice(0, marker.prefixLength)}-${normalized.slice(marker.prefixLength + 1)}`;
+        addChange(changes, "bullet");
+      } else if (marker?.marker === "+") {
+        return { markdown, changes: [], unsupportedReason: unsupportedScanReason("plus bullets") };
+      }
     }
-    if (normalized.endsWith(" ") && !normalized.endsWith("  ") && !normalized.endsWith("\\ ")) {
+    if (!opaque && normalized.endsWith(" ") && !normalized.endsWith("  ") && !normalized.endsWith("\\ ")) {
       normalized = normalized.slice(0, -1);
       addChange(changes, "trailing-space");
     }
-    lines.push(normalized);
-    const newline = sourceLines[index].newline;
+    lines.push({ text: normalized, opaque });
+    const newline = sourceLine.newline;
     if (newline !== "" && newline !== "\n") addChange(changes, "line-ending");
   }
 
-  // Empty lines are structural whitespace. Collapse only truly empty lines;
-  // a line containing a tab or spaces is intentionally retained.
-  const compacted: string[] = [];
+  // Empty lines are structural whitespace. Collapse only truly empty lines
+  // outside fenced code; opaque fenced content must remain byte-for-byte
+  // stable until the live codec proves an explicit normalization.
+  const compacted: NormalizedLine[] = [];
   let emptyRun = 0;
   for (const line of lines) {
-    if (line === "") {
+    if (line.text === "" && !line.opaque) {
       emptyRun += 1;
       if (emptyRun > 1) addChange(changes, "blank-line");
       if (emptyRun > 1) continue;
@@ -144,23 +154,23 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
 
   // Milkdown emits a separating blank line after an ATX heading before the
   // next block. Add it only at this verified heading boundary.
-  const spaced: string[] = [];
+  const spaced: NormalizedLine[] = [];
   for (const line of compacted) {
     const previous = spaced[spaced.length - 1];
-    if (previous !== undefined && previous !== "" && isAtxHeading(previous) && line !== "") {
-      spaced.push("");
+    if (previous !== undefined && !previous.opaque && previous.text !== "" && isAtxHeading(previous.text) && line.text !== "") {
+      spaced.push({ text: "", opaque: false });
       addChange(changes, "blank-line");
     }
     spaced.push(line);
   }
 
-  while (spaced[0] === "") {
+  while (spaced.length > 0 && spaced[0].text === "" && !spaced[0].opaque) {
     spaced.shift();
     addChange(changes, "blank-line");
   }
-  while (spaced.length > 0 && spaced[spaced.length - 1] === "") spaced.pop();
+  while (spaced.length > 0 && spaced[spaced.length - 1].text === "" && !spaced[spaced.length - 1].opaque) spaced.pop();
 
-  let normalizedMarkdown = spaced.join("\n");
+  let normalizedMarkdown = spaced.map((line) => line.text).join("\n");
   if (normalizedMarkdown !== "" && !normalizedMarkdown.endsWith("\n")) {
     normalizedMarkdown += "\n";
     addChange(changes, "final-newline");

@@ -18,7 +18,7 @@ import { writingCommandPlan, type WritingCommandName } from "../src/editor/Writi
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry } from "../src/editor/WritingTaskControls";
 import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/EditorKitBridge";
 import { configureWritingEditor, replaceAllWithOrigin, synchronizeWritingEditorValue, writingCommonmark, writingLinkSchema } from "../src/editor/WritingEditor";
-import { WRITING_CODEC_OPTIONS } from "../src/markdown/writingNormalization.ts";
+import { scanWritingNormalization, WRITING_CODEC_OPTIONS } from "../src/markdown/writingNormalization.ts";
 import { remarkWritingEmptyTaskListItem } from "../src/markdown/writingTaskCodec.ts";
 import { analyzeMarkdown, deleteTask } from "../src/markdown/analysis.ts";
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
@@ -207,6 +207,48 @@ testWritingEditorPresetLifecycle();
   const nestedLists = "- Process\n  - Focus\n    - Rehearse\n      - Pressure\n        - Execute\n";
   assert.equal(isWritingLexicallySafe(nestedLists), true, "valid deeply nested lists must remain editable in Writing mode");
   assert.equal(isWritingLexicallySafe("    - code-like content\n"), false, "a root-level four-space list marker remains protected as indented code");
+}
+
+{
+  const fencedLiteral = [
+    "```text",
+    "+ 每次至少 1 次 Thread",
+    "* literal marker",
+    "<div>literal HTML</div>",
+    "[reference]: https://example.test",
+    "",
+    "",
+    "# literal heading",
+    "literal word",
+    "```",
+    "",
+  ].join("\n");
+  const { parse, serialize } = createWritingEnvironment();
+  const serialized = serialize(parse(fencedLiteral));
+  assert.deepEqual(scanWritingNormalization(fencedLiteral), { markdown: fencedLiteral, changes: [] }, "fenced literals must not be normalized as Markdown syntax");
+  assert.equal(isWritingLexicallySafe(fencedLiteral), true, "fenced plus text must be lexically safe");
+  assert.equal(assessWritingRoundTrip(fencedLiteral, serialized, { parse, serialize }).kind, "lossless", "complete fenced plus text must be admitted to Writing");
+
+  const fencedThenList = `${fencedLiteral}+ outside\n`;
+  assert.equal(isWritingLexicallySafe(fencedThenList), false, "a plus list after the closing fence must remain protected");
+  assert.equal(
+    assessWritingRoundTrip(fencedThenList, serialize(parse(fencedThenList)), { parse, serialize }).reason,
+    "plus bullets are not supported in Writing mode; use Source mode.",
+    "a plus list after the closing fence must retain the Source-only reason",
+  );
+
+  const unclosedFence = "```text\n+ literal\n";
+  assert.equal(assessWritingRoundTrip(unclosedFence, serialize(parse(unclosedFence)), { parse, serialize }).kind, "unsupported", "an unclosed fence must remain Source-only");
+
+  const crlfFenced = ["😀 prefix", "```text", "+ literal", "```", ""].join("\r\n");
+  const crlfInsideScan = scanWritingNormalization(crlfFenced);
+  assert.equal(crlfInsideScan.unsupportedReason, undefined, "CRLF fenced plus text must not be mistaken for a plus list after an astral prefix");
+  const crlfOutside = `${crlfFenced}+ outside\r\n`;
+  assert.equal(
+    scanWritingNormalization(crlfOutside).unsupportedReason,
+    "plus bullets are not supported in Writing mode; use Source mode.",
+    "a CRLF plus list after the closing fence must retain the Source-only reason",
+  );
 }
 
 {
