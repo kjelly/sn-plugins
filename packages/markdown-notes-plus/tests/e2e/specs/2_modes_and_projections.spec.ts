@@ -108,10 +108,12 @@ test.describe("Modes and Projections", () => {
     // Edit only Markdown formatting (remove the blank line and final newline).
     await editor.selectAllAndTypeInSource("# Dynamic Note\nInitial paragraph.");
 
-    // Admission remains Source-only until the user confirms normalization.
+    // Whitespace-only normalization is reviewed in place without bouncing
+    // the user back out of Writing.
     await editor.switchMode("Writing");
-    await expect(editor.sourcePane).toBeVisible();
-    await expect(editor.writingPane).toBeHidden();
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
     const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
     await expect(dialog).toBeVisible();
 

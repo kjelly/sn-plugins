@@ -64,6 +64,27 @@ test.describe("Writing Tools & Lossless Guard", () => {
     expect(savedTexts.some((text) => text?.includes("Initial paragraph. first second"))).toBe(true);
   });
 
+  test("Enter keeps an editable note in Writing mode", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("Paragraph with terminal newline.\n", "note-writing-enter", false);
+    await expect(editor.status).toHaveText("Ready");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+
+    await editor.writingEditor.locator("p").click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(350);
+
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+    await expect(editor.writingEditor.locator("p")).toHaveCount(2);
+    await page.keyboard.type("Second paragraph");
+    await expect(editor.writingEditor.locator("p").last()).toHaveText("Second paragraph");
+    await expect.poll(() => host.getLatestSavedText()).toContain("Second paragraph");
+  });
+
   test("Writing mode keeps raw HTML Source-only and preserves the source", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
@@ -163,7 +184,39 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await expect(editor.sourceEditor).toContainText("- [ ] Follow up");
   });
 
-  test("Writing mode asks before normalizing multiple trailing empty lines", async ({ page }) => {
+  test("Toolbar creates consecutive tasks with stable dash markers", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("First task\n\nSecond task\n", "note-toolbar-consecutive-tasks", false);
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+
+    await editor.writingEditor.getByText("First task", { exact: true }).click();
+    await editor.writingTaskButton.click();
+    await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toHaveCount(1);
+
+    await editor.writingEditor.getByText("Second task", { exact: true }).click();
+    await editor.writingTaskButton.click();
+    await page.waitForTimeout(350);
+
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+    await expect(editor.writingEditor.locator('li[data-item-type="task"]')).toHaveCount(2);
+    await editor.writingEditor.getByText("Second task", { exact: true }).click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" updated");
+    await page.waitForTimeout(350);
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+
+    await editor.switchMode("Source");
+    const source = await editor.getSourceText();
+    expect(source).toContain("- [ ] First task");
+    expect(source).toContain("- [ ] Second task updated");
+    expect(source).not.toContain("* [ ]");
+  });
+
+  test("Whitespace normalization does not bounce Writing back to Source", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
@@ -172,8 +225,16 @@ test.describe("Writing Tools & Lossless Guard", () => {
 
     const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "留在 Source" }).click();
-    await expect(editor.sourcePane).toBeVisible();
+    await expect(dialog).toContainText("blank-line");
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
+
+    await dialog.getByRole("button", { name: "套用並進入 Writing" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
   });
 
   test("Writing mode admits a codec-proven Markdown hard break", async ({ page }) => {

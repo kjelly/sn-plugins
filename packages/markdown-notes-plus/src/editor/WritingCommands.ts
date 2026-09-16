@@ -176,6 +176,27 @@ function replaceCurrentBlock(view: WritingView, node: ProseNode, command: Writin
   return true;
 }
 
+function mergeAdjacentBulletLists(transaction: WritingTransaction, targetPos: number): number {
+  const boundaries: number[] = [];
+  transaction.doc.descendants((node, pos, parent, index) => {
+    if (
+      node.type.name === "bullet_list" &&
+      parent !== null &&
+      index > 0 &&
+      parent.child(index - 1).type === node.type
+    ) boundaries.push(pos);
+    return true;
+  });
+
+  // Joining from the end keeps the remaining boundary positions stable.
+  for (const boundary of boundaries.sort((left, right) => right - left)) {
+    const stepIndex = transaction.steps.length;
+    transaction.join(boundary);
+    targetPos = transaction.steps[stepIndex].getMap().map(targetPos, 1);
+  }
+  return targetPos;
+}
+
 function applyTask(view: WritingView, command: WritingCommandName): boolean {
   const { doc, selection, schema } = view.state;
   const { from, to } = selection;
@@ -204,7 +225,7 @@ function applyTask(view: WritingView, command: WritingCommandName): boolean {
     const list = schema.nodes.bullet_list.create(null, listItem);
     tr.replaceWith(block.from, block.to, list);
     if (tr.docChanged) {
-      const targetPos = Math.min(block.from + 2, tr.doc.content.size);
+      const targetPos = Math.min(mergeAdjacentBulletLists(tr, block.from + 2), tr.doc.content.size);
       try {
         const resolved = tr.doc.resolve(targetPos);
         tr.setSelection(TextSelection.near(resolved));

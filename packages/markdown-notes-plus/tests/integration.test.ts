@@ -22,7 +22,7 @@ import {
 } from "../src/markdown/analysis.ts";
 import { reconcileSectionAnchor } from "../src/document/SectionAnchor.ts";
 import { AppDocumentLifecycle } from "../src/app/AppDocumentLifecycle.ts";
-import { modeAfterRequest } from "../src/app/AppModeTransition.ts";
+import { canReviewWritingNormalizationInPlace, modeAfterRequest } from "../src/app/AppModeTransition.ts";
 import { findMarkdownLinkAtOffset } from "../src/editor/SourceLinks.ts";
 import type { WritingCapabilityProof } from "../src/editor/WritingEditorLifecycle.ts";
 
@@ -150,6 +150,25 @@ Deno.test("App mode requests stay in Source while a Writing fallback is present"
   assertEquals(modeAfterRequest("writing", false), "writing");
   assertEquals(modeAfterRequest("split", false), "split");
   assertEquals(modeAfterRequest("kanban", false), "kanban");
+});
+
+Deno.test("Writing reviews whitespace-only normalization without leaving the mode", () => {
+  assert(canReviewWritingNormalizationInPlace({
+    kind: "normalizable",
+    editable: false,
+    proofSource: "text\n\n\n",
+    normalizedMarkdown: "text\n",
+    changes: [{ category: "blank-line", count: 2 }],
+    reason: "Writing needs format normalization before editing.",
+  }), "blank-line normalization should stay visible in Writing");
+  assert(!canReviewWritingNormalizationInPlace({
+    kind: "normalizable",
+    editable: false,
+    proofSource: "---\n",
+    normalizedMarkdown: "***\n",
+    changes: [{ category: "gfm-structure", count: 1 }],
+    reason: "Writing needs format normalization before editing.",
+  }), "GFM structure normalization should retain the Source-only review flow");
 });
 
 Deno.test("App routes every mode request through the fallback-aware transition", async () => {
