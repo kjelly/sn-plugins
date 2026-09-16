@@ -1,15 +1,40 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
-import { EDITOR_CSP_POLICY } from "./src/security/csp";
+import { EDITOR_CSP_POLICY, MERMAID_RENDERER_CSP_POLICY } from "./src/security/csp";
 
-const editorCspMeta = `<meta http-equiv="Content-Security-Policy" content="${EDITOR_CSP_POLICY}">`;
-
-const editorCspMetaPlugin = {
-  name: "editor-csp-meta",
+const cspPlugin: Plugin = {
+  name: "editor-csp",
   transformIndexHtml(html: string, context: { filename?: string }) {
-    if (context.filename && !context.filename.endsWith("/index.html") && context.filename !== "index.html") return html;
-    return html.replace("<head>", `<head>\n    ${editorCspMeta}`);
+    const filename = context.filename ?? "";
+    const policy = filename.endsWith("/mermaid-renderer.html")
+      ? MERMAID_RENDERER_CSP_POLICY
+      : filename.endsWith("/index.html") || filename === "index.html"
+      ? EDITOR_CSP_POLICY
+      : undefined;
+    if (!policy) return html;
+    const meta = `<meta http-equiv="Content-Security-Policy" content="${policy}">`;
+    return html.replace("<head>", `<head>\n    ${meta}`);
+  },
+  configureServer(server) {
+    server.middlewares.use((request, response, next) => {
+      const pathname = request.url?.split("?")[0];
+      response.setHeader(
+        "Content-Security-Policy",
+        pathname === "/mermaid-renderer.html" ? MERMAID_RENDERER_CSP_POLICY : EDITOR_CSP_POLICY,
+      );
+      next();
+    });
+  },
+  configurePreviewServer(server) {
+    server.middlewares.use((request, response, next) => {
+      const pathname = request.url?.split("?")[0];
+      response.setHeader(
+        "Content-Security-Policy",
+        pathname === "/mermaid-renderer.html" ? MERMAID_RENDERER_CSP_POLICY : EDITOR_CSP_POLICY,
+      );
+      next();
+    });
   },
 };
 
@@ -71,13 +96,12 @@ export default defineConfig({
   root: "src",
   publicDir: resolve(__dirname, "public"),
   base: "./",
-  plugins: [react(), editorCspMetaPlugin, standardNotesWebE2EManifestPlugin()],
+  plugins: [react(), cspPlugin, standardNotesWebE2EManifestPlugin()],
   server: {
     cors: true,
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Private-Network": "true",
-      "Content-Security-Policy": EDITOR_CSP_POLICY,
     },
   },
   preview: {
@@ -85,7 +109,6 @@ export default defineConfig({
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Private-Network": "true",
-      "Content-Security-Policy": EDITOR_CSP_POLICY,
     },
   },
   build: {
@@ -94,6 +117,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, "src/index.html"),
+        mermaidRenderer: resolve(__dirname, "src/mermaid-renderer.html"),
         testHost: resolve(__dirname, "src/test-host.html"),
         mobileProtocolHost: resolve(__dirname, "src/mobile-protocol-host.html"),
       },

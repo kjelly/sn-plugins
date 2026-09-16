@@ -1217,6 +1217,40 @@ blockquote.callout-type-caution::before {
   white-space: pre-wrap !important;
   word-break: break-all;
 }
+.mermaid-preview {
+  padding: 14px;
+  overflow: auto;
+  text-align: center;
+  background: var(--editor-bg);
+}
+.mermaid-preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.mermaid-preview-description,
+.mermaid-preview-feedback {
+  margin: 8px 12px;
+  color: var(--editor-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.mermaid-preview-description {
+  text-align: center;
+}
+.mermaid-preview-feedback.is-error {
+  color: #c94c4c;
+}
+.mermaid-render-frame {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  pointer-events: none;
+}
 
 /* Navigation & Command Palette Modal */
 .palette-backdrop {

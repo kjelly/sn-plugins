@@ -14,8 +14,8 @@
   "scripts": {
     "build": "mise exec -- vite build",
     "lint": "mise exec -- deno lint src tests",
-    "test": "mise exec -- deno test --allow-read --allow-write --allow-net --allow-run --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/smart-paste.test.ts tests/toolbar-wheel.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts tests/extension-manifest.test.ts tests/apk-downloader.test.ts tests/e2e-harness.test.ts tests/vite-manifest-serving.test.ts tests/kanban-model.test.ts tests/kanban-move.test.ts",
-    "test:unit": "mise exec -- deno test --allow-read --allow-write --allow-net --allow-run --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/smart-paste.test.ts tests/toolbar-wheel.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts tests/extension-manifest.test.ts tests/apk-downloader.test.ts tests/e2e-harness.test.ts tests/vite-manifest-serving.test.ts tests/kanban-model.test.ts tests/kanban-move.test.ts",
+    "test": "mise exec -- deno test --allow-read --allow-write --allow-net --allow-run --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/mermaid-renderer.test.ts tests/smart-paste.test.ts tests/toolbar-wheel.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts tests/extension-manifest.test.ts tests/apk-downloader.test.ts tests/e2e-harness.test.ts tests/vite-manifest-serving.test.ts tests/kanban-model.test.ts tests/kanban-move.test.ts",
+    "test:unit": "mise exec -- deno test --allow-read --allow-write --allow-net --allow-run --no-prompt tests/index.test.ts tests/review-diagnostics.test.ts tests/template-engine.test.ts tests/callouts-and-codeblocks.test.ts tests/mermaid-renderer.test.ts tests/smart-paste.test.ts tests/toolbar-wheel.test.ts tests/source-storage-audit.test.ts tests/visual-viewport.test.ts tests/outline-pointer-drag.test.ts tests/recurring-tasks.test.ts tests/extension-manifest.test.ts tests/apk-downloader.test.ts tests/e2e-harness.test.ts tests/vite-manifest-serving.test.ts tests/kanban-model.test.ts tests/kanban-move.test.ts",
     "test:integration": "mise exec -- deno test --allow-read --no-prompt tests/integration.test.ts && mise exec -- node tests/run-source-history-boundary.mjs && mise exec -- node tests/run-milkdown-boundary.mjs",
     "test:e2e": "npm run build && E2E_PROD=1 mise exec -- playwright test --project=chromium",
     "test:e2e:standardnotes-web": "npm run build && E2E_PROD=1 E2E_PORT=5173 mise exec -- playwright test tests/e2e/specs/14_standardnotes_web.spec.ts --project=chromium",
@@ -59,6 +59,7 @@
     "@standardnotes/editor-kit": "github:standardnotes/editor-kit#626d7a6e63d4ada48be36676c466fea46d7709d3",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
+    "mermaid": "11.17.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "remark": "15.0.1",

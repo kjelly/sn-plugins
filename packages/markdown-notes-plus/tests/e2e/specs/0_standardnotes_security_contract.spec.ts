@@ -21,7 +21,12 @@ interface SecurityAudit {
 function isEditorFrameUrl(url: string): boolean {
   try {
     const pathname = new URL(url).pathname;
-    return pathname.endsWith("/index.html") || pathname.includes("/assets/") || pathname.endsWith("/main.tsx");
+    return (
+      pathname.endsWith("/index.html") ||
+      pathname.endsWith("/mermaid-renderer.html") ||
+      pathname.includes("/assets/") ||
+      pathname.endsWith("/main.tsx")
+    );
   } catch {
     return false;
   }
@@ -367,6 +372,35 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     await expect(editor.sourcePane).toBeVisible();
     await expect(editor.sourceEditor).toContainText("const securityContract = true;");
 
+    await expectSecurityAuditClean(audit);
+  });
+
+  test("P0: Mermaid lazy rendering stays inside CSP and an inert image boundary", async ({ page }) => {
+    const audit = await setupSecurityAuditor(page);
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    const source = "```mermaid\nflowchart LR\n  Source --> Preview\n```\n";
+
+    await host.goto(source, "sec-mermaid-preview", false);
+    const normalizationDialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    if (await normalizationDialog.isVisible().catch(() => false)) {
+      await normalizationDialog.getByRole("button", { name: "套用並進入 Writing" }).click();
+    }
+
+    const block = editor.writingEditor.locator('.code-block-wrapper[data-language="mermaid"]');
+    await block.getByRole("button", { name: "Render Mermaid preview" }).click();
+    const image = block.locator("img.mermaid-preview-image");
+    await expect(image).toBeVisible({ timeout: 15_000 });
+
+    const renderedImage = await image.evaluate(async (element) => {
+      const response = await fetch((element as HTMLImageElement).src);
+      return {
+        contentType: response.headers.get("content-type"),
+        bytes: Array.from(new Uint8Array(await response.arrayBuffer()).slice(0, 8)),
+      };
+    });
+    expect(renderedImage.contentType).toContain("image/png");
+    expect(renderedImage.bytes).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     await expectSecurityAuditClean(audit);
   });
 

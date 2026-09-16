@@ -129,10 +129,8 @@ function testWritingEditorPresetLifecycle(): void {
   const registeredEditor = configureWritingEditor(editor, {
     host: {} as HTMLDivElement,
     value: "",
-    valueRef: { current: "" },
     readOnlyRef,
     controls: new WritingControlRegistry(),
-    onDeleteTaskRef: { current: () => undefined },
     editability: { readOnlyRef, capabilityRef: { current: false } },
     onMarkdownUpdated: () => undefined,
   });
@@ -228,6 +226,11 @@ testWritingEditorPresetLifecycle();
   assert.deepEqual(scanWritingNormalization(fencedLiteral), { markdown: fencedLiteral, changes: [] }, "fenced literals must not be normalized as Markdown syntax");
   assert.equal(isWritingLexicallySafe(fencedLiteral), true, "fenced plus text must be lexically safe");
   assert.equal(assessWritingRoundTrip(fencedLiteral, serialized, { parse, serialize }).kind, "lossless", "complete fenced plus text must be admitted to Writing");
+
+  const mermaidFence = "```mermaid\nflowchart LR\n  Source --> Writing\n```\n";
+  const mermaidSerialized = serialize(parse(mermaidFence));
+  assert.equal(mermaidSerialized, mermaidFence, "Mermaid fence language and source must survive the Writing codec exactly");
+  assert.equal(assessWritingRoundTrip(mermaidFence, mermaidSerialized, { parse, serialize }).kind, "lossless", "Mermaid fences must use the existing lossless Writing boundary");
 
   const fencedThenList = `${fencedLiteral}+ outside\n`;
   assert.equal(isWritingLexicallySafe(fencedThenList), false, "a plus list after the closing fence must remain protected");
@@ -415,6 +418,36 @@ function serializeCommandThroughCanonical(source: string, command: WritingComman
 
   state = state.apply(state.tr.insertText("Buy groceries", state.selection.from));
   assert.equal(serialize(state.doc), "- [ ] Buy groceries\n", "typing after task creation must keep the task marker");
+}
+
+{
+  const { schema, parse, serialize } = createWritingEnvironment();
+  let state = EditorState.create({ schema, doc: parse("First task\n\nSecond task\n") });
+  const view = {
+    get state() { return state; },
+    dispatch(transaction: typeof state.tr) { state = state.apply(transaction); },
+    focus() {},
+    editable: true,
+  };
+
+  const selectParagraph = (text: string) => {
+    let position: number | undefined;
+    state.doc.descendants((node, pos) => {
+      if (position === undefined && node.type.name === "paragraph" && node.textContent === text) position = pos + 1;
+      return position === undefined;
+    });
+    assert.notEqual(position, undefined, `${text} paragraph must exist`);
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, position!)));
+  };
+
+  selectParagraph("First task");
+  assert.equal(applyWritingCommand(view as never, "task"), true, "first task command must dispatch");
+  selectParagraph("Second task");
+  assert.equal(applyWritingCommand(view as never, "task"), true, "second task command must dispatch");
+
+  const consecutiveTasks = serialize(state.doc);
+  assert.equal(consecutiveTasks, "- [ ] First task\n- [ ] Second task\n", "adjacent toolbar tasks must share one dash-marked list");
+  assert.equal(assessWritingMutation("- [ ] First task\n", consecutiveTasks, { kind: "command", command: "task" }).editable, true, "the second task must stay inside Writing");
 }
 
 {
