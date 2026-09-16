@@ -1,6 +1,8 @@
 # Markdown Notes+
 
 > 完整功能說明手冊請見 [docs/user-guide.md](docs/user-guide.md)。
+> Writing mode 的穩定性契約與回歸矩陣請見
+> [docs/superpowers/plans/2026-09-16-writing-mode-stability-contract.md](docs/superpowers/plans/2026-09-16-writing-mode-stability-contract.md)。
 
 This package is a Vite-built React Standard Notes editor. The runtime entry is
 `src/main.tsx`; `EditorKitBridge` is the only package-owned host transport/save,

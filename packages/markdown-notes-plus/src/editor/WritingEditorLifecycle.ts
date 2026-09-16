@@ -1,8 +1,10 @@
 import type { WritingCommandName } from "./WritingCommandPlan.ts";
 import type { Transaction } from "@milkdown/prose/state";
+import type { Node as ProseNode } from "@milkdown/prose/model";
 import {
   proveWritingNormalization,
   scanWritingNormalization,
+  writingAstEquivalent,
   type WritingCodec,
   type WritingNormalizationChange,
 } from "../markdown/writingNormalization.ts";
@@ -117,6 +119,11 @@ export type WritingCapability =
   | { kind: "unsupported"; editable: false; reason: string };
 
 export type WritingRoundTripResult = WritingCapability;
+
+export type WritingMutationCodecProof = {
+  codec: WritingCodec;
+  document: ProseNode;
+};
 
 /** Identifies the document/editor instance that produced a capability proof. */
 export type WritingCapabilityProof = {
@@ -325,24 +332,43 @@ export function assessWritingMutation(
   next: string,
   origin: WritingMutationOrigin = "user",
   structuralContext?: WritingStructuralContext,
+  codecProof?: WritingMutationCodecProof,
 ): WritingRoundTripResult {
   // Structural command proofs must not admit serializer output containing CR
   // or CRLF. The only line-ending exception is LF-only blank-note materialization.
   if (next.includes("\r")) return unsupportedCapability("Writing changed line endings; use Source mode for exact Markdown.");
+  // The text-only gate deliberately rejects ambiguous source spellings. A
+  // live local transaction may additionally prove that its serializer output
+  // reparses to the exact editor AST and is byte-stable when serialized again.
+  let codecProven: boolean | undefined;
+  const hasCodecProof = () => {
+    if (codecProven !== undefined) return codecProven;
+    if (!codecProof) return (codecProven = false);
+    try {
+      const reparsed = codecProof.codec.parse(next);
+      return (codecProven = reparsed !== undefined &&
+        writingAstEquivalent(codecProof.document, reparsed) &&
+        codecProof.codec.serialize(reparsed) === next);
+    } catch {
+      return (codecProven = false);
+    }
+  };
   const safe = origin !== "user"
     ? origin.kind === "external-replace" ? false : isCommandOutputSafe(origin.command, next)
-    : isWritingLexicallySafe(next) || (structuralContext !== undefined && preservesWritingStructuralContext(structuralContext, next));
+    : isWritingLexicallySafe(next) ||
+      (structuralContext !== undefined && preservesWritingStructuralContext(structuralContext, next)) ||
+      hasCodecProof();
   if (!safe) return unsupportedCapability("This edit cannot be preserved exactly in Writing; use Source mode.");
   // A structural command is allowed to introduce the line breaks required by
   // its output (for example a new table in a one-line paragraph). Once the
   // source already contains line endings, preserve their exact kind too.
   // Milkdown materializes an empty document as a single LF-terminated
-  // paragraph on the first real edit. That one transition is safe; a generic
-  // none -> LF relaxation would admit serializer-induced line-ending changes
-  // for non-empty notes.
+  // paragraph on the first real edit. That transition is safe; other none ->
+  // LF changes require the live AST/idempotence proof above rather than a
+  // generic line-ending relaxation.
   const isEmptyInitialMaterialization = previous === "" && newlineKind(next) === "lf";
   if ((origin === "user" && !isEmptyInitialMaterialization) || newlineKind(previous) !== "none") {
-    if (newlineKind(previous) !== newlineKind(next)) return unsupportedCapability("Writing changed line endings; use Source mode for exact Markdown.");
+    if (newlineKind(previous) !== newlineKind(next) && !hasCodecProof()) return unsupportedCapability("Writing changed line endings; use Source mode for exact Markdown.");
   }
   return losslessCapability();
 }

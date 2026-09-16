@@ -452,6 +452,30 @@ function serializeCommandThroughCanonical(source: string, command: WritingComman
 
 {
   const { schema, parse, serialize } = createWritingEnvironment();
+  const legacyMarkdown = "- [ ] First task\n\n* [ ] Second task\n\nParagraph text\n";
+  let state = EditorState.create({ schema, doc: parse(legacyMarkdown) });
+  const previous = serialize(state.doc);
+  let paragraphPosition: number | undefined;
+  state.doc.descendants((node, position) => {
+    if (paragraphPosition === undefined && node.type.name === "paragraph" && node.textContent === "Paragraph text") {
+      paragraphPosition = position + 4;
+    }
+    return paragraphPosition === undefined;
+  });
+  assert.notEqual(paragraphPosition, undefined, "legacy task note paragraph must exist");
+  state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, paragraphPosition!)));
+  assert.equal(splitBlock(state, (transaction) => { state = state.apply(transaction); }), true, "Enter must split the paragraph");
+
+  const markdownAfterEnter = serialize(state.doc);
+  assert.equal(assessWritingMutation(previous, markdownAfterEnter).editable, false, "the conservative text-only gate must not trust a legacy star list");
+  assert.equal(assessWritingMutation(previous, markdownAfterEnter, "user", undefined, {
+    codec: { parse, serialize },
+    document: state.doc,
+  }).editable, true, "an AST-equivalent serializer result must keep Enter inside Writing");
+}
+
+{
+  const { schema, parse, serialize } = createWritingEnvironment();
   const source = "/task";
   let state = EditorState.create({ schema, doc: parse(source) });
   state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 6)));

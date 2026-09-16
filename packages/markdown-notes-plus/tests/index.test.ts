@@ -45,8 +45,10 @@ import { EditorKitLifecycle } from "../src/standardnotes/EditorKitLifecycle.ts";
 import { projectMindmapMarkdown } from "../src/markdown/analysis.ts";
 import { WritingControlRegistry, writingControlIsDisabled, writingTaskIsHidden } from "../src/editor/WritingTaskControls.ts";
 import { isWritingLinkShortcut } from "../src/editor/WritingShortcuts.ts";
+import { writingEnterBoundaryWhitespace } from "../src/editor/WritingSmartKeys.ts";
 import { WRITING_COMMANDS, writingCommandPlan } from "../src/editor/WritingCommandPlan.ts";
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
+import { scanWritingNormalization } from "../src/markdown/writingNormalization.ts";
 import {
   armWritingEnableAttempt,
   createWritingEnableAttemptState,
@@ -668,6 +670,18 @@ Deno.test("Writing lifecycle distinguishes initial and mutation losslessness rea
   });
 });
 
+Deno.test("Writing normalization rejects unsupported extensions outside fenced code", () => {
+  for (const [source, reason] of [
+    [":::note\ncontent\n:::\n", "unsupported Markdown extension are not supported in Writing mode; use Source mode."],
+    ["::::custom\ncontent\n::::\n", "unsupported Markdown extension are not supported in Writing mode; use Source mode."],
+    ["[^note]: footnote text\n", "reference links are not supported in Writing mode; use Source mode."],
+    ["text ??highlight??\n", "unsupported Markdown extension are not supported in Writing mode; use Source mode."],
+  ]) {
+    assertEquals(scanWritingNormalization(source).unsupportedReason, reason);
+  }
+  assertEquals(scanWritingNormalization("```text\n:::literal\n```\n").unsupportedReason, undefined);
+});
+
 Deno.test("normalizes only GFM-confirmed bare HTTP(S) URLs with exact UTF-16 changes", () => {
   const source = "😀 https://one.test/a, [two](https://two.test) <https://three.test> https://四.test/路.";
   const result = normalizeBareUrls(source);
@@ -804,6 +818,14 @@ Deno.test("Writing exposes link command membership and local Mod-k recognition",
   assert(isWritingLinkShortcut({ key: "k", ctrlKey: true, metaKey: false }));
   assert(isWritingLinkShortcut({ key: "K", ctrlKey: false, metaKey: true }));
   assert(!isWritingLinkShortcut({ key: "k", ctrlKey: false, metaKey: false }));
+});
+
+Deno.test("Writing Enter removes only non-code boundary whitespace", () => {
+  assertEquals(writingEnterBoundaryWhitespace("paragraph ", "paragraph"), " ");
+  assertEquals(writingEnterBoundaryWhitespace("paragraph\t ", "paragraph"), "\t ");
+  assertEquals(writingEnterBoundaryWhitespace("paragraph", "paragraph"), "");
+  assertEquals(writingEnterBoundaryWhitespace("code  ", "code_block"), "");
+  assertEquals(writingEnterBoundaryWhitespace("code\t", "fence"), "");
 });
 
 Deno.test("toolbar/history mutations use the same canonical save notification path", () => {

@@ -1,9 +1,14 @@
 import { Plugin, PluginKey } from "@milkdown/prose/state";
-import { setBlockType } from "@milkdown/prose/commands";
+import { setBlockType, splitBlock } from "@milkdown/prose/commands";
 import { outdentListItem } from "./WritingListCommands.ts";
 import { WRITING_TRANSACTION_ORIGIN_META } from "./WritingEditorLifecycle.ts";
 
 export const writingSmartKeysPluginKey = new PluginKey("writingSmartKeys");
+
+export function writingEnterBoundaryWhitespace(beforeCursor: string, blockName: string): string {
+  if (blockName === "code_block" || blockName === "fence") return "";
+  return beforeCursor.match(/[ \t]+$/)?.[0] ?? "";
+}
 
 export function createWritingSmartKeysPlugin(): Plugin {
   return new Plugin({
@@ -17,6 +22,21 @@ export function createWritingSmartKeysPlugin(): Plugin {
           if (selection.empty) {
             const { $from } = selection;
             const parent = $from.parent;
+            // A structural paragraph break cannot preserve insignificant
+            // whitespace immediately before the cursor: Markdown reparsing
+            // drops it and would make the live AST proof fail. Remove it as
+            // part of the Enter interaction. Code blocks retain whitespace.
+            if (parent.isTextblock) {
+              const beforeCursor = parent.textBetween(0, $from.parentOffset);
+              const boundaryWhitespace = writingEnterBoundaryWhitespace(beforeCursor, parent.type.name);
+              if (boundaryWhitespace) {
+                view.dispatch(state.tr.delete(selection.from - boundaryWhitespace.length, selection.from));
+                if (splitBlock(view.state, view.dispatch)) {
+                  event.preventDefault();
+                  return true;
+                }
+              }
+            }
             // Check if inside empty list item paragraph
             if (parent.type.name === "paragraph" && parent.content.size === 0) {
               const grandParent = $from.node($from.depth - 1);

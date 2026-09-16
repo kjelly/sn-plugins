@@ -85,6 +85,40 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await expect.poll(() => host.getLatestSavedText()).toContain("Second paragraph");
   });
 
+  test("Enter in the middle of any paragraph keeps Writing mode", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto(
+      "# Multi-paragraph note\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n",
+      "note-writing-enter-middle",
+      false,
+    );
+    await expect(editor.status).toHaveText("Ready");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+
+    const paragraphs = editor.writingEditor.locator("p");
+    await paragraphs.nth(1).evaluate((paragraph) => {
+      const text = paragraph.firstChild;
+      if (!text) throw new Error("Expected paragraph text");
+      const selection = globalThis.getSelection();
+      const range = document.createRange();
+      range.setStart(text, 3);
+      range.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(350);
+
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor.locator("p")).toHaveCount(4);
+    await page.keyboard.type("continued ");
+    await expect.poll(() => host.getLatestSavedText()).toContain("continued ond paragraph.");
+  });
+
   test("Writing mode keeps raw HTML Source-only and preserves the source", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);

@@ -906,7 +906,19 @@ export function WritingEditor({
         const originState = writingOriginPluginKey.getState(view.state) ?? { origin: "user" as const };
         const origin = originState.origin;
         if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
-        const proof = assessWritingMutation(valueRef.current, markdown, origin, originState.structural?.context);
+        const proof = assessWritingMutation(
+          valueRef.current,
+          markdown,
+          origin,
+          originState.structural?.context,
+          {
+            codec: {
+              parse: (source) => ctx.get(parserCtx)(source),
+              serialize: (document) => ctx.get(serializerCtx)(document),
+            },
+            document: view.state.doc,
+          },
+        );
         if (!proof.editable) {
           capabilityRef.current = false;
           onCapabilityChangeRef.current?.(proof, valueRef.current, writingProofRef.current);

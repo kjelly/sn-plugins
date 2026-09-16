@@ -72,7 +72,7 @@ function isReferenceSyntax(line: string): boolean {
 }
 
 function isUnknownExtension(line: string): boolean {
-  return /^ {0,3}:::{3,}/.test(line) || /^ {0,3}\[\^[^\]]+\](?::|\s)/.test(line) || /(^|\s)\?\?[^?]+\?\?(?=\s|$)/.test(line);
+  return /^ {0,3}:{3,}/.test(line) || /^ {0,3}\[\^[^\]]+\](?::|\s)/.test(line) || /(^|\s)\?\?[^?]+\?\?(?=\s|$)/.test(line);
 }
 
 function listMarker(line: string): { marker: string; prefixLength: number } | undefined {

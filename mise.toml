@@ -56,6 +56,12 @@ depends = ["playwright:install"]
 dir = "packages/markdown-notes-plus"
 run = "npm run test:e2e"
 
+[tasks."test:e2e:writing"]
+description = "Run the Chromium Writing mode stability contract"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:e2e:writing"
+
 [tasks."test:e2e:release"]
 description = "Run production browser end-to-end tests in Chromium and Firefox"
 depends = ["playwright:install"]
