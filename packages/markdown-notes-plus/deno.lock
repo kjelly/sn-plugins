@@ -2212,6 +2212,7 @@
         "npm:esbuild@0.25.12",
         "npm:markmap-lib@~0.18.12",
         "npm:markmap-view@~0.18.12",
+        "npm:mermaid@11.17.2",
         "npm:react-dom@^18.3.1",
         "npm:react@^18.3.1",
         "npm:remark-gfm@4.0.1",
