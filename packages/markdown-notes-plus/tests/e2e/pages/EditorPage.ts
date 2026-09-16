@@ -169,9 +169,9 @@ export class EditorPage {
 
   /**
    * A document which Writing can only represent after harmless formatting
-   * normalization opens a modal and returns to Source. Generic navigation
-   * helpers must resolve that real user decision before attempting to click
-   * controls behind the modal.
+   * normalization opens a modal and may keep a read-only Writing preview.
+   * Generic navigation helpers must resolve that real user decision before
+   * attempting to click controls behind the modal.
    */
   private async dismissWritingNormalizationIfVisible(): Promise<void> {
     const dialog = this.frame.getByRole("dialog", { name: "Writing normalization required" });

@@ -140,7 +140,7 @@ test.describe("Tasks and Completed Panel", () => {
     await expect(checkbox).toBeChecked();
 
     // Verify SVG checkmark background image is applied to the checked checkbox
-    const bgImage = await checkbox.evaluate((el) => window.getComputedStyle(el).backgroundImage);
+    const bgImage = await checkbox.evaluate((el) => globalThis.getComputedStyle(el).backgroundImage);
     expect(bgImage).toContain("data:image/svg+xml");
     expect(bgImage).toContain("polyline");
 
