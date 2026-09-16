@@ -45,6 +45,7 @@ import {
   type AppMode,
   advanceWritingAdmissionIdentity,
   armWritingEnableAttempt,
+  canReviewWritingNormalizationInPlace,
   createWritingAdmissionState,
   createWritingEnableAttemptState,
   modeAfterRequest,
@@ -449,13 +450,14 @@ export function App() {
       }
       if (writingCapability.kind === "normalizable") {
         setWritingNormalizationPrompt(true);
-        setMode("source");
+        if (canReviewWritingNormalizationInPlace(writingCapability)) setMode(resolvedMode);
+        else setMode("source");
         return;
       }
     }
     if (resolvedMode === "source") setWritingNormalizationPrompt(false);
     setMode(resolvedMode);
-  }, [appLifecycle, writingCapability.kind]);
+  }, [appLifecycle, writingCapability]);
 
   useEffect(() => {
     if (!mindmapSuitable && (mode === "mindmap" || mode === "split")) {
@@ -607,12 +609,14 @@ export function App() {
         requestMode("source", { preserveSystemSourceAdmission: true });
       }
     } else if (result.kind === "normalizable" && (mode === "writing" || mode === "split")) {
-      admission = {
-        ...admission,
-        intent: { actor: "system", pendingWriting: true },
-        systemSourceAdmission: writingAdmissionIdentity,
-      };
-      requestMode("source", { preserveSystemSourceAdmission: true });
+      if (!canReviewWritingNormalizationInPlace(result)) {
+        admission = {
+          ...admission,
+          intent: { actor: "system", pendingWriting: true },
+          systemSourceAdmission: writingAdmissionIdentity,
+        };
+        requestMode("source", { preserveSystemSourceAdmission: true });
+      }
       setWritingNormalizationPrompt(true);
     } else if (result.kind !== "normalizable") {
       setWritingNormalizationPrompt(false);
@@ -778,15 +782,6 @@ export function App() {
   const handleFixAll = useCallback(() => {
     mutate((text) => applyAllSafeAutoFixes(text));
   }, []);
-  const toggleWritingTask = (ordinal: number, renderedMarkdown?: string) => {
-    if (!appLifecycle.canApplyLocal()) return;
-    const source = renderedMarkdown ?? canonical.text;
-    const currentAnalysis = analyzeMarkdown(source);
-    const task = currentAnalysis.tasks[ordinal];
-    if (!task) return;
-    const result = toggleTask(source, task);
-    edit(result.markdown, result.changeSet);
-  };
   const toggleMindmapTask = (ordinal: number) => {
     if (!appLifecycle.canApplyLocal()) return;
     const mapAnalysis = analyzeMarkdown(mapMarkdown);
@@ -798,15 +793,6 @@ export function App() {
     ) ?? currentAnalysis.tasks.find((t) => t.text === mapTask.text) ?? currentAnalysis.tasks[ordinal];
     if (!targetTask) return;
     const result = toggleTask(canonical.text, targetTask);
-    edit(result.markdown, result.changeSet);
-  };
-  const deleteWritingTask = (ordinal: number, renderedMarkdown?: string) => {
-    if (!appLifecycle.canApplyLocal()) return;
-    const source = renderedMarkdown ?? canonical.text;
-    const currentAnalysis = analyzeMarkdown(source);
-    const task = currentAnalysis.tasks[ordinal];
-    if (!task) return;
-    const result = deleteTask(source, task, ordinal);
     edit(result.markdown, result.changeSet);
   };
   const runWritingCommand = (name: WritingCommandName) => {
@@ -938,7 +924,7 @@ export function App() {
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof) => edit(next, undefined, proof)} onToggleTask={toggleWritingTask} onDeleteTask={deleteWritingTask} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
+        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof) => edit(next, undefined, proof)} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
           const currentProof = canonical.snapshot();
           if (proof.documentInstanceId !== canonical.token.instanceId ||
             proof.documentRevision !== canonical.token.revision ||

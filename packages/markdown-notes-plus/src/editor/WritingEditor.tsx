@@ -47,8 +47,6 @@ export type WritingEditorProps = {
   readOnly: boolean;
   writingProof: WritingCapabilityProof;
   onChange: (value: string, proof: WritingCapabilityProof) => void;
-  onToggleTask?: (ordinal: number, renderedMarkdown?: string) => void;
-  onDeleteTask?: (ordinal: number, renderedMarkdown?: string) => void;
   command?: WritingCommand;
   insertPayload?: InsertPayload;
   headingNavigation?: WritingHeadingNavigation;
@@ -112,9 +110,6 @@ function taskListItemView(
   getPos: () => number | undefined,
   readOnlyRef: { current: boolean },
   controls: WritingControlRegistry,
-  onToggleTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void },
-  onDeleteTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void },
-  getRenderedMarkdown: () => string | undefined,
 ) {
   const dom = document.createElement("li");
   setTaskListItemAttributes(dom, node);
@@ -463,7 +458,7 @@ function slashMenuPlugin(
         };
       },
       props: {
-        handleKeyDown(view, event) {
+        handleKeyDown(_view, event) {
           if (!isMenuVisible || currentItems.length === 0) return false;
 
           if (event.key === "ArrowDown") {
@@ -631,11 +626,8 @@ type WritingEditorValueSync = {
 type WritingEditorConfiguration = {
   host: HTMLDivElement;
   value: string;
-  valueRef: { current: string };
   readOnlyRef: { current: boolean };
   controls: WritingControlRegistry;
-  onToggleTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void };
-  onDeleteTaskRef: { current?: (ordinal: number, renderedMarkdown?: string) => void };
   serializerRef?: { current?: (doc: ProseNode) => string };
   parserRef?: { current?: (markdown: string) => ProseNode | undefined };
   libraryRef?: { current?: InsertLibrary };
@@ -663,11 +655,8 @@ function sameWritingCapabilityProof(left: WritingCapabilityProof, right: Writing
 export function configureWritingEditor(editor: Editor, {
   host,
   value,
-  valueRef,
   readOnlyRef,
   controls,
-  onToggleTaskRef,
-  onDeleteTaskRef,
   serializerRef,
   parserRef,
   libraryRef,
@@ -693,16 +682,6 @@ export function configureWritingEditor(editor: Editor, {
             getPos,
             readOnlyRef,
             controls,
-            onToggleTaskRef,
-            onDeleteTaskRef,
-            () => {
-              try {
-                const serialize = ctx.get(serializerCtx);
-                return serialize(view.state.doc);
-              } catch {
-                return undefined;
-              }
-            },
           ),
           blockquote: (node, view, getPos) => calloutBlockquoteView(node, view, getPos),
           code_block: (node, view, getPos) => codeBlockEnhancedView(node, view, getPos),
@@ -763,8 +742,6 @@ export function WritingEditor({
   readOnly,
   writingProof,
   onChange,
-  onToggleTask,
-  onDeleteTask,
   command,
   insertPayload,
   headingNavigation,
@@ -781,8 +758,6 @@ export function WritingEditor({
   const valueRef = useRef(value);
   const readOnlyRef = useRef(readOnly);
   const controlsRef = useRef(new WritingControlRegistry());
-  const onToggleTaskRef = useRef(onToggleTask);
-  const onDeleteTaskRef = useRef(onDeleteTask);
   const serializerRef = useRef<(doc: ProseNode) => string>();
   const parserRef = useRef<(markdown: string) => ProseNode | undefined>();
   const libraryRef = useRef<InsertLibrary | undefined>(library);
@@ -799,8 +774,6 @@ export function WritingEditor({
   onChangeRef.current = onChange;
   valueRef.current = value;
   readOnlyRef.current = readOnly;
-  onToggleTaskRef.current = onToggleTask;
-  onDeleteTaskRef.current = onDeleteTask;
   commandRef.current = command;
   const onCapabilityChangeRef = useRef(onCapabilityChange);
   onCapabilityChangeRef.current = onCapabilityChange;
@@ -917,11 +890,8 @@ export function WritingEditor({
     const editor = configureWritingEditor(Editor.make(), {
       host: hostElement,
       value,
-      valueRef,
       readOnlyRef,
       controls: controlsRef.current,
-      onToggleTaskRef,
-      onDeleteTaskRef,
       serializerRef,
       parserRef,
       libraryRef,
@@ -971,12 +941,17 @@ export function WritingEditor({
     if (!editor) return;
     if (gate.current.renderedMarkdown === value) {
       // The canonical value already arrived through the current editor's
-      // transaction. Re-run the live serializer/codec proof only when React
-      // committed a new canonical/editor identity. The proof callback is what
-      // re-admits the next Writing mutation; merely replacing the ref would
-      // leave App's identity-scoped capability unproven forever.
+      // transaction and passed assessWritingMutation before it was committed.
+      // Carry that proof to the new canonical identity instead of treating an
+      // intentional empty paragraph (for example, after Enter) as an initial
+      // Source normalization and forcing the user out of Writing.
       if (!sameWritingCapabilityProof(writingProofRef.current, writingProof)) {
-        synchronizeEditorValue(value, true, writingProof);
+        if (capabilityRef.current) {
+          writingProofRef.current = writingProof;
+          reportCapability({ kind: "lossless", editable: true }, true, value, writingProof);
+        } else {
+          synchronizeEditorValue(value, true, writingProof);
+        }
       }
       return;
     }

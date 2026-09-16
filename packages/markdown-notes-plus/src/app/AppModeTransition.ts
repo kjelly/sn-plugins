@@ -15,6 +15,20 @@ export type WritingAdmissionCapability = WritingCapability | {
   reason: string;
 };
 
+const IN_PLACE_NORMALIZATION_CATEGORIES = new Set([
+  "line-ending",
+  "blank-line",
+  "trailing-space",
+  "final-newline",
+]);
+
+/** Whitespace-only differences can be reviewed without leaving Writing. */
+export function canReviewWritingNormalizationInPlace(capability: WritingAdmissionCapability): boolean {
+  return capability.kind === "normalizable" &&
+    capability.changes.length > 0 &&
+    capability.changes.every((change) => IN_PLACE_NORMALIZATION_CATEGORIES.has(change.category));
+}
+
 export type WritingAdmissionIntent = { actor: "user" | "system"; pendingWriting: boolean };
 
 export type WritingAdmissionState = {
