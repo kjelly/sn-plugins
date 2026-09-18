@@ -733,16 +733,36 @@ Deno.test("plugin URL entry closes the keyboard before native Install interactio
 
 Deno.test("Android editor input is owned by the extension iframe and ProseMirror DOM surface", async () => {
   const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+  const typeContentStart = source.indexOf("  async typeContent");
+  const typeContentEnd = source.indexOf("\n  async pressSoftKeyboardEnterAndType", typeContentStart);
+  const typeContent = source.slice(typeContentStart, typeContentEnd);
 
   assertEquals(source.includes('iframe[src="http://10.0.2.2:5173/index.html"]'), true);
   assertEquals(source.includes('div.ProseMirror.editor[contenteditable="true"][role="textbox"]'), true);
   assertEquals(source.includes("await browser.switchFrame(iframe);"), true);
   assertEquals(source.includes("Custom editor ProseMirror surface did not receive DOM focus before typing"), true);
-  assertEquals(source.includes("await editor.setValue(text);"), true);
+  assertEquals(typeContent.includes("await editor.setValue(text);"), true);
   assertEquals(source.includes("Standard Notes Set editor width modal blocked the custom editor"), true);
-  assertEquals(source.includes("browser.keys"), false);
+  assertEquals(typeContent.includes("browser.keys"), false);
   assertEquals(source.includes("android.widget.EditText"), false);
   assertEquals(source.includes("getElementText"), false);
+});
+
+Deno.test("Android Writing stability uses a real Enter key and waits past listener settle", async () => {
+  const page = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+  const spec = await Deno.readTextFile("tests/e2e-android/specs/sn-official-integration.spec.ts");
+  const methodStart = page.indexOf("  async pressSoftKeyboardEnterAndType");
+  const methodEnd = page.indexOf("\n  async readVisibleText", methodStart);
+  const method = page.slice(methodStart, methodEnd);
+
+  assertEquals(method.includes('await browser.keys(["Enter"]);'), true);
+  assertEquals(method.includes("await browser.keys(text);"), true);
+  assertEquals(method.includes("await browser.pause(700);"), true);
+  assertEquals(method.includes("observeWritingStability"), true);
+  assertEquals(method.includes("observation.sourceVisible"), true);
+  assertEquals(method.includes('observation.status.includes("Source fallback")'), true);
+  assertEquals(spec.includes("await editor.pressSoftKeyboardEnterAndType(SOFT_KEYBOARD_MARKER);"), true);
+  assertEquals(spec.includes("did not contain soft-keyboard marker"), true);
 });
 
 Deno.test("Android editor frame entry resets a retained child frame before locating the extension iframe", async () => {

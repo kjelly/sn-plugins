@@ -12,6 +12,7 @@ declare const browser: {
   pause(ms: number): Promise<void>;
   switchContext(context: string): Promise<void>;
   switchFrame(frame: unknown): Promise<void>;
+  keys(keys: string[] | string): Promise<void>;
 };
 
 const EXTENSION_IFRAME = 'iframe[src="http://10.0.2.2:5173/index.html"]';
@@ -27,6 +28,14 @@ type ModeButtonObservation = {
   visibility: string;
   opacity: string;
   active: boolean;
+};
+
+type WritingStabilityObservation = {
+  writingActive: boolean;
+  writingEditable: boolean;
+  writingVisible: boolean;
+  sourceVisible: boolean;
+  status: string;
 };
 
 export class AndroidEditorPage {
@@ -104,6 +113,32 @@ export class AndroidEditorPage {
     });
   }
 
+  private async observeWritingStability(): Promise<WritingStabilityObservation> {
+    return await browser.execute((toolbarSelector) => {
+      const toolbar = Array.from(document.querySelectorAll(toolbarSelector))
+        .find((candidate) => candidate.closest("[hidden]") === null);
+      const writingButton = Array.from(toolbar?.querySelectorAll("button") ?? [])
+        .find((candidate) => candidate.textContent?.trim() === "Writing");
+      const writingPane = document.querySelector<HTMLElement>(".writing-pane");
+      const sourcePane = document.querySelector<HTMLElement>(".source-pane");
+      const editor = document.querySelector<HTMLElement>(
+        'div.ProseMirror.editor[contenteditable="true"][role="textbox"]',
+      );
+      const visible = (element: HTMLElement | null) => {
+        if (!element || element.closest("[hidden]")) return false;
+        const style = getComputedStyle(element);
+        return style.display !== "none" && style.visibility !== "hidden";
+      };
+      return {
+        writingActive: writingButton?.classList.contains("active") ?? false,
+        writingEditable: editor?.getAttribute("contenteditable") === "true",
+        writingVisible: visible(writingPane),
+        sourceVisible: visible(sourcePane),
+        status: document.querySelector(".app-toolbar:not([hidden]) .status")?.textContent?.trim() ?? "",
+      };
+    }, EDITOR_MODE_TOOLBAR);
+  }
+
   async waitForEditorReady(): Promise<void> {
     await this.switchToWritingEditor();
     await this.assertNoHostModal("after editor frame selection");
@@ -121,6 +156,29 @@ export class AndroidEditorPage {
 
     await editor.setValue(text);
     await this.assertNoHostModal("after editor typing");
+  }
+
+  async pressSoftKeyboardEnterAndType(text: string): Promise<void> {
+    const editor = await this.switchToWritingEditor();
+    await editor.click();
+    await browser.keys(["Enter"]);
+    await browser.keys(text);
+    // Exceed the editor listener/canonical settle window before asserting the
+    // mode. This catches delayed Source fallback rather than only the state at
+    // the instant the WebView receives the key event.
+    await browser.pause(700);
+
+    const observation = await this.observeWritingStability();
+    if (
+      !observation.writingActive
+      || !observation.writingEditable
+      || !observation.writingVisible
+      || observation.sourceVisible
+      || observation.status.includes("Source fallback")
+    ) {
+      throw new Error(`Android soft-keyboard input left Writing mode: ${JSON.stringify(observation)}`);
+    }
+    await this.assertNoHostModal("after Android soft-keyboard Enter and typing");
   }
 
   async readVisibleText(): Promise<string> {

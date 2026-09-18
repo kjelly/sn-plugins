@@ -3,6 +3,7 @@ import { AndroidEditorPage } from "../pages/AndroidEditorPage.ts";
 import { createPrerequisiteGate } from "../pages/android-harness.ts";
 
 const SAVED_NOTE_MARKER = "Live Android E2E Test";
+const SOFT_KEYBOARD_MARKER = "Soft keyboard continuation";
 
 declare const describe: (name: string, fn: () => void) => void;
 declare const it: (name: string, fn: () => Promise<void> | void) => void;
@@ -24,9 +25,12 @@ describe("Official Standard Notes Android APK Integration", () => {
 
     await editor.typeContent("# Live Android E2E Test\n\n- [ ] Task 1 verified\n");
     await editor.waitForVisibleText(SAVED_NOTE_MARKER);
+    await editor.pressSoftKeyboardEnterAndType(SOFT_KEYBOARD_MARKER);
+    await editor.waitForVisibleText(SOFT_KEYBOARD_MARKER);
     await editor.switchMode("Source");
     await editor.switchMode("Writing");
     await editor.waitForVisibleText(SAVED_NOTE_MARKER);
+    await editor.waitForVisibleText(SOFT_KEYBOARD_MARKER);
 
     setupPrerequisite.assertReady();
     await app.returnToNotesList();
@@ -37,6 +41,11 @@ describe("Official Standard Notes Android APK Integration", () => {
       if (!visibleEditorText.includes(SAVED_NOTE_MARKER)) {
         throw new Error(
           `Reopened editor attempt ${attempt} did not contain saved marker: ${JSON.stringify(visibleEditorText)}`,
+        );
+      }
+      if (!visibleEditorText.includes(SOFT_KEYBOARD_MARKER)) {
+        throw new Error(
+          `Reopened editor attempt ${attempt} did not contain soft-keyboard marker: ${JSON.stringify(visibleEditorText)}`,
         );
       }
       if (attempt < 5) await app.returnToNotesList();

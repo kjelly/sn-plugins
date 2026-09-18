@@ -171,6 +171,23 @@ async function createNoteAndSelectEditor(page: Page): Promise<void> {
   await page.getByText("Markdown Notes+", { exact: true }).last().click();
 }
 
+async function createAnotherNoteAndReopenByMarker(page: Page, marker: string): Promise<void> {
+  // The note preview is rendered by the real host outside the component
+  // iframe. Its appearance proves that Standard Notes has accepted the save,
+  // rather than merely observing the editor's local DOM.
+  const savedNoteEntry = page.getByText(marker, { exact: false }).first();
+  await expect(savedNoteEntry).toBeVisible({ timeout: 20_000 });
+
+  const createNote = await firstVisible(page, [
+    '[aria-label^="Create a new note"]',
+    'button[title="Create new note"]',
+  ]);
+  if (!createNote) throw new Error("Standard Notes create-note action was not found while reopening a saved note");
+  await createNote.click();
+  await expect(savedNoteEntry).toBeVisible({ timeout: 20_000 });
+  await savedNoteEntry.click();
+}
+
 async function preventEditingInHost(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Note options menu", exact: true }).click();
   const preventEditing = page.getByRole("menuitemcheckbox", { name: "Prevent editing", exact: true });
@@ -277,5 +294,40 @@ test.describe("Standard Notes Web host integration", () => {
     await expect(writingSurface).toContainText("六大實證心智訓練");
     await expect.poll(() => writingSurface.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(pageErrors).toEqual([]);
+  });
+
+  test("keeps Writing active after Enter and persists the edit after reopening the real host note", async ({ page }) => {
+    const marker = "Writing host persistence marker";
+    const continuation = "Enter continuation persisted";
+
+    await page.goto(standardNotesUrl!);
+    await prepareOfflineWorkspace(page);
+    await installEditor(page);
+    await createNoteAndSelectEditor(page);
+    await approveEditorActivationIfNeeded(page);
+
+    const editorFrame = page.frameLocator(`iframe[src^="${editorUrl}"]`);
+    const writingPane = editorFrame.locator(".writing-pane");
+    const sourcePane = editorFrame.locator(".source-pane");
+    const writingSurface = writingPane.locator('.ProseMirror.editor[contenteditable="true"]');
+    await expect(writingSurface).toBeVisible({ timeout: 20_000 });
+
+    await writingSurface.click();
+    await writingSurface.pressSequentially(marker);
+    await writingSurface.press("Enter");
+    await writingSurface.pressSequentially(continuation);
+    // Wait beyond the Milkdown listener and host-save debounce windows before
+    // checking that neither layer changed the active mode.
+    await page.waitForTimeout(750);
+    await expect(writingPane).toBeVisible();
+    await expect(sourcePane).toBeHidden();
+    await expect(writingSurface).toHaveAttribute("contenteditable", "true");
+    await expect(editorFrame.locator(".status")).not.toContainText("Source fallback");
+
+    await createAnotherNoteAndReopenByMarker(page, marker);
+    await expect(writingSurface).toBeVisible({ timeout: 20_000 });
+    await expect(writingSurface).toContainText(marker);
+    await expect(writingSurface).toContainText(continuation);
+    await expect(sourcePane).toBeHidden();
   });
 });

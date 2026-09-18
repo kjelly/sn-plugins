@@ -77,16 +77,16 @@ E2E 必須等待超過 Milkdown listener 的 settle window 後才判斷結果，
 
 ### P1：合併前依變更範圍選跑
 
-| 類別 | 案例 | 觸發時機 |
-|---|---|---|
-| Inline marks | Bold、italic、strike、inline code、link 建立／修改／移除 | mark 或 shortcut 變更 |
-| Paste | 純文字、多段文字、URL、已選取文字的 smart paste | paste pipeline 變更 |
-| Selection | 跨段選取、取代、拖曳選取、全選刪除 | selection command 變更 |
-| List keys | Tab、Shift+Tab、空 list item Enter、list 起始 Backspace | list／smart keys 變更 |
-| Node views | task checkbox、code block、callout、Mermaid code/preview 切換 | node view 變更 |
-| IME | compositionstart/update/end、中文輸入法 Enter | composition handling 變更 |
-| Mobile | Android WebView Enter、soft keyboard、composition | mobile editor 變更 |
-| Remote | 本地輸入與 remote update／conflict 交錯 | canonical／bridge 變更 |
+| 類別 | 案例 | 覆蓋 | 觸發時機 |
+|---|---|---|---|
+| Inline marks | Bold、italic、strike、inline code、link 建立／修改／移除 | stability E2E | mark 或 shortcut 變更 |
+| Paste | 純文字、多段文字、rich HTML、URL、已選取文字的 smart paste | stability E2E | paste pipeline 變更 |
+| Selection | 跨段選取、取代、拖曳選取、全選刪除 | stability E2E | selection command 變更 |
+| List keys | Tab、Shift+Tab、空 list item Enter、list 起始 Backspace | stability E2E | list／smart keys 變更 |
+| Node views | task checkbox、code block、callout、Mermaid code/preview 切換 | stability E2E | node view 變更 |
+| IME | Chromium CDP compositionstart/update/end、提交後 Enter | stability E2E | composition handling 變更 |
+| Mobile | Android WebView Enter、續打、listener settle、重開 | Android Appium E2E | mobile editor 變更 |
+| Remote | clean replacement 後續打、dirty merge／conflict | stability E2E + lifecycle E2E | canonical／bridge 變更 |
 
 ## 5. Proof 與 fallback 規則
 
@@ -133,6 +133,12 @@ Writing mode 瀏覽器契約：
 mise run test:e2e:writing
 ```
 
+真實 Standard Notes Web 的 Writing Enter 與重開持久化：
+
+```sh
+E2E_STANDARDNOTES_WEB_URL=http://127.0.0.1:<host-port> mise run test:e2e:standardnotes-web
+```
+
 Release 前應再執行 `mise run test:e2e:release`，涵蓋 Chromium 與 Firefox。涉及 mobile keyboard 或 IME 時，另執行 `mise run test:e2e:android-app`。
 
 ## 8. 完成狀態與後續工作
@@ -144,10 +150,12 @@ Release 前應再執行 `mise run test:e2e:release`，涵蓋 Chromium 與 Firefo
 - [x] toolbar command matrix。
 - [x] unsupported external Markdown 負例。
 - [x] 舊版相鄰 task list marker 的 Milkdown boundary 測試。
-- [ ] Inline mark 完整矩陣。
-- [ ] Paste 與跨段 selection 完整矩陣。
-- [ ] IME composition browser 測試。
-- [ ] Android soft keyboard Writing stability 測試。
-- [ ] Standard Notes real-host 重開筆記的持久化測試。
+- [x] Inline mark 完整矩陣：bold、italic、strike、inline code、link 建立／修改／移除。
+- [x] Paste 與 selection 完整矩陣：純文字、多段、rich HTML、URL、smart link、跨段、拖曳、全選刪除。
+- [x] List keys 與 node view 矩陣。
+- [x] Chromium CDP IME composition browser 測試。
+- [x] Clean remote replacement 後仍可在 Writing 續打；dirty merge／conflict 由 lifecycle E2E 覆蓋。
+- [x] Android soft keyboard Enter、續打、settle 後模式檢查與重開持久化測試入口。
+- [x] Standard Notes real-host Writing Enter 與重開筆記持久化測試入口。
 
-未完成項目屬於下一階段覆蓋，不影響目前 P0 的模式穩定契約；相關模組一旦修改，應優先補齊對應 P1 測試。
+Android 與 Standard Notes real-host 案例需要各自的 emulator／host 才能完成目標環境驗證；測試入口、斷言與本機靜態契約已納入 repository，不能以「本機無目標」視為通過實機驗證。
