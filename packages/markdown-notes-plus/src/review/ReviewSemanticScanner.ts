@@ -41,36 +41,29 @@ export function scanReviewSemantics(markdown: string): ReviewSemanticScan {
   const commentRanges = resolved.commentRanges;
   const htmlSource = maskRanges(markdown, [...htmlRanges, ...commentRanges]);
   const astRanges = markdownAstRanges(htmlSource);
+  const astExcludedRanges = mergeRanges([...structure.opaqueFencedRanges, ...htmlRanges, ...commentRanges]);
   const inlineCodeRanges = mergeRanges([
     ...resolved.inlineCodeRanges,
-    ...astRanges.inlineCode.filter((range) => !rangesOverlapAny(range, [...structure.opaqueFencedRanges, ...htmlRanges, ...commentRanges])),
+    ...astRanges.inlineCode.filter((range) => !rangesOverlapAny(range, astExcludedRanges)),
   ]);
   const orphanedFenceTerminatorLines = findOrphanedFenceTerminatorLines(
     structure.opaqueFencedRanges,
     inlineCodeRanges,
     lines,
   );
-  const effectiveSource = maskRanges(htmlSource, [...inlineCodeRanges, ...orphanedFenceTerminatorLines]);
-  const effectiveStructure = scanMarkdownStructure(effectiveSource);
-  const effectiveAstRanges = markdownAstRanges(effectiveSource);
+  const effectiveMasks = [...inlineCodeRanges, ...orphanedFenceTerminatorLines];
+  const effectiveSource = maskRanges(htmlSource, effectiveMasks);
+  const sourceUnchanged = htmlRanges.length === 0 && commentRanges.length === 0 && effectiveMasks.length === 0;
+  const effectiveStructure = sourceUnchanged ? structure : scanMarkdownStructure(effectiveSource);
+  const effectiveAstRanges = sourceUnchanged ? astRanges : markdownAstRanges(effectiveSource);
   const linkFacts = mergeLinkFacts([...astRanges.links, ...effectiveAstRanges.links]);
   // Keep adjacent fence blocks distinct: this is both a source fact and the
   // code-block metric, while merged ranges remain appropriate for protection.
   const effectiveFenceRanges = effectiveStructure.opaqueFencedRanges;
-  const opaqueLines = lines.map((line) => effectiveFenceRanges.some((range) => overlaps(line, range)));
+  const opaqueLines = markOverlappingLines(lines, effectiveFenceRanges);
   const opaqueRanges = mergeRanges([...effectiveFenceRanges, ...htmlRanges]);
-  for (const range of htmlRanges) {
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (range.from <= line.start && range.to >= line.contentEnd) opaqueLines[index] = true;
-    }
-  }
-  for (const range of commentRanges) {
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (range.from <= line.start && range.to >= line.contentEnd) opaqueLines[index] = true;
-    }
-  }
+  markFullyCoveredLines(lines, htmlRanges, opaqueLines);
+  markFullyCoveredLines(lines, commentRanges, opaqueLines);
   const protectedRanges = mergeRanges([...opaqueRanges, ...commentRanges, ...inlineCodeRanges]);
   const tableLines = findTableLines(lines, opaqueLines, protectedRanges);
   const fencedCodeBlocks = effectiveFenceRanges.length;
@@ -103,6 +96,10 @@ type MdastNode = {
 };
 
 function markdownAstRanges(markdown: string): { inlineCode: MarkdownRange[]; links: ReviewAstLinkFact[] } {
+  // Remark is deliberately reserved for source that can actually produce one
+  // of the two AST facts Review consumes. Its list parser is expensive on
+  // very dense task notes even when there is no inline code or link to find.
+  if (!mayContainReviewAstFacts(markdown)) return { inlineCode: [], links: [] };
   const tree = remark().use(remarkGfm).parse({ value: markdown, cwd: "" }) as unknown as MdastNode;
   const inlineCode: MarkdownRange[] = [];
   const links: ReviewAstLinkFact[] = [];
@@ -119,6 +116,14 @@ function markdownAstRanges(markdown: string): { inlineCode: MarkdownRange[]; lin
   };
   visit(tree);
   return { inlineCode, links };
+}
+
+function mayContainReviewAstFacts(markdown: string): boolean {
+  return markdown.includes("`") ||
+    markdown.includes("](") ||
+    markdown.includes("<") ||
+    markdown.includes("@") ||
+    /(?:https?:\/\/|www\.)/i.test(markdown);
 }
 
 type ResolvedReviewRanges = {
@@ -139,21 +144,25 @@ function resolveReviewRanges(markdown: string, lines: MarkdownLine[], fenceRange
   const commentRanges: MarkdownRange[] = [];
   const inlineCodeRanges: MarkdownRange[] = [];
   let cursor = 0;
+  let html = findNextHtmlRange(markdown, lines, cursor, fenceRanges);
+  let inlineCode = findNextInlineCodeRange(markdown, cursor, fenceRanges);
 
   while (cursor < markdown.length) {
-    const html = findNextHtmlRange(markdown, lines, cursor, fenceRanges);
-    const inlineCode = findNextInlineCodeRange(markdown, cursor, fenceRanges);
     if (html === undefined && inlineCode === undefined) break;
 
     if (inlineCode !== undefined && (html === undefined || inlineCode.from < html.range.from)) {
       inlineCodeRanges.push(inlineCode);
       cursor = inlineCode.to;
+      if (html !== undefined && html.range.from < cursor) html = findNextHtmlRange(markdown, lines, cursor, fenceRanges);
+      inlineCode = findNextInlineCodeRange(markdown, cursor, fenceRanges);
       continue;
     }
 
     if (html!.isComment) commentRanges.push(html!.range);
     else htmlRanges.push(html!.range);
     cursor = Math.max(html!.range.to, html!.range.from + 1);
+    if (inlineCode !== undefined && inlineCode.from < cursor) inlineCode = findNextInlineCodeRange(markdown, cursor, fenceRanges);
+    html = findNextHtmlRange(markdown, lines, cursor, fenceRanges);
   }
 
   return { htmlRanges, commentRanges, inlineCodeRanges };
@@ -171,7 +180,7 @@ function findNextHtmlRange(
   }
 
   let blockLineIndex: number | undefined;
-  for (let index = 0; index < lines.length; index += 1) {
+  for (let index = lineIndexAtOrAfter(lines, offset); index < lines.length; index += 1) {
     const line = lines[index];
     if (line.start < offset || isInRange(line.start, fenceRanges)) continue;
     if (isHtmlBlock(line.text.trim())) {
@@ -190,6 +199,17 @@ function findNextHtmlRange(
   }
 
   return { range: resolveHtmlBlockRange(markdown, lines, blockLineIndex!), isComment: false };
+}
+
+function lineIndexAtOrAfter(lines: MarkdownLine[], offset: number): number {
+  let low = 0;
+  let high = lines.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (lines[middle].start < offset) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 function resolveHtmlBlockRange(
@@ -292,10 +312,12 @@ function findOrphanedFenceTerminatorLines(
   lines: MarkdownLine[],
 ): MarkdownRange[] {
   const terminatorLines: MarkdownRange[] = [];
+  const linesByStart = new Map(lines.map((line) => [line.start, line]));
+  const linesByEnd = new Map(lines.map((line) => [line.end, line]));
   for (const canonical of canonicalFenceRanges) {
     if (!isInRange(canonical.from, inlineCodeRanges)) continue;
-    const opener = lines.find((line) => line.start === canonical.from);
-    const terminator = lines.find((line) => line.end === canonical.to);
+    const opener = linesByStart.get(canonical.from);
+    const terminator = linesByEnd.get(canonical.to);
     if (!opener || !terminator || terminator.start <= opener.start) continue;
 
     const delimiter = sourceFenceDelimiter(opener.text);
@@ -325,10 +347,12 @@ function isSourceFenceClose(text: string, opener: ReviewFenceDelimiter): boolean
 
 function mergeLinkFacts(linkFacts: ReviewAstLinkFact[]): ReviewAstLinkFact[] {
   const merged: ReviewAstLinkFact[] = [];
+  const seen = new Set<string>();
   for (const link of linkFacts) {
-    if (!merged.some((existing) => existing.from === link.from && existing.to === link.to && existing.destination === link.destination)) {
-      merged.push(link);
-    }
+    const key = `${link.from}:${link.to}:${link.destination}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(link);
   }
   return merged;
 }
@@ -347,7 +371,7 @@ function findNextUnprotectedMarker(
 ): number {
   let markerOffset = text.indexOf(marker, offset);
   while (markerOffset >= 0) {
-    if (!ignoredRanges.some((range) => markerOffset >= range.from && markerOffset < range.to)) return markerOffset;
+    if (!isInRange(markerOffset, ignoredRanges)) return markerOffset;
     markerOffset = text.indexOf(marker, markerOffset + marker.length);
   }
   return -1;
@@ -355,6 +379,7 @@ function findNextUnprotectedMarker(
 
 /** Replace Review-owned bytes without changing line breaks or UTF-16 offsets. */
 function maskRanges(text: string, ranges: MarkdownRange[]): string {
+  if (ranges.length === 0) return text;
   const masked = text.split("");
   for (const range of ranges) {
     const from = Math.max(0, range.from);
@@ -378,12 +403,50 @@ function overlaps(line: MarkdownLine, range: MarkdownRange): boolean {
   return line.start < range.to && line.end > range.from;
 }
 
+function markOverlappingLines(lines: MarkdownLine[], ranges: MarkdownRange[]): boolean[] {
+  const marked = lines.map(() => false);
+  let lineIndex = 0;
+  for (const range of ranges) {
+    while (lineIndex < lines.length && lines[lineIndex].end <= range.from) lineIndex += 1;
+    for (let index = lineIndex; index < lines.length && lines[index].start < range.to; index += 1) {
+      if (overlaps(lines[index], range)) marked[index] = true;
+    }
+  }
+  return marked;
+}
+
+function markFullyCoveredLines(lines: MarkdownLine[], ranges: MarkdownRange[], marked: boolean[]): void {
+  let lineIndex = 0;
+  for (const range of ranges) {
+    while (lineIndex < lines.length && lines[lineIndex].contentEnd < range.from) lineIndex += 1;
+    for (let index = lineIndex; index < lines.length && lines[index].start < range.to; index += 1) {
+      if (range.from <= lines[index].start && range.to >= lines[index].contentEnd) marked[index] = true;
+    }
+  }
+}
+
 function isInRange(offset: number, ranges: MarkdownRange[]): boolean {
-  return ranges.some((range) => offset >= range.from && offset < range.to);
+  let low = 0;
+  let high = ranges.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >>> 1;
+    const range = ranges[middle];
+    if (offset < range.from) high = middle - 1;
+    else if (offset >= range.to) low = middle + 1;
+    else return true;
+  }
+  return false;
 }
 
 function rangesOverlapAny(range: MarkdownRange, candidates: MarkdownRange[]): boolean {
-  return candidates.some((candidate) => range.from < candidate.to && candidate.from < range.to);
+  let low = 0;
+  let high = candidates.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (candidates[middle].to <= range.from) low = middle + 1;
+    else high = middle;
+  }
+  return low < candidates.length && candidates[low].from < range.to;
 }
 
 function isHtmlBlock(trimmed: string): boolean {
@@ -457,13 +520,22 @@ function findTableLines(lines: MarkdownLine[], opaqueLines: boolean[], protected
 
 function visibleTableLineText(line: MarkdownLine, protectedRanges: MarkdownRange[]): string {
   let visible = line.text;
-  const ranges = protectedRanges
-    .map((range) => ({
+  let low = 0;
+  let high = protectedRanges.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (protectedRanges[middle].to <= line.start) low = middle + 1;
+    else high = middle;
+  }
+  const ranges: MarkdownRange[] = [];
+  for (let index = low; index < protectedRanges.length && protectedRanges[index].from < line.contentEnd; index += 1) {
+    const range = protectedRanges[index];
+    const visibleRange = {
       from: Math.max(range.from, line.start) - line.start,
       to: Math.min(range.to, line.contentEnd) - line.start,
-    }))
-    .filter((range) => range.from < range.to)
-    .sort((left, right) => left.from - right.from);
+    };
+    if (visibleRange.from < visibleRange.to) ranges.push(visibleRange);
+  }
   for (const range of ranges) {
     visible = `${visible.slice(0, range.from)}${" ".repeat(range.to - range.from)}${visible.slice(range.to)}`;
   }

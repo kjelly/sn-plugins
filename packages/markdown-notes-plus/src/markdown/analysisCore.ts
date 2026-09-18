@@ -84,7 +84,18 @@ export function scanMarkdownStructure(markdown: string): MarkdownStructure {
   return scanSharedMarkdownStructure(markdown);
 }
 
-function isInRange(offset: number, ranges: MarkdownRange[]): boolean { return ranges.some((range) => offset >= range.from && offset < range.to); }
+function isInRange(offset: number, ranges: MarkdownRange[]): boolean {
+  let low = 0;
+  let high = ranges.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >>> 1;
+    const range = ranges[middle];
+    if (offset < range.from) high = middle - 1;
+    else if (offset >= range.to) low = middle + 1;
+    else return true;
+  }
+  return false;
+}
 function listItemMatch(text: string): RegExpMatchArray | null { return stripBlockquotePrefix(text).body.match(/^([ \t]*)(?:[-+*]|\d+[.)])\s+/); }
 function taskMatch(text: string): RegExpMatchArray | null { return stripBlockquotePrefix(text).body.match(/^([ \t]*)(?:[-+*]|\d+[.)])\s+\[([ xX])\](?:\s+|$)(.*)$/); }
 
@@ -105,7 +116,10 @@ function isTableLiteral(text: string): boolean {
   return trimmed.startsWith("|") || /^\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?$/.test(trimmed);
 }
 function isHtmlBlock(lines: MarkdownLine[], index: number): boolean {
-  const text = lines[index].text.trim();
+  return isHtmlBlockText(lines[index].text);
+}
+function isHtmlBlockText(source: string): boolean {
+  const text = source.trim();
   return text.startsWith("<!--") || /^<\/?[a-z][\w:-]*(?:\s|>|\/)/i.test(text) || text.startsWith("<?") || text.startsWith("<![CDATA[") || /^<![A-Z]/.test(text);
 }
 function isTableDelimiter(text: string): boolean { return /^\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?$/.test(text.trim()); }
@@ -210,7 +224,6 @@ export function analyzeMarkdown(markdown: string): MarkdownAnalysis {
     let itemEnd = line.end;
     for (let child = index + 1; child < lines.length; child += 1) {
       const next = lines[child];
-      if (headings.some((heading) => heading.from === next.start)) break;
       const nextList = listItemMatch(next.text);
       const nextIndent = indentation(next.text);
       if (nextList && nextIndent <= depth) break;
@@ -220,31 +233,39 @@ export function analyzeMarkdown(markdown: string): MarkdownAnalysis {
     tasks.push({ from: line.start, to: line.contentEnd, itemStart: line.start, itemEnd, checkboxOffset: line.start + markerOffset + 1, checked: match[2].toLowerCase() === "x", text: match[3].trim(), depth, headingPath: headingStack.slice() });
   }
   const physicalLines = splitPhysicalLines(markdown);
-  const movableTaskSubtrees = tasks.map((task) => movableTaskSubtreeFor(task, headings, structure, physicalLines));
+  const physicalLineIndexByStart = new Map(physicalLines.map((line, index) => [line.start, index]));
+  const headingByStart = new Map(headings.map((heading) => [heading.from, heading]));
+  const physicalMarkdownLines = physicalLines.map((line) => ({ start: line.start, contentEnd: line.contentTo, end: line.eolTo, text: line.text }));
+  const movableTaskSubtrees = tasks.map((task) => movableTaskSubtreeFor(
+    task,
+    structure,
+    physicalLines,
+    physicalMarkdownLines,
+    physicalLineIndexByStart,
+    headingByStart,
+  ));
+  const sectionEnds = headings.map(() => markdown.length);
+  const parentAnchors = headings.map(() => undefined as number | undefined);
+  const openSections: number[] = [];
+  for (let index = 0; index < headings.length; index += 1) {
+    const heading = headings[index];
+    while (openSections.length > 0 && headings[openSections[openSections.length - 1]].level >= heading.level) {
+      sectionEnds[openSections.pop()!] = heading.from;
+    }
+    parentAnchors[index] = openSections.length > 0 ? headings[openSections[openSections.length - 1]].from : undefined;
+    openSections.push(index);
+  }
   const sections: SectionInfo[] = headings.map((heading, index) => {
-    let to = markdown.length;
-    for (let next = index + 1; next < headings.length; next += 1) {
-      if (headings[next].level <= heading.level) {
-        to = headings[next].from;
-        break;
-      }
-    }
-    let parentAnchor: number | undefined = undefined;
-    for (let prev = index - 1; prev >= 0; prev -= 1) {
-      if (headings[prev].level < heading.level) {
-        parentAnchor = headings[prev].from;
-        break;
-      }
-    }
     return {
       ...heading,
       anchor: heading.from,
       from: heading.from,
-      to,
+      to: sectionEnds[index],
       headingIndex: index,
-      parentAnchor,
+      parentAnchor: parentAnchors[index],
     };
   });
+  const sectionsByAnchor = new Map(sections.map((section) => [section.anchor, section]));
   const analysis: MarkdownAnalysis = {
     headings,
     tasks,
@@ -253,18 +274,20 @@ export function analyzeMarkdown(markdown: string): MarkdownAnalysis {
     movableTaskSubtrees,
     opaqueFencedRanges: structure.opaqueFencedRanges,
     sectionAt: (offset) => sectionAt(analysis, offset),
-    sectionByAnchor: (anchor) => sectionByAnchor(analysis, anchor),
+    sectionByAnchor: (anchor) => sectionsByAnchor.get(anchor),
   };
   return analysis;
 }
 
 function movableTaskSubtreeFor(
   task: TaskInfo,
-  headings: HeadingInfo[],
   structure: MarkdownStructure,
   physicalLines: PhysicalLine[],
+  markdownLines: MarkdownLine[],
+  physicalLineIndexByStart: Map<number, number>,
+  headingByStart: Map<number, HeadingInfo>,
 ): MovableTaskSubtree {
-  const lineIndex = physicalLines.findIndex((line) => line.start === task.from);
+  const lineIndex = physicalLineIndexByStart.get(task.from) ?? -1;
   const root = lineIndex < 0 ? undefined : physicalLines[lineIndex];
   if (!root || task.depth !== 0 || !structure.taskEligible[lineIndex]) return { rootTaskFrom: task.from, movable: false, reason: "Only an unquoted root task can be moved." };
   if (/^\s*>/.test(root.text)) return { rootTaskFrom: task.from, movable: false, reason: "Blockquoted tasks are source-only." };
@@ -276,7 +299,7 @@ function movableTaskSubtreeFor(
   let blockingHeadingFrom: number | undefined;
   for (let index = lineIndex + 1; index < physicalLines.length; index += 1) {
     const line = physicalLines[index];
-    const heading = headings.find((candidate) => candidate.from === line.start);
+    const heading = headingByStart.get(line.start);
     if (heading) {
       if (indentation(line.text) > rootIndent) {
         blocked = "A heading inside a task subtree makes the card source-only.";
@@ -293,7 +316,7 @@ function movableTaskSubtreeFor(
     if (line.eolKind === "CR") blocked = "Bare-CR Markdown is source-only.";
     if (isInRange(line.start, structure.opaqueFencedRanges)) blocked = "Fenced content cannot be moved as a task card.";
     if (/^\s*>/.test(line.text)) blocked = "Blockquotes cannot be moved as a task card.";
-    if (isHtmlBlock(physicalLines.map((candidate) => ({ start: candidate.start, contentEnd: candidate.contentTo, end: candidate.eolTo, text: candidate.text })), index)) blocked = "HTML/comment content cannot be moved as a task card.";
+    if (isHtmlBlock(markdownLines, index)) blocked = "HTML/comment content cannot be moved as a task card.";
     if (isTableLiteral(line.text)) blocked = "Table content cannot be moved as a task card.";
     if (list && !structure.taskEligible[index]) blocked = "Unknown list containers cannot be moved as a task card.";
     lastPayloadIndex = index;

@@ -85,10 +85,12 @@ function createReviewVisibleProjection(
   analysis: MarkdownAnalysis,
   semantic: ReviewSemanticScan,
 ): ReviewVisibleProjection {
-  const effectiveAnalysis = analyzeMarkdown(semantic.effectiveSource);
+  const effectiveAnalysis = semantic.effectiveSource === markdown ? analysis : analyzeMarkdown(semantic.effectiveSource);
+  const sharedHeadingIndexes = new Map(analysis.headings.map((heading, index) => [heading.from, index]));
+  const sharedTaskIndexes = new Map(analysis.tasks.map((task, index) => [task.from, index]));
   const headings = effectiveAnalysis.headings
     .map((heading, effectiveIndex) => {
-      const sharedIndex = analysis.headings.findIndex((candidate) => candidate.from === heading.from);
+      const sharedIndex = sharedHeadingIndexes.get(heading.from) ?? -1;
       return {
         analysisIndex: sharedIndex >= 0 ? sharedIndex : effectiveIndex,
         heading: sharedIndex >= 0 ? analysis.headings[sharedIndex] : heading,
@@ -97,28 +99,27 @@ function createReviewVisibleProjection(
     .filter(({ heading }) => !isHeadingStructuralTokenProtected(heading, semantic));
   const tasks = effectiveAnalysis.tasks
     .map((task, effectiveIndex) => {
-      const sharedIndex = analysis.tasks.findIndex((candidate) => candidate.from === task.from);
+      const sharedIndex = sharedTaskIndexes.get(task.from) ?? -1;
       return {
         analysisIndex: sharedIndex >= 0 ? sharedIndex : effectiveIndex,
         task: sharedIndex >= 0 ? analysis.tasks[sharedIndex] : task,
       };
     })
     .filter(({ task }) => isTaskStructuralTokenVisible(task, semantic));
-  const sections = headings.map((heading, visibleIndex) => {
-    let to = markdown.length;
-    for (let next = visibleIndex + 1; next < headings.length; next += 1) {
-      if (headings[next].heading.level <= heading.heading.level) {
-        to = headings[next].heading.from;
-        break;
-      }
+  const sectionEnds = headings.map(() => markdown.length);
+  const openSections: number[] = [];
+  for (let index = 0; index < headings.length; index += 1) {
+    while (openSections.length > 0 && headings[openSections[openSections.length - 1]].heading.level >= headings[index].heading.level) {
+      sectionEnds[openSections.pop()!] = headings[index].heading.from;
     }
-    return {
+    openSections.push(index);
+  }
+  const sections = headings.map((heading, visibleIndex) => ({
       heading,
       from: heading.heading.from,
-      to,
+      to: sectionEnds[visibleIndex],
       exclusiveTo: headings[visibleIndex + 1]?.heading.from ?? markdown.length,
-    };
-  });
+    }));
   return { headings, tasks, sections };
 }
 
@@ -149,6 +150,14 @@ function isTaskStructuralTokenVisible(
 export function computeNoteMetrics(markdown: string, analysis: MarkdownAnalysis): NoteMetrics {
   const semantic = scanReviewSemantics(markdown);
   const projection = createReviewVisibleProjection(markdown, analysis, semantic);
+  return computeNoteMetricsFromProjection(markdown, projection, semantic);
+}
+
+function computeNoteMetricsFromProjection(
+  markdown: string,
+  projection: ReviewVisibleProjection,
+  semantic: ReviewSemanticScan,
+): NoteMetrics {
   const bytes = new TextEncoder().encode(markdown).length;
   const lines = markdown.length === 0 ? 0 : markdown.split(/\r?\n/).length;
   const words = markdown.trim().length === 0 ? 0 : markdown.trim().split(/\s+/).length;
@@ -211,11 +220,10 @@ export function slugifyAnchor(text: string): string {
 
 export function analyzeNoteHealth(markdown: string, customAnalysis?: MarkdownAnalysis): ReviewReport {
   const analysis = customAnalysis ?? analyzeMarkdown(markdown);
-  const metrics = computeNoteMetrics(markdown, analysis);
-  const issues: DiagnosticIssue[] = [];
-
   const semantic = scanReviewSemantics(markdown);
   const projection = createReviewVisibleProjection(markdown, analysis, semantic);
+  const metrics = computeNoteMetricsFromProjection(markdown, projection, semantic);
+  const issues: DiagnosticIssue[] = [];
   const rawLines = semantic.lines;
 
   // 1. Structure Diagnostics: H1 Presence & Count
@@ -278,6 +286,7 @@ export function analyzeNoteHealth(markdown: string, customAnalysis?: MarkdownAna
 
   // 3. Empty Headings & Empty Tasks Check. Raw matches are constrained by the
   // same fence/HTML/list eligibility view used by the shared analysis.
+  const visibleTasksByStart = new Map(projection.tasks.map(({ task }) => [task.from, task]));
   rawLines.forEach((line, lineIdx) => {
     if (semantic.opaqueLines[lineIdx] || rangesOverlap({ from: line.start, to: line.contentEnd }, semantic.protectedRanges)) return;
 
@@ -296,7 +305,8 @@ export function analyzeNoteHealth(markdown: string, customAnalysis?: MarkdownAna
       });
     }
 
-    const emptyTask = projection.tasks.find(({ task }) => task.from === line.start && task.text === "")?.task;
+    const task = visibleTasksByStart.get(line.start);
+    const emptyTask = task?.text === "" ? task : undefined;
     if (emptyTask && isEligibleTaskLine(semantic, lineIdx, emptyTask.checkboxOffset)) {
       issues.push({
         id: `empty-task-${lineIdx}`,
@@ -313,10 +323,11 @@ export function analyzeNoteHealth(markdown: string, customAnalysis?: MarkdownAna
   // the recursive descendant range to avoid flagging a parent that only has a
   // child heading but meaningful content below that child.
   const visibleHeadingStarts = new Set(projection.headings.map(({ heading }) => heading.from));
+  const meaningfulLinePrefix = buildMeaningfulLinePrefix(semantic, visibleHeadingStarts);
   for (const section of projection.sections) {
     const heading = section.heading.heading;
     const exclusiveRange = { from: section.from, to: section.exclusiveTo };
-    if (!hasMeaningfulSectionContent(semantic, visibleHeadingStarts, section.from, section.to)) {
+    if (!hasMeaningfulSectionContent(semantic.lines, meaningfulLinePrefix, section.from, section.to)) {
       issues.push({
         id: `empty-section-${section.heading.analysisIndex}`,
         category: "structure",
@@ -398,8 +409,16 @@ function isEligibleTaskLine(semantic: ReviewSemanticScan, lineIndex: number, che
 }
 
 function lineIndexAtOffset(lines: Array<{ start: number; end: number }>, offset: number): number | undefined {
-  const index = lines.findIndex((line) => offset >= line.start && offset < line.end);
-  return index >= 0 ? index : undefined;
+  let low = 0;
+  let high = lines.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >>> 1;
+    const line = lines[middle];
+    if (offset < line.start) high = middle - 1;
+    else if (offset >= line.end) low = middle + 1;
+    else return middle;
+  }
+  return undefined;
 }
 
 function lineNumberAtOffset(lines: Array<{ start: number; end: number }>, offset: number): number | undefined {
@@ -407,25 +426,45 @@ function lineNumberAtOffset(lines: Array<{ start: number; end: number }>, offset
   return index === undefined ? undefined : index + 1;
 }
 
-function hasMeaningfulSectionContent(
+function buildMeaningfulLinePrefix(
   semantic: ReviewSemanticScan,
   headingStarts: Set<number>,
+): number[] {
+  const prefix = new Array<number>(semantic.lines.length + 1).fill(0);
+  for (let index = 0; index < semantic.lines.length; index += 1) {
+    const line = semantic.lines[index];
+    const eligible = !semantic.opaqueLines[index] &&
+      !headingStarts.has(line.start) &&
+      !matchEmptyAtxHeading(line.text);
+    const meaningful = eligible && (
+      hasVisibleTextOutsideRanges(line, semantic.protectedRanges) ||
+      rangesOverlap({ from: line.start, to: line.contentEnd }, semantic.inlineCodeRanges)
+    );
+    prefix[index + 1] = prefix[index] + (meaningful ? 1 : 0);
+  }
+  return prefix;
+}
+
+function lowerBoundLineStart(lines: Array<{ start: number }>, offset: number): number {
+  let low = 0;
+  let high = lines.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (lines[middle].start < offset) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function hasMeaningfulSectionContent(
+  lines: Array<{ start: number }>,
+  meaningfulLinePrefix: number[],
   from: number,
   to: number,
 ): boolean {
-  for (let index = 0; index < semantic.lines.length; index += 1) {
-    const line = semantic.lines[index];
-    if (
-      line.start < from ||
-      line.start >= to ||
-      semantic.opaqueLines[index] ||
-      headingStarts.has(line.start) ||
-      matchEmptyAtxHeading(line.text)
-    ) continue;
-    if (hasVisibleTextOutsideRanges(line, [...semantic.commentRanges, ...semantic.protectedRanges])) return true;
-    if (semantic.inlineCodeRanges.some((range) => rangesOverlap({ from: line.start, to: line.contentEnd }, [range]))) return true;
-  }
-  return false;
+  const startIndex = lowerBoundLineStart(lines, from);
+  const endIndex = lowerBoundLineStart(lines, to);
+  return meaningfulLinePrefix[endIndex] > meaningfulLinePrefix[startIndex];
 }
 
 function hasVisibleTextOutsideRanges(
@@ -433,7 +472,15 @@ function hasVisibleTextOutsideRanges(
   hiddenRanges: SourceRange[],
 ): boolean {
   let visibleFrom = line.start;
-  for (const hidden of hiddenRanges.sort((left, right) => left.from - right.from)) {
+  let low = 0;
+  let high = hiddenRanges.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (hiddenRanges[middle].to <= line.start) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low; index < hiddenRanges.length; index += 1) {
+    const hidden = hiddenRanges[index];
     if (hidden.to <= line.start) continue;
     if (hidden.from >= line.contentEnd) break;
 

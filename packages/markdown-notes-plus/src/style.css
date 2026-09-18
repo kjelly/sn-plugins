@@ -33,6 +33,9 @@
 html, body, #root { height: 100%; min-height: 100%; margin: 0; padding: 0; overflow: hidden; }
 html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
 body { height: 100vh; min-height: 100vh; margin: 0; background: var(--editor-bg); color: var(--editor-fg); }
+.bootstrap-preview { display: flex; height: 100vh; height: 100dvh; flex-direction: column; overflow: hidden; background: var(--editor-bg); color: var(--editor-fg); }
+.bootstrap-preview-status { flex: 0 0 auto; padding: 6px 10px; border-bottom: 1px solid var(--editor-border); color: var(--editor-muted); font-size: .8rem; }
+.bootstrap-preview-content, .writing-loading-preview { flex: 1 1 auto; min-height: 0; margin: 0; padding: 12px 14px; overflow: auto; background: var(--editor-bg); color: var(--editor-fg); font: 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 button, textarea { font: inherit; }
 button { min-height: 32px; border: 1px solid var(--editor-border); border-radius: 5px; background: transparent; color: inherit; padding: 4px 8px; cursor: pointer; }
 button:hover:not(:disabled), button:focus-visible { border-color: var(--editor-accent); }

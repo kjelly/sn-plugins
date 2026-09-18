@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { CanonicalDocument, type DocumentState } from "../document/CanonicalDocument";
-import { EditorKitBridge } from "../standardnotes/EditorKitBridge";
-import { createEditorKit } from "../standardnotes/EditorKitRuntime";
+import type { DocumentState } from "../document/CanonicalDocument";
+import type { EditorRuntime } from "../standardnotes/EditorRuntime.ts";
 import {
   analyzeMarkdown,
   checkAllInSection,
@@ -20,9 +19,8 @@ import {
 import type { TextChangeSet } from "../document/PositionMap.ts";
 import { reconcileSectionAnchor } from "../document/SectionAnchor.ts";
 import { normalizeBareUrls } from "../document/normalizeBareUrls.ts";
-import { groupTasksByHeading, taskIndex } from "../tasks/TaskIndex";
+import { groupTasksByHeading } from "../tasks/TaskIndex";
 import { deadlineStatus, formatIsoDate } from "../tasks/RecurringTasks.ts";
-import { outlineIndex } from "../outline/OutlineIndex";
 import { OutlinePanel } from "../outline/OutlinePanel.tsx";
 import { getAllCollapsibleAnchors, reconcileOutlineAnchors } from "../outline/OutlineProjection.ts";
 import { computeSectionBreadcrumbs } from "../editor/WritingFolding.ts";
@@ -36,7 +34,7 @@ import {
 } from "../markdown/structuralEditing.ts";
 import { installThemeBridge } from "../theme/theme";
 import type { SourceEditorHandle } from "../editor/SourceEditor";
-import { WritingEditor, type WritingCommand, type WritingCommandName, type WritingHeadingNavigation } from "../editor/WritingEditor";
+import type { WritingCommand, WritingCommandName, WritingHeadingNavigation } from "../editor/WritingEditor";
 import type { WritingCapabilityProof, WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
 import type { MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
@@ -85,6 +83,11 @@ const LazySourceEditor = React.lazy(async () => {
 const LazyMindMapView = React.lazy(async () => {
   const module = await import("../mindmap/MindMapView");
   return { default: module.MindMapView };
+});
+
+const LazyWritingEditor = React.lazy(async () => {
+  const module = await import("../editor/WritingEditor");
+  return { default: module.WritingEditor };
 });
 
 type MindMapScope = "entire-note" | "current-section";
@@ -232,27 +235,12 @@ class ErrorBoundaryImpl extends React.Component<{ children: React.ReactNode }, {
   render() { return this.state.error ? <div className="error-box" role="alert">Editor pane unavailable: {this.state.error.message}</div> : this.props.children; }
 }
 
-export function App() {
+export function App({ runtime }: { runtime: EditorRuntime }) {
   useVisualViewport();
-  const canonical = useMemo(() => new CanonicalDocument(), []);
+  const { canonical, bridge } = runtime;
   const appLifecycle = useMemo(() => new AppDocumentLifecycle(canonical), [canonical]);
   const [, rerender] = useState<DocumentState>(canonical.snapshot());
   const writingHistoryResetRef = useRef<() => void>(() => undefined);
-  const bridgeStartMode = typeof window === "undefined"
-    ? undefined
-    : new URLSearchParams(globalThis.location.search).get("sn-bridge-start");
-  const bridge = useMemo(() => new EditorKitBridge(
-    canonical,
-    () => rerender(canonical.snapshot()),
-    createEditorKit,
-    undefined,
-    () => writingHistoryResetRef.current(),
-  ), [canonical]);
-  // The host sends component-registered from iframe setup and may not retry.
-  // Start the relay during render for normal production startup so its message
-  // listener exists before the host can deliver that one-shot message. The
-  // deterministic harness can still request a deliberately manual start.
-  if (bridgeStartMode !== "manual") bridge.start();
   const [mode, setMode] = useState<AppMode>("writing");
   const [todayKey, setTodayKey] = useState(() => formatIsoDate(new Date()));
   const [filter, setFilter] = useState<MindMapFilter>("all");
@@ -318,20 +306,22 @@ export function App() {
     setWritingCommand(undefined);
   };
   const snapshot = canonical.snapshot();
-  const analysis = analyzeMarkdown(snapshot.text);
-  const kanban = analyzeKanban(snapshot.text, analysis);
+  const analysis = useMemo(() => analyzeMarkdown(snapshot.text), [snapshot.text]);
+  const kanban = useMemo(() => analyzeKanban(snapshot.text, analysis), [snapshot.text, analysis]);
   const kanbanSuitable = kanban.candidates.length > 0;
   const mindmapSuitable = isMindmapSuitable(snapshot.text, analysis);
   const currentSection = activeSectionAnchor === undefined ? undefined : analysis.sectionByAnchor(activeSectionAnchor);
   const focusedSection = focusedSectionAnchor === undefined ? undefined : analysis.sectionByAnchor(focusedSectionAnchor);
   const breadcrumbs = useMemo(() => focusedSection ? computeSectionBreadcrumbs(analysis, focusedSection.anchor) : [], [analysis, focusedSection]);
-  const mapMarkdown = projectMindmapMarkdown(
-    snapshot.text,
-    filter,
-    mindMapScope === "current-section" ? currentSection : undefined,
-  );
-  const tasks = taskIndex(snapshot.text);
-  const headings = outlineIndex(snapshot.text);
+  const mapMarkdown = useMemo(() => mode === "split" || mode === "mindmap"
+    ? projectMindmapMarkdown(snapshot.text, filter, mindMapScope === "current-section" ? currentSection : undefined)
+    : snapshot.text,
+  [currentSection, filter, mindMapScope, mode, snapshot.text]);
+  const tasks = useMemo(() => ({
+    open: analysis.tasks.filter((task) => !task.checked),
+    completed: analysis.tasks.filter((task) => task.checked),
+  }), [analysis]);
+  const headings = analysis.headings;
   const completedGroups = useMemo(() => groupTasksByHeading(tasks.completed), [tasks.completed]);
   const writingReadOnly = snapshot.locked || !appLifecycle.canApplyLocal() || !writingCapability.editable;
   const writingVisible = mode === "writing" || mode === "split";
@@ -381,7 +371,10 @@ export function App() {
     return () => self.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
-  const reviewReport = useMemo(() => analyzeNoteHealth(snapshot.text, analysis), [snapshot.text, analysis]);
+  const reviewReport = useMemo(
+    () => sidebarTab === "review" ? analyzeNoteHealth(snapshot.text, analysis) : undefined,
+    [analysis, sidebarTab, snapshot.text],
+  );
 
   const handleSaveLibrary = useCallback((next: InsertLibrary) => {
     setLibrary(next);
@@ -474,6 +467,8 @@ export function App() {
 
   useEffect(() => {
     const unsubscribeFallback = appLifecycle.subscribeFallback(setSourceFallbackText);
+    const unsubscribeHost = runtime.subscribeHostChange(() => rerender(canonical.snapshot()));
+    const unsubscribeWritingHistory = runtime.subscribeWritingHistoryReset(() => writingHistoryResetRef.current());
     const unsubscribe = canonical.subscribe((next, transition) => {
       const previous = canonicalTextRef.current;
       writingEnableAttemptRef.current = observeWritingCanonical(writingEnableAttemptRef.current, {
@@ -499,45 +494,15 @@ export function App() {
       }
       rerender(next);
     });
-    const mobileProtocolParams = typeof window === "undefined"
-      ? undefined
-      : new URLSearchParams(globalThis.location.search);
-    const mobileProtocolTest = mobileProtocolParams?.get("sn-mobile-protocol") === "1";
-    const manualBridgeStart = mobileProtocolTest && mobileProtocolParams?.get("sn-bridge-start") === "manual";
-    const bridgeReadyDelayMs = Math.max(0, Number(mobileProtocolParams?.get("sn-bridge-ready-delay-ms") ?? "0") || 0);
-    let bridgeReadyTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
-    const announceBridgeReady = () => {
-      if (mobileProtocolTest) {
-        document.documentElement.dataset.snBridgeReady = "true";
-      }
-    };
-    const startBridge = () => {
-      bridge.start();
-      if (manualBridgeStart) globalThis.parent.postMessage({ type: "sn-bridge-started" }, "*");
-      if (bridgeReadyDelayMs === 0) announceBridgeReady();
-      else bridgeReadyTimer = globalThis.setTimeout(announceBridgeReady, bridgeReadyDelayMs);
-    };
-    const startBridgeOnRequest = (event: MessageEvent) => {
-      if (event.source !== globalThis.parent || event.data?.type !== "sn-start-bridge") return;
-      globalThis.removeEventListener("message", startBridgeOnRequest);
-      startBridge();
-    };
-    if (manualBridgeStart) {
-      globalThis.addEventListener("message", startBridgeOnRequest);
-      globalThis.parent.postMessage({ type: "sn-bridge-start-pending" }, "*");
-    } else {
-      startBridge();
-    }
     const uninstallTheme = installThemeBridge(() => rerender(canonical.snapshot()));
     return () => {
-      if (bridgeReadyTimer !== undefined) globalThis.clearTimeout(bridgeReadyTimer);
-      globalThis.removeEventListener("message", startBridgeOnRequest);
-      if (mobileProtocolTest) delete document.documentElement.dataset.snBridgeReady;
       uninstallTheme();
       unsubscribe();
+      unsubscribeHost();
+      unsubscribeWritingHistory();
       unsubscribeFallback();
     };
-  }, [appLifecycle, bridge, canonical]);
+  }, [appLifecycle, canonical, runtime]);
 
   useEffect(() => {
     const lifecycleGeneration = bridgeLifecycleGeneration.current + 1;
@@ -871,7 +836,7 @@ export function App() {
     }
   }, [jumpToSource, mode]);
 
-  return <main className={`app-shell mode-${mode}`}>
+  return <main className={`app-shell mode-${mode}`} aria-busy={writingCapability.kind === "unproven"}>
     {writingNormalizationPrompt && writingCapability.kind === "normalizable" ? <WritingNormalizationDialog
       capability={writingCapability}
       onApply={handleApplyWritingNormalization}
@@ -926,7 +891,7 @@ export function App() {
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-        </div><ErrorBoundary><WritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof) => edit(next, undefined, proof)} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
+        </div><ErrorBoundary><React.Suspense fallback={<pre className="writing-loading-preview" aria-label="Note preview while Writing editor loads">{snapshot.text}</pre>}><LazyWritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof) => edit(next, undefined, proof)} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
           const currentProof = canonical.snapshot();
           if (proof.documentInstanceId !== canonical.token.instanceId ||
             proof.documentRevision !== canonical.token.revision ||
@@ -938,7 +903,7 @@ export function App() {
             systemSourceAdmission: undefined,
           });
           appLifecycle.preserveWritingFallback(markdown); requestMode("source");
-        }} /></ErrorBoundary></section>
+        }} /></React.Suspense></ErrorBoundary></section>
         {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button type="button" onClick={requestSourceSearch}>Search / Replace</button><button type="button" disabled={snapshot.locked || !sourceEditorReady} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><React.Suspense fallback={<div className="loading">Loading source editor…</div>}><LazySourceEditor ref={sourceEditorRef} value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onReady={handleSourceReady} onSelection={selectSourceSection} /></React.Suspense></ErrorBoundary></section> : null}
         {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools" onWheel={handleToolbarWheel}>{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><React.Suspense fallback={<div className="loading">Loading mind map…</div>}><LazyMindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} deadlineDay={todayKey} /></React.Suspense></ErrorBoundary></section> : null}
         {mode === "kanban" ? <section className="kanban-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Kanban tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><KanbanView markdown={snapshot.text} analysis={analysis} token={canonical.token} locked={snapshot.locked} fallback={appLifecycle.hasFallback} conflicted={snapshot.pendingRemote !== undefined} onMove={handleMoveKanbanCard} /></ErrorBoundary></section> : null}
@@ -960,7 +925,7 @@ export function App() {
                 className={`sidebar-tab-btn ${sidebarTab === "review" ? "active" : ""}`}
                 onClick={() => setSidebarTab("review")}
               >
-                Review {reviewReport.issues.length > 0 ? `(${reviewReport.issues.length})` : ""}
+                Review {reviewReport && reviewReport.issues.length > 0 ? `(${reviewReport.issues.length})` : ""}
               </button>
               <button
                 type="button"
@@ -995,7 +960,7 @@ export function App() {
               onDeleteCompletedTasks={(anchor) => mutate((text) => deleteCompletedInSection(text, anchor))}
             />
           ) : null}
-          {sidebarTab === "review" ? (
+          {sidebarTab === "review" && reviewReport ? (
             <ReviewPanel
               report={reviewReport}
               readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}

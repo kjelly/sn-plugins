@@ -138,6 +138,11 @@ export function evaluateRecurringTasks(markdown: string, today: Date = new Date(
   resetCount: number;
   changed: boolean;
 } {
+  // Most notes do not contain recurring completion metadata. Avoid building
+  // the full Markdown structure on the bridge's initial-content hot path.
+  if (!/@repeat\(/i.test(markdown) || !/@done\(/i.test(markdown)) {
+    return { markdown, resetCount: 0, changed: false };
+  }
   let resetCount = 0;
   const structure = scanMarkdownStructure(markdown);
   const replacements: Array<{ from: number; to: number; text: string }> = [];

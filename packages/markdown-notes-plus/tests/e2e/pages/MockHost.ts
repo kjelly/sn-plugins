@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 export interface MockSaveItem {
   timestamp: number;
@@ -28,6 +28,11 @@ export class MockHost {
       const host = (window as unknown as { __SN_MOCK_HOST__: { waitForHandshake: () => Promise<void> } }).__SN_MOCK_HOST__;
       await host.waitForHandshake();
     });
+    // The bridge handshake intentionally completes before the lazy Writing
+    // bundle. Wait for its initial lossless/normalizable/unsupported proof so
+    // test actions cannot race a normalization dialog that appears afterward.
+    await expect(this.page.frameLocator("#editor-frame").locator(".app-shell"))
+      .toHaveAttribute("aria-busy", "false");
   }
 
   async setNote(text: string, uuid = "note-" + Date.now(), locked = false): Promise<void> {

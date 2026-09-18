@@ -757,6 +757,7 @@ export function WritingEditor({
   const onChangeRef = useRef(onChange);
   const valueRef = useRef(value);
   const readOnlyRef = useRef(readOnly);
+  const previousReadOnlyRef = useRef(readOnly);
   const controlsRef = useRef(new WritingControlRegistry());
   const serializerRef = useRef<(doc: ProseNode) => string>();
   const parserRef = useRef<(markdown: string) => ProseNode | undefined>();
@@ -941,6 +942,10 @@ export function WritingEditor({
       if (result?.kind === "unsupported" || editorRef.current !== editor) return;
       applyPendingCommand();
       applyPendingInsert();
+      // Replacing the fast preview with a lazy editor otherwise leaves focus
+      // on the host document. Restore the pre-split behavior so immediate
+      // keyboard input is delivered to the newly mounted ProseMirror view.
+      if (!readOnlyRef.current) editor.action((ctx) => ctx.get(editorViewCtx).focus());
     }).catch(() => { /* isolate editor initialization failure in its ErrorBoundary */ });
     return () => { cancelled = true; editorRef.current = undefined; void editor.destroy(); };
     // The editor owns its lifecycle. Content updates are handled below so a
@@ -985,7 +990,17 @@ export function WritingEditor({
   }, [headingNavigation]);
 
   useEffect(() => {
-    editorRef.current?.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));
+    const becameEditable = previousReadOnlyRef.current && !readOnly;
+    previousReadOnlyRef.current = readOnly;
+    editorRef.current?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      view.setProps({ editable: () => !readOnlyRef.current });
+      // Writing starts read-only until its lossless round-trip proof is
+      // available. With a lazy mount, that transition happens after the fast
+      // preview has already received focus, so restore focus when admission
+      // makes the editor interactive.
+      if (becameEditable) view.focus();
+    });
     controlsRef.current.refresh();
   }, [readOnly]);
 

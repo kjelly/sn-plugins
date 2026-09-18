@@ -1,16 +1,31 @@
-import React from "react";
-import { createRoot } from "react-dom/client";
-import { flushSync } from "react-dom";
-import { App } from "./app/App";
 import "./style.css";
+import { createEditorRuntime, startEditorRuntime } from "./standardnotes/EditorRuntime.ts";
 
 const root = document.getElementById("app");
 if (!root) throw new Error("Markdown Notes+ root element is missing");
-// Standard Notes posts `component-registered` once from the iframe's load
-// handler. React 18 may otherwise defer this first render past that handler,
-// leaving ComponentRelay with no listener and the static loading markup on
-// screen forever. The synchronous initial commit establishes the bridge
-// listener before the iframe load event can be observed by the host.
-flushSync(() => {
-  createRoot(root).render(<React.StrictMode><App /></React.StrictMode>);
+
+let previewActive = true;
+const runtime = createEditorRuntime({
+  onPreview(text, locked) {
+    if (!previewActive) return;
+    const shell = document.createElement("section");
+    shell.className = "bootstrap-preview";
+    shell.setAttribute("aria-label", "Note preview while editor loads");
+    const status = document.createElement("div");
+    status.className = "bootstrap-preview-status";
+    status.textContent = locked ? "Loading editor · read-only" : "Loading editor…";
+    const content = document.createElement("pre");
+    content.className = "bootstrap-preview-content";
+    content.textContent = text;
+    shell.append(status, content);
+    root.replaceChildren(shell);
+  },
+});
+
+// Standard Notes posts `component-registered` once from the iframe load
+// handler. Register the bridge before requesting React, Milkdown, or the App.
+startEditorRuntime(runtime);
+void import("./mountApp.tsx").then(({ mountApp }) => {
+  previewActive = false;
+  mountApp(root, runtime);
 });

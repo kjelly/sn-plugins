@@ -48,26 +48,31 @@ Deno.test("production Mermaid renderer artifacts have a network-denying isolated
   }
 });
 
-Deno.test("production editor defers Source and Mind Map chunks", async () => {
+Deno.test("production editor keeps a small bridge shell and defers editor UI chunks", async () => {
   const entryPattern = /<script type="module" crossorigin src="\.\/assets\/(index-[^"]+\.js)"><\/script>/;
-  const deferredChunkPattern = /import\("\.\/(SourceEditor|MindMapView)-[^"]+\.js"\)/g;
+  const mountChunkPattern = /import\("\.\/(mountApp-[^"]+\.js)"\)/;
+  const deferredChunkPattern = /import\("\.\/(SourceEditor|MindMapView|WritingEditor)-[^"]+\.js"\)/g;
 
   for (const path of artifactPaths) {
     const html = await Deno.readTextFile(path);
     const entryMatch = html.match(entryPattern);
     if (!entryMatch) throw new Error(`Missing production entry script in ${path.pathname}`);
-    if (/modulepreload[^>]+(?:SourceEditor|MindMapView)-/.test(html)) {
+    if (/modulepreload[^>]+(?:mountApp|SourceEditor|MindMapView|WritingEditor)-/.test(html)) {
       throw new Error(`Optional editor chunks must not be preloaded by ${path.pathname}`);
     }
 
     const entryUrl = new URL(`./assets/${entryMatch[1]}`, path);
     const entry = await Deno.readTextFile(entryUrl);
-    const deferredChunks = new Set([...entry.matchAll(deferredChunkPattern)].map((match) => match[1]));
-    if (!deferredChunks.has("SourceEditor") || !deferredChunks.has("MindMapView")) {
-      throw new Error(`Source and Mind Map must remain dynamic imports in ${entryUrl.pathname}`);
+    const mountMatch = entry.match(mountChunkPattern);
+    if (!mountMatch) throw new Error(`Bridge shell must dynamically import the React app in ${entryUrl.pathname}`);
+    const mountUrl = new URL(`./assets/${mountMatch[1]}`, path);
+    const mountChunk = await Deno.readTextFile(mountUrl);
+    const deferredChunks = new Set([...mountChunk.matchAll(deferredChunkPattern)].map((match) => match[1]));
+    for (const expected of ["SourceEditor", "MindMapView", "WritingEditor"]) {
+      if (!deferredChunks.has(expected)) throw new Error(`${expected} must remain a dynamic import in ${mountUrl.pathname}`);
     }
-    if (new TextEncoder().encode(entry).byteLength >= 1_000_000) {
-      throw new Error(`Initial editor entry exceeded the 1 MB performance budget: ${entryUrl.pathname}`);
+    if (new TextEncoder().encode(entry).byteLength >= 100_000) {
+      throw new Error(`Synchronous bridge shell exceeded the 100 KB performance budget: ${entryUrl.pathname}`);
     }
   }
 });
