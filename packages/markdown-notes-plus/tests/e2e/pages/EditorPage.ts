@@ -220,16 +220,21 @@ export class EditorPage {
     // through an overlay that Standard Notes users cannot bypass.
     await this.closeSidebar();
     const modeButton = this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first();
-    if (await modeButton.getAttribute("class") === "active") return;
+    if (await modeButton.getAttribute("class") === "active") {
+      if (mode === "Source") await expect(this.sourceEditor).toBeVisible();
+      if (mode === "Mindmap" || mode === "Split") await expect(this.mindmapSvg).toBeVisible();
+      return;
+    }
     try {
       await modeButton.click({ timeout: 2000 });
     } catch (error) {
       // A lossless fallback can activate Source between the state check and
       // Playwright's pointer dispatch. In that case the requested transition
       // has already completed and the active button is the source of truth.
-      if (await modeButton.getAttribute("class") === "active") return;
-      throw error;
+      if (await modeButton.getAttribute("class") !== "active") throw error;
     }
+    if (mode === "Source") await expect(this.sourceEditor).toBeVisible();
+    if (mode === "Mindmap" || mode === "Split") await expect(this.mindmapSvg).toBeVisible();
   }
 
   async typeInSource(text: string): Promise<void> {
@@ -245,6 +250,7 @@ export class EditorPage {
   }
 
   async getSourceText(): Promise<string> {
+    await expect(this.sourceEditor).toBeVisible();
     return (await this.sourceEditor.locator(".cm-line").allTextContents()).join("\n");
   }
 

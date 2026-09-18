@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { EditorView, type EditorView as EditorViewType } from "@codemirror/view";
 import { CanonicalDocument, type DocumentState } from "../document/CanonicalDocument";
 import { EditorKitBridge } from "../standardnotes/EditorKitBridge";
 import { createEditorKit } from "../standardnotes/EditorKitRuntime";
@@ -36,10 +35,10 @@ import {
   duplicateSubtree,
 } from "../markdown/structuralEditing.ts";
 import { installThemeBridge } from "../theme/theme";
-import { SourceEditor, openSourceSearch } from "../editor/SourceEditor";
+import type { SourceEditorHandle } from "../editor/SourceEditor";
 import { WritingEditor, type WritingCommand, type WritingCommandName, type WritingHeadingNavigation } from "../editor/WritingEditor";
 import type { WritingCapabilityProof, WritingRoundTripResult } from "../editor/WritingEditorLifecycle";
-import { MindMapView, type MindMapFilter } from "../mindmap/MindMapView";
+import type { MindMapFilter } from "../mindmap/MindMapView";
 import { AppDocumentLifecycle } from "./AppDocumentLifecycle";
 import {
   type AppMode,
@@ -77,6 +76,16 @@ import { scrollToolbarWithWheel } from "../utils/toolbarWheel.ts";
 import { analyzeKanban } from "../kanban/KanbanModel.ts";
 import { moveKanbanCard } from "../kanban/KanbanMove.ts";
 import { KanbanView, type KanbanMoveCommand } from "../kanban/KanbanView.tsx";
+
+const LazySourceEditor = React.lazy(async () => {
+  const module = await import("../editor/SourceEditor");
+  return { default: module.SourceEditor };
+});
+
+const LazyMindMapView = React.lazy(async () => {
+  const module = await import("../mindmap/MindMapView");
+  return { default: module.MindMapView };
+});
 
 type MindMapScope = "entire-note" | "current-section";
 
@@ -266,6 +275,7 @@ export function App() {
   const [writingCommand, setWritingCommand] = useState<WritingCommand>();
   const [library, setLibrary] = useState<InsertLibrary>(() => createEmptyLibrary());
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [sourceEditorReady, setSourceEditorReady] = useState(false);
   const [insertPayload, setInsertPayload] = useState<{ id: number; markdown: string; cursorOffset?: number }>();
   const subscribeWritingEditorEpoch = useCallback(
     (listener: (epoch: number) => void) => appLifecycle.subscribeWritingEditorEpoch(listener),
@@ -298,7 +308,8 @@ export function App() {
   modeRef.current = mode;
   const writingEnableAttemptRef = useRef(createWritingEnableAttemptState());
   const nextCommandId = useRef(1);
-  const sourceViewRef = useRef<EditorViewType>();
+  const sourceEditorRef = useRef<SourceEditorHandle>(null);
+  const pendingSourceSearch = useRef(false);
   const canonicalTextRef = useRef(canonical.text);
   const pendingJump = useRef<{ from: number; to: number }>();
   const bridgeLifecycleGeneration = useRef(0);
@@ -383,17 +394,7 @@ export function App() {
       noteTitle,
     });
     if (mode === "source") {
-      const view = sourceViewRef.current;
-      if (view) {
-        const sel = view.state.selection.main;
-        view.dispatch(view.state.update({
-          changes: { from: sel.from, to: sel.to, insert: expanded.text },
-          selection: { anchor: sel.from + (expanded.cursorOffset ?? expanded.text.length) },
-        }));
-        view.focus();
-      } else {
-        return;
-      }
+      if (!sourceEditorRef.current?.insert(expanded.text, expanded.cursorOffset)) return;
     } else {
       setInsertPayload({ id: Date.now(), markdown: expanded.text, cursorOffset: expanded.cursorOffset });
     }
@@ -406,17 +407,7 @@ export function App() {
       noteTitle,
     });
     if (mode === "source") {
-      const view = sourceViewRef.current;
-      if (view) {
-        const sel = view.state.selection.main;
-        view.dispatch(view.state.update({
-          changes: { from: sel.from, to: sel.to, insert: expanded.text },
-          selection: { anchor: sel.from + (expanded.cursorOffset ?? expanded.text.length) },
-        }));
-        view.focus();
-      } else {
-        return;
-      }
+      if (!sourceEditorRef.current?.insert(expanded.text, expanded.cursorOffset)) return;
     } else {
       setInsertPayload({ id: Date.now(), markdown: expanded.text, cursorOffset: expanded.cursorOffset });
     }
@@ -800,13 +791,20 @@ export function App() {
     setWritingCommand({ id: nextCommandId.current, name });
     nextCommandId.current += 1;
   };
-  const jumpToSource = useCallback((view: EditorViewType | undefined) => {
-    sourceViewRef.current = view;
+  const jumpToSource = useCallback(() => {
     const jump = pendingJump.current;
-    if (!view || !jump) return;
+    if (!jump || !sourceEditorRef.current?.focusRange(jump.from, jump.to)) return;
     pendingJump.current = undefined;
-    view.dispatch({ selection: { anchor: jump.from, head: jump.to }, effects: EditorView.scrollIntoView(jump.from, { y: "center" }) });
-    view.focus();
+  }, []);
+  const handleSourceReady = useCallback(() => {
+    setSourceEditorReady(true);
+    jumpToSource();
+    if (!pendingSourceSearch.current || !sourceEditorRef.current?.openSearch()) return;
+    pendingSourceSearch.current = false;
+  }, [jumpToSource]);
+  const requestSourceSearch = useCallback(() => {
+    if (sourceEditorRef.current?.openSearch()) return;
+    pendingSourceSearch.current = true;
   }, []);
   const selectSourceSection = useCallback((offset: number) => {
     setActiveSectionAnchor(sectionAnchorAt(canonical.text, offset));
@@ -821,7 +819,7 @@ export function App() {
     }
     if (mode === "source") {
       pendingJump.current = { from, to };
-      jumpToSource(sourceViewRef.current);
+      jumpToSource();
       return;
     }
     if (mode === "writing" || mode === "split") {
@@ -866,7 +864,11 @@ export function App() {
   };
 
   useEffect(() => {
-    if (mode === "source") jumpToSource(sourceViewRef.current);
+    if (mode === "source") jumpToSource();
+    else {
+      pendingSourceSearch.current = false;
+      setSourceEditorReady(false);
+    }
   }, [jumpToSource, mode]);
 
   return <main className={`app-shell mode-${mode}`}>
@@ -937,8 +939,8 @@ export function App() {
           });
           appLifecycle.preserveWritingFallback(markdown); requestMode("source");
         }} /></ErrorBoundary></section>
-        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button type="button" onClick={() => openSourceSearch(sourceViewRef.current)}>Search / Replace</button><button type="button" disabled={snapshot.locked} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><SourceEditor value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onView={jumpToSource} onSelection={selectSourceSection} /></section> : null}
-        {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools" onWheel={handleToolbarWheel}>{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><MindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} deadlineDay={todayKey} /></ErrorBoundary></section> : null}
+        {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button type="button" onClick={requestSourceSearch}>Search / Replace</button><button type="button" disabled={snapshot.locked || !sourceEditorReady} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><React.Suspense fallback={<div className="loading">Loading source editor…</div>}><LazySourceEditor ref={sourceEditorRef} value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onReady={handleSourceReady} onSelection={selectSourceSection} /></React.Suspense></ErrorBoundary></section> : null}
+        {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools" onWheel={handleToolbarWheel}>{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><React.Suspense fallback={<div className="loading">Loading mind map…</div>}><LazyMindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} deadlineDay={todayKey} /></React.Suspense></ErrorBoundary></section> : null}
         {mode === "kanban" ? <section className="kanban-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Kanban tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><KanbanView markdown={snapshot.text} analysis={analysis} token={canonical.token} locked={snapshot.locked} fallback={appLifecycle.hasFallback} conflicted={snapshot.pendingRemote !== undefined} onMove={handleMoveKanbanCard} /></ErrorBoundary></section> : null}
       </section>
       {mode !== "mindmap" ? <>

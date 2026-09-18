@@ -94,6 +94,22 @@ https://kjelly.github.io/sn-plugins
 
 and replaces `__OWNER__` inside generated plugin identifiers with `kjelly`.
 
+### Optional CDN deployment for faster cold loads
+
+GitHub Pages controls its own response headers and does not apply the generated
+`_headers` file. The repository builder also emits `dist-pages/_headers` for
+hosts that support the Cloudflare Pages header format. Deploying `dist-pages`
+through such a host applies:
+
+- `Cache-Control: public, max-age=31536000, immutable` to fingerprinted
+  `dist/assets/*` files.
+- `Cache-Control: public, max-age=600, must-revalidate` to editor HTML files.
+
+Cloudflare Pages can consume `_headers` directly and serves Brotli or gzip when
+the client supports it. Set `SN_PLUGINS_BASE_URL` to that deployment's public
+origin before running `mise run build`, then install the manifest from that
+origin; the existing `github.io` URL will continue using GitHub Pages headers.
+
 ## 3. Install the included plugins
 
 After the Pages workflow finishes successfully, install each plugin from its

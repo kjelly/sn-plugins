@@ -47,3 +47,27 @@ Deno.test("production Mermaid renderer artifacts have a network-denying isolated
     }
   }
 });
+
+Deno.test("production editor defers Source and Mind Map chunks", async () => {
+  const entryPattern = /<script type="module" crossorigin src="\.\/assets\/(index-[^"]+\.js)"><\/script>/;
+  const deferredChunkPattern = /import\("\.\/(SourceEditor|MindMapView)-[^"]+\.js"\)/g;
+
+  for (const path of artifactPaths) {
+    const html = await Deno.readTextFile(path);
+    const entryMatch = html.match(entryPattern);
+    if (!entryMatch) throw new Error(`Missing production entry script in ${path.pathname}`);
+    if (/modulepreload[^>]+(?:SourceEditor|MindMapView)-/.test(html)) {
+      throw new Error(`Optional editor chunks must not be preloaded by ${path.pathname}`);
+    }
+
+    const entryUrl = new URL(`./assets/${entryMatch[1]}`, path);
+    const entry = await Deno.readTextFile(entryUrl);
+    const deferredChunks = new Set([...entry.matchAll(deferredChunkPattern)].map((match) => match[1]));
+    if (!deferredChunks.has("SourceEditor") || !deferredChunks.has("MindMapView")) {
+      throw new Error(`Source and Mind Map must remain dynamic imports in ${entryUrl.pathname}`);
+    }
+    if (new TextEncoder().encode(entry).byteLength >= 1_000_000) {
+      throw new Error(`Initial editor entry exceeded the 1 MB performance budget: ${entryUrl.pathname}`);
+    }
+  }
+});

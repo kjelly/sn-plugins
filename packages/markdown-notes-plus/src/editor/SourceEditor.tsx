@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { history, historyKeymap, indentWithTab, defaultKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
@@ -16,12 +16,21 @@ export type SourceEditorProps = {
   resetGeneration: number;
   readOnly: boolean;
   onChange: (value: string, changeSet?: TextChangeSet) => void;
-  onView: (view: EditorView | undefined) => void;
+  onReady?: () => void;
   onSelection?: (offset: number) => void;
 };
 
+export type SourceEditorHandle = {
+  focusRange: (from: number, to: number) => boolean;
+  insert: (text: string, cursorOffset?: number) => boolean;
+  openSearch: () => boolean;
+};
+
 /** CodeMirror 6 source mode. Its document is always the canonical Markdown string. */
-export function SourceEditor({ value, resetGeneration, readOnly, onChange, onView, onSelection }: SourceEditorProps) {
+export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(function SourceEditor(
+  { value, resetGeneration, readOnly, onChange, onReady, onSelection },
+  ref,
+) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>();
   const applyingExternal = useRef(false);
@@ -29,9 +38,41 @@ export function SourceEditor({ value, resetGeneration, readOnly, onChange, onVie
   const historyCompartment = useRef(new Compartment());
   const resetGenerationRef = useRef(resetGeneration);
   const onChangeRef = useRef(onChange);
+  const onReadyRef = useRef(onReady);
   const onSelectionRef = useRef(onSelection);
   onChangeRef.current = onChange;
+  onReadyRef.current = onReady;
   onSelectionRef.current = onSelection;
+
+  useImperativeHandle(ref, () => ({
+    focusRange(from, to) {
+      const current = view.current;
+      if (!current) return false;
+      current.dispatch({
+        selection: { anchor: from, head: to },
+        effects: EditorView.scrollIntoView(from, { y: "center" }),
+      });
+      current.focus();
+      return true;
+    },
+    insert(text, cursorOffset = text.length) {
+      const current = view.current;
+      if (!current) return false;
+      const selection = current.state.selection.main;
+      current.dispatch(current.state.update({
+        changes: { from: selection.from, to: selection.to, insert: text },
+        selection: { anchor: selection.from + cursorOffset },
+      }));
+      current.focus();
+      return true;
+    },
+    openSearch() {
+      const current = view.current;
+      if (!current) return false;
+      openSearchPanel(current);
+      return true;
+    },
+  }), []);
 
   useEffect(() => {
     if (!host.current) return undefined;
@@ -80,9 +121,9 @@ export function SourceEditor({ value, resetGeneration, readOnly, onChange, onVie
     const next = new EditorView({ state, parent: host.current });
     view.current = next;
     resetGenerationRef.current = resetGeneration;
-    onView(next);
-    return () => { onView(undefined); next.destroy(); view.current = undefined; };
-  }, [onView]);
+    onReadyRef.current?.();
+    return () => { next.destroy(); view.current = undefined; };
+  }, []);
 
   useEffect(() => {
     const current = view.current;
@@ -110,6 +151,4 @@ export function SourceEditor({ value, resetGeneration, readOnly, onChange, onVie
   };
 
   return <div className="cm-source" ref={host} onClick={handleClick} aria-label="Markdown source" />;
-}
-
-export function openSourceSearch(view: EditorView | undefined): void { if (view) openSearchPanel(view); }
+});

@@ -18,6 +18,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES_DIR = ROOT / "packages"
 OUTPUT_DIR = ROOT / "dist-pages"
+FINGERPRINTED_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+HTML_CACHE_CONTROL = "public, max-age=600, must-revalidate"
 
 
 def parse_args() -> argparse.Namespace:
@@ -205,6 +207,31 @@ def write_runtime_package(
     return hashlib.sha256(zip_path.read_bytes()).hexdigest()
 
 
+def write_cache_headers(output: Path, manifests: list[dict]) -> None:
+    """Emit Cloudflare Pages-compatible browser cache rules for built runtimes."""
+    lines = [
+        "# Applied by hosts that support Cloudflare Pages-style _headers files.",
+        "# GitHub Pages ignores this file; use a configurable CDN for these rules.",
+    ]
+    for manifest in manifests:
+        identifier = manifest["identifier"]
+        runtime_root = output / "static" / identifier
+        assets_dir = runtime_root / "dist" / "assets"
+        if assets_dir.is_dir():
+            lines.extend([
+                f"/static/{identifier}/dist/assets/*",
+                f"  Cache-Control: {FINGERPRINTED_ASSET_CACHE_CONTROL}",
+                "",
+            ])
+        if any((runtime_root / "dist").glob("*.html")):
+            lines.extend([
+                f"/static/{identifier}/dist/*.html",
+                f"  Cache-Control: {HTML_CACHE_CONTROL}",
+                "",
+            ])
+    (output / "_headers").write_text("\n".join(lines), encoding="utf-8")
+
+
 def build_manifest(
     package: dict,
     sn: dict,
@@ -379,6 +406,7 @@ def main() -> int:
         encoding="utf-8",
     )
     (output / ".nojekyll").write_text("", encoding="utf-8")
+    write_cache_headers(output, manifests)
     write_catalog(output, manifests, base_url)
 
     print(f"Built {len(manifests)} plugin(s) into {output}")

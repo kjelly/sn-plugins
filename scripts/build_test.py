@@ -5,7 +5,15 @@ from pathlib import Path
 import tempfile
 import zipfile
 
-from build import collect_runtime_files, resolve_confined, validate_unique_identifiers, write_runtime_package
+from build import (
+    FINGERPRINTED_ASSET_CACHE_CONTROL,
+    HTML_CACHE_CONTROL,
+    collect_runtime_files,
+    resolve_confined,
+    validate_unique_identifiers,
+    write_cache_headers,
+    write_runtime_package,
+)
 
 
 def main() -> int:
@@ -65,6 +73,17 @@ def main() -> int:
                 not name.startswith("/") and ".." not in Path(name).parts
                 for name in names
             )
+
+        output = Path(temporary) / "pages"
+        runtime_dist = output / "static" / "markdown-notes-plus" / "dist"
+        (runtime_dist / "assets").mkdir(parents=True)
+        (runtime_dist / "index.html").write_text("<!doctype html>\n", encoding="utf-8")
+        write_cache_headers(output, [{"identifier": "markdown-notes-plus"}])
+        headers = (output / "_headers").read_text(encoding="utf-8")
+        assert "/static/markdown-notes-plus/dist/assets/*" in headers
+        assert f"Cache-Control: {FINGERPRINTED_ASSET_CACHE_CONTROL}" in headers
+        assert "/static/markdown-notes-plus/dist/*.html" in headers
+        assert f"Cache-Control: {HTML_CACHE_CONTROL}" in headers
 
     print("build identifier, confinement, and zip-entry validation: ok")
     return 0
