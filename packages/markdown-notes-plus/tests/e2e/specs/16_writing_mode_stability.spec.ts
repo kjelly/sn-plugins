@@ -214,7 +214,8 @@ test.describe("Writing mode stability contract", () => {
     await expect.poll(() => host.getLatestSavedText()).toContain("Link text after-link");
   });
 
-  test("plain, multiline, rich, URL, and selected-text paste stay in Writing", async ({ page }) => {
+  test("plain, multiline, rich, URL, and selected-text paste stay in Writing", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", "Synthetic ClipboardEvent paste semantics are not supported consistently in Firefox.");
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 

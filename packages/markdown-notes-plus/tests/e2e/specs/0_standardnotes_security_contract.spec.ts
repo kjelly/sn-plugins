@@ -173,7 +173,7 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
-    const initialMarkdown = "# Security Contract Note\n\n- [ ] Task 1\n- [x] Completed task\n\n## Section 2\n\nBody content.";
+    const initialMarkdown = "# Security Contract Note\n\n- [ ] Task 1\n- [x] Completed task\n\n## Section 2\n\nBody content.\n";
     await host.goto(initialMarkdown, "security-contract-uuid", false);
 
     // Verify status is Ready

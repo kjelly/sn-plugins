@@ -106,11 +106,16 @@ test.describe("Full Integrated Workflow", () => {
     }
     await expect(editor.undoButton).toBeEnabled();
 
-    // 10. Writing remains gated after a local Source edit until a later
-    // admission proof; the canonical Source content remains intact.
+    // 10. Whitespace-only normalization is reviewed in place after the local
+    // Source edit; the canonical content remains intact until confirmation.
     await editor.switchMode("Writing");
-    await expect(editor.sourcePane).toBeVisible();
-    await expect(editor.sourceEditor).toContainText("Mobile responsive layout");
+    await expect(editor.writingPane).toBeVisible();
+    await expect(editor.sourcePane).toBeHidden();
+    const normalization = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
+    await expect(normalization).toBeVisible();
+    await normalization.getByRole("button", { name: "套用並進入 Writing" }).click();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor).toContainText("Mobile responsive layout");
     await expect(editor.footerMeta).toContainText("6 tasks");
   });
 });

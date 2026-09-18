@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Mise runtimes
-        uses: jdx/mise-action@v3
+        uses: jdx/mise-action@v4
         with:
           version: "2026.9.1"
           cache: true
