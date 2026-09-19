@@ -248,6 +248,24 @@ Deno.test("EditorKitBridge does not save an initial note containing only a fence
   assertEquals(harness.saves, []);
 });
 
+Deno.test("EditorKitBridge defers recurring-task reset until after initial delivery", async () => {
+  const harness = fakeBridgeHarness();
+  const input = "# Routine\n\n- [x] Water plants @repeat(3d) @done(2026-08-20)\n";
+  await deliverBridgeContext(harness, input, "note-deferred-recurring");
+
+  assertEquals(harness.document.text, input);
+  assertEquals(harness.document.dirty, false);
+  assertEquals(harness.saves, []);
+
+  harness.clock.runNext();
+  assertEquals(harness.document.text, "# Routine\n\n- [ ] Water plants @repeat(3d)\n");
+  assertEquals(harness.document.dirty, true);
+  assertEquals(harness.saves, []);
+
+  harness.clock.runAll();
+  assertEquals(harness.saves.map((save) => save.text), ["# Routine\n\n- [ ] Water plants @repeat(3d)\n"]);
+});
+
 Deno.test("App lifecycle retires fallback for an equal-text note initialization", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "same text", "note-a");

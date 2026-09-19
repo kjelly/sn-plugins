@@ -29,10 +29,8 @@ test.describe("Advanced Features: Templates, Review, Palette, Callouts & Code Bl
     // Verify modal closed
     await expect(modal).not.toBeVisible();
 
-    // Verify content inserted
-    await page.waitForTimeout(500);
-    const saved = await host.getLatestSavedText();
-    expect(saved).toContain("Decision:");
+    // Verify content inserted and the debounced host save has settled.
+    await expect.poll(() => host.getLatestSavedText()).toContain("Decision:");
   });
 
   test("Sidebar Review panel - health diagnostics and quick fix", async ({ page }) => {

@@ -18,7 +18,6 @@ import {
 } from "../markdown/analysis";
 import type { TextChangeSet } from "../document/PositionMap.ts";
 import { reconcileSectionAnchor } from "../document/SectionAnchor.ts";
-import { normalizeBareUrls } from "../document/normalizeBareUrls.ts";
 import { groupTasksByHeading } from "../tasks/TaskIndex";
 import { deadlineStatus, formatIsoDate } from "../tasks/RecurringTasks.ts";
 import { OutlinePanel } from "../outline/OutlinePanel.tsx";
@@ -61,14 +60,7 @@ import {
   expandTemplateVariables,
   extractNoteTitle,
 } from "../templates/TemplateEngine.ts";
-import { TemplateManagerModal } from "../templates/TemplateManagerModal.tsx";
-import {
-  analyzeNoteHealth,
-  applyDiagnosticAutoFix,
-  applyAllSafeAutoFixes,
-} from "../review/ReviewDiagnostics.ts";
-import { ReviewPanel } from "../review/ReviewPanel.tsx";
-import { NavigationPaletteModal } from "../navigation/NavigationPaletteModal.tsx";
+import type { ReviewReport } from "../review/ReviewDiagnostics.ts";
 import { useVisualViewport } from "./useVisualViewport.ts";
 import { scrollToolbarWithWheel } from "../utils/toolbarWheel.ts";
 import { analyzeKanban } from "../kanban/KanbanModel.ts";
@@ -88,6 +80,21 @@ const LazyMindMapView = React.lazy(async () => {
 const LazyWritingEditor = React.lazy(async () => {
   const module = await import("../editor/WritingEditor");
   return { default: module.WritingEditor };
+});
+
+const LazyTemplateManagerModal = React.lazy(async () => {
+  const module = await import("../templates/TemplateManagerModal.tsx");
+  return { default: module.TemplateManagerModal };
+});
+
+const LazyNavigationPaletteModal = React.lazy(async () => {
+  const module = await import("../navigation/NavigationPaletteModal.tsx");
+  return { default: module.NavigationPaletteModal };
+});
+
+const LazyReviewPanel = React.lazy(async () => {
+  const module = await import("../review/ReviewPanel.tsx");
+  return { default: module.ReviewPanel };
 });
 
 type MindMapScope = "entire-note" | "current-section";
@@ -265,6 +272,7 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [sourceEditorReady, setSourceEditorReady] = useState(false);
   const [insertPayload, setInsertPayload] = useState<{ id: number; markdown: string; cursorOffset?: number }>();
+  const [reviewReport, setReviewReport] = useState<ReviewReport>();
   const subscribeWritingEditorEpoch = useCallback(
     (listener: (epoch: number) => void) => appLifecycle.subscribeWritingEditorEpoch(listener),
     [appLifecycle],
@@ -371,10 +379,16 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
     return () => self.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
-  const reviewReport = useMemo(
-    () => sidebarTab === "review" ? analyzeNoteHealth(snapshot.text, analysis) : undefined,
-    [analysis, sidebarTab, snapshot.text],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setReviewReport(undefined);
+    if (sidebarTab !== "review") return () => { cancelled = true; };
+
+    void import("../review/ReviewDiagnostics.ts").then(({ analyzeNoteHealth }) => {
+      if (!cancelled) setReviewReport(analyzeNoteHealth(snapshot.text, analysis));
+    });
+    return () => { cancelled = true; };
+  }, [analysis, sidebarTab, snapshot.text]);
 
   const handleSaveLibrary = useCallback((next: InsertLibrary) => {
     setLibrary(next);
@@ -677,8 +691,10 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
     setWritingNormalizationPrompt(false);
     setMode("source");
   }, []);
-  const handleNormalizeBareUrls = useCallback(() => {
+  const handleNormalizeBareUrls = useCallback(async () => {
     if (snapshot.locked || !appLifecycle.canApplyLocal()) return;
+    const { normalizeBareUrls } = await import("../document/normalizeBareUrls.ts");
+    if (canonical.locked || !appLifecycle.canApplyLocal()) return;
     const result = normalizeBareUrls(canonical.text);
     if (!result.changed) return;
     const before = canonical.snapshot();
@@ -732,11 +748,9 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
     const result = command(canonical.text);
     edit(result.markdown, result.changeSet);
   };
-  const handleAutoFix = useCallback((issueId: string) => {
+  const handleApplyFix = useCallback(async (issueId: string) => {
+    const { applyDiagnosticAutoFix } = await import("../review/ReviewDiagnostics.ts");
     mutate((text) => applyDiagnosticAutoFix(text, issueId));
-  }, []);
-  const handleFixAll = useCallback(() => {
-    mutate((text) => applyAllSafeAutoFixes(text));
   }, []);
   const toggleMindmapTask = (ordinal: number) => {
     if (!appLifecycle.canApplyLocal()) return;
@@ -960,16 +974,19 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
               onDeleteCompletedTasks={(anchor) => mutate((text) => deleteCompletedInSection(text, anchor))}
             />
           ) : null}
-          {sidebarTab === "review" && reviewReport ? (
-            <ReviewPanel
-              report={reviewReport}
-              readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}
-              onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
-              onAutoFix={handleAutoFix}
-              onFixAll={handleFixAll}
-              onNormalizeBareUrls={handleNormalizeBareUrls}
-              normalizeBareUrlsLabel={writingCapability.editable ? "Convert bare URLs to Markdown links" : "Convert to enable Writing mode"}
-            />
+          {sidebarTab === "review" ? (
+            <React.Suspense fallback={<div className="loading">Loading review…</div>}>
+              {reviewReport ? (
+                <LazyReviewPanel
+                  report={reviewReport}
+                  readOnly={snapshot.locked || !appLifecycle.canApplyLocal()}
+                  onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
+                  onApplyFix={handleApplyFix}
+                  onNormalizeBareUrls={handleNormalizeBareUrls}
+                  normalizeBareUrlsLabel={writingCapability.editable ? "Convert bare URLs to Markdown links" : "Convert to enable Writing mode"}
+                />
+              ) : <div className="loading">Analyzing note…</div>}
+            </React.Suspense>
           ) : null}
           {sidebarTab === "tasks" ? (
             <section className="tasks-panel pane-section" aria-label="Completed tasks">
@@ -1030,29 +1047,36 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
       </> : null}
     </div>
     <footer className="note-meta">{analysis.tasks.length} task{analysis.tasks.length === 1 ? "" : "s"} · {headings.length} section{headings.length === 1 ? "" : "s"} · EditorKit markdown bridge</footer>
-    <TemplateManagerModal
-      isOpen={templateModalOpen}
-      onClose={() => setTemplateModalOpen(false)}
-      library={library}
-      onSaveLibrary={handleSaveLibrary}
-      onInsertTemplate={handleInsertTemplate}
-      onInsertSnippet={handleInsertSnippet}
-      currentNoteMarkdown={snapshot.text}
-      currentSelectionText=""
-    />
-    <NavigationPaletteModal
-      isOpen={paletteOpen}
-      onClose={() => setPaletteOpen(false)}
-      analysis={analysis}
-      kanbanSuitable={kanbanSuitable}
-      onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
-      onSetMode={requestMode}
-      onToggleSidebar={toggleSidebar}
-      onOpenTemplates={() => setTemplateModalOpen(true)}
-      onFixAllIssues={handleFixAll}
-      library={library}
-      onInsertTemplate={handleInsertTemplate}
-      onInsertSnippet={handleInsertSnippet}
-    />
+    {templateModalOpen ? (
+      <React.Suspense fallback={<div className="loading">Loading templates…</div>}>
+        <LazyTemplateManagerModal
+          isOpen
+          onClose={() => setTemplateModalOpen(false)}
+          library={library}
+          onSaveLibrary={handleSaveLibrary}
+          onInsertTemplate={handleInsertTemplate}
+          onInsertSnippet={handleInsertSnippet}
+          currentNoteMarkdown={snapshot.text}
+          currentSelectionText=""
+        />
+      </React.Suspense>
+    ) : null}
+    {paletteOpen ? (
+      <React.Suspense fallback={<div className="loading">Loading palette…</div>}>
+        <LazyNavigationPaletteModal
+          isOpen
+          onClose={() => setPaletteOpen(false)}
+          analysis={analysis}
+          kanbanSuitable={kanbanSuitable}
+          onSelectHeading={(anchor) => focusHeading(anchor, anchor + 1)}
+          onSetMode={requestMode}
+          onToggleSidebar={toggleSidebar}
+          onOpenTemplates={() => setTemplateModalOpen(true)}
+          library={library}
+          onInsertTemplate={handleInsertTemplate}
+          onInsertSnippet={handleInsertSnippet}
+        />
+      </React.Suspense>
+    ) : null}
   </main>;
 }

@@ -56,6 +56,8 @@ export class EditorKitBridge {
   private saveGeneration = 0;
   private disposed = false;
   private readonly lifecycle = new EditorKitLifecycle();
+  private pendingRecurringEvaluationTimer?: BridgeTimer;
+  private recurringEvaluationGeneration = 0;
 
   constructor(
     private readonly document: CanonicalDocument,
@@ -97,6 +99,54 @@ export class EditorKitBridge {
     }, 300);
   }
 
+  /** Defer recurring-task work until after the initial note delivery yields. */
+  private scheduleRecurringEvaluation(text: string): void {
+    this.cancelRecurringEvaluation();
+    if (!/@repeat\(/i.test(text) || !/@done\(/i.test(text)) return;
+
+    const generation = this.recurringEvaluationGeneration;
+    const token = this.document.token;
+    this.pendingRecurringEvaluationTimer = this.scheduler.setTimeout(() => {
+      this.pendingRecurringEvaluationTimer = undefined;
+      if (this.disposed || generation !== this.recurringEvaluationGeneration) return;
+      if (
+        this.document.token.instanceId !== token.instanceId ||
+        this.document.token.revision !== token.revision ||
+        this.document.text !== text ||
+        this.document.dirty ||
+        this.document.locked ||
+        this.document.pendingRemote !== undefined
+      ) return;
+
+      const evaluated = evaluateRecurringTasks(text, new Date());
+      if (!evaluated.changed) return;
+
+      // The note may have changed while the deferred scan was waiting or
+      // while the scan was being prepared. Never apply a stale reset.
+      if (
+        this.document.token.instanceId !== token.instanceId ||
+        this.document.token.revision !== token.revision ||
+        this.document.text !== text ||
+        this.document.dirty ||
+        this.document.locked ||
+        this.document.pendingRemote !== undefined
+      ) return;
+
+      if (this.document.applyLocal(evaluated.markdown)) {
+        this.scheduleSave(evaluated.markdown);
+        this.onHostChange();
+      }
+    }, 0);
+  }
+
+  private cancelRecurringEvaluation(): void {
+    if (this.pendingRecurringEvaluationTimer !== undefined) {
+      this.scheduler.clearTimeout(this.pendingRecurringEvaluationTimer);
+      this.pendingRecurringEvaluationTimer = undefined;
+    }
+    this.recurringEvaluationGeneration += 1;
+  }
+
   start(): void {
     if (this.started || this.disposed) return;
     this.started = true;
@@ -110,15 +160,13 @@ export class EditorKitBridge {
         if (incomingNote !== undefined) this.latestNote = incomingNote;
         if (kind === "initial-context") {
           this.cancelPendingSave();
+          this.cancelRecurringEvaluation();
           this.document.initialize(text);
           this.saveRequested = false;
-          const evaluated = evaluateRecurringTasks(text, new Date());
-          if (evaluated.changed) {
-            this.document.applyLocal(evaluated.markdown);
-            this.scheduleSave(evaluated.markdown);
-          }
+          this.scheduleRecurringEvaluation(text);
         }
         else if (kind !== "metadata") {
+          this.cancelRecurringEvaluation();
           const result = this.document.receiveRemote(text);
           if (result === "merged") {
             this.scheduleSave(this.document.text);
@@ -167,6 +215,7 @@ export class EditorKitBridge {
 
   notifyLocalChange(text: string): void {
     if (this.disposed || this.document.locked || !this.kit) return;
+    this.cancelRecurringEvaluation();
     this.scheduleSave(text);
     this.onHostChange();
   }
@@ -185,6 +234,7 @@ export class EditorKitBridge {
   /** Flush pending local work and invalidate callbacks owned by this bridge. */
   dispose(): boolean {
     const flushed = this.flush();
+    this.cancelRecurringEvaluation();
     this.cancelPendingSave();
     this.kit?.dispose?.();
     this.disposed = true;
@@ -198,6 +248,7 @@ export class EditorKitBridge {
   resolveConflict(choice: "keep-local" | "accept-remote"): boolean {
     if (this.disposed) return false;
     if (this.document.pendingRemote === undefined) return false;
+    this.cancelRecurringEvaluation();
     if (choice === "keep-local" && (!this.latestNote || !this.kit)) return false;
     this.cancelPendingSave();
     if (choice === "accept-remote") {

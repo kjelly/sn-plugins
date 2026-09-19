@@ -8,8 +8,7 @@ export interface ReviewPanelProps {
   report: ReviewReport;
   readOnly: boolean;
   onSelectHeading?: (anchor: number) => void;
-  onAutoFix?: (issueId: string) => void;
-  onFixAll?: () => void;
+  onApplyFix?: (issueId: string) => void;
   onNormalizeBareUrls?: () => void;
   normalizeBareUrlsLabel?: string;
 }
@@ -18,14 +17,11 @@ export function ReviewPanel({
   report,
   readOnly,
   onSelectHeading,
-  onAutoFix,
-  onFixAll,
+  onApplyFix,
   onNormalizeBareUrls,
   normalizeBareUrlsLabel = "Convert bare URLs to Markdown links",
 }: ReviewPanelProps) {
   const { metrics, issues, healthScore } = report;
-  const fixableIssues = issues.filter((i) => i.canAutoFix);
-
   const getScoreTier = (score: number): "good" | "warning" | "danger" => {
     if (score >= 90) return "good";
     if (score >= 70) return "warning";
@@ -115,16 +111,6 @@ export function ReviewPanel({
       <div className="diagnostics-section">
         <div className="diagnostics-header">
           <h4>Diagnostics ({issues.length})</h4>
-          {fixableIssues.length > 0 && !readOnly && onFixAll ? (
-            <button
-              type="button"
-              className="btn-fix-all"
-              onClick={onFixAll}
-              title="Fix all safe structural issues automatically"
-            >
-              Fix All ({fixableIssues.length})
-            </button>
-          ) : null}
           {onNormalizeBareUrls ? (
             <button
               type="button"
@@ -160,14 +146,14 @@ export function ReviewPanel({
                       Jump
                     </button>
                   ) : null}
-                  {issue.canAutoFix && !readOnly && onAutoFix ? (
+                  {issue.canAutoFix && !readOnly && onApplyFix ? (
                     <button
                       type="button"
                       className="btn-diagnostic-action btn-quick-fix"
-                      onClick={() => onAutoFix(issue.id)}
-                      title="Quick Fix"
+                      onClick={() => onApplyFix(issue.id)}
+                      title="Apply this fix manually"
                     >
-                      Quick Fix
+                      Apply Fix
                     </button>
                   ) : null}
                 </div>

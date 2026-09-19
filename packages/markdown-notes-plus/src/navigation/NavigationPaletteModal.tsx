@@ -29,7 +29,6 @@ export interface NavigationPaletteModalProps {
   kanbanSuitable?: boolean;
   onToggleSidebar: () => void;
   onOpenTemplates: () => void;
-  onFixAllIssues?: () => void;
   library?: InsertLibrary;
   onInsertTemplate?: (template: TemplateDefinition) => void;
   onInsertSnippet?: (snippet: SnippetDefinition) => void;
@@ -44,7 +43,6 @@ export function NavigationPaletteModal({
   kanbanSuitable = false,
   onToggleSidebar,
   onOpenTemplates,
-  onFixAllIssues,
   library,
   onInsertTemplate,
   onInsertSnippet,
@@ -121,17 +119,6 @@ export function NavigationPaletteModal({
       badge: "Tool",
       action: () => { onOpenTemplates(); onClose(); },
     });
-    if (onFixAllIssues) {
-      items.push({
-        id: "cmd-fix-all",
-        kind: "command",
-        title: "Fix All Safe Document Issues",
-        subtitle: "Auto-fix heading jumps and empty headings",
-        badge: "Review",
-        action: () => { onFixAllIssues(); onClose(); },
-      });
-    }
-
     // 2. Headings
     analysis.headings.forEach((heading, idx) => {
       items.push({
@@ -183,7 +170,7 @@ export function NavigationPaletteModal({
     }
 
     return items;
-  }, [analysis, kanbanSuitable, library, onClose, onFixAllIssues, onInsertSnippet, onInsertTemplate, onOpenTemplates, onSelectHeading, onSetMode, onToggleSidebar]);
+  }, [analysis, kanbanSuitable, library, onClose, onInsertSnippet, onInsertTemplate, onOpenTemplates, onSelectHeading, onSetMode, onToggleSidebar]);
 
   const filteredItems = useMemo(() => {
     const q = query.toLowerCase().trim();
