@@ -3,7 +3,8 @@ import { scanWritingNormalization } from "../src/markdown/writingNormalization.t
 import { analyzeKanban } from "../src/kanban/KanbanModel.ts";
 import { allPerfFixtures, PERF_FIXTURE_GENERATOR_VERSION } from "../tests/performance/perfFixtures.ts";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
+const MIN_SAMPLE_DURATION_MS = 100;
 
 function argument(name, fallback) {
   const index = Deno.args.indexOf(name);
@@ -41,10 +42,24 @@ function time(operation) {
 }
 
 function benchmark(operation, warmups, runs) {
-  for (let index = 0; index < warmups; index += 1) operation(index, true);
+  let invocation = 0;
+  for (let index = 0; index < warmups; index += 1) operation(invocation++, true);
+  let iterations = 1;
+  while (iterations < 4096) {
+    const duration = time(() => {
+      for (let index = 0; index < iterations; index += 1) operation(invocation++, true);
+    });
+    if (duration >= MIN_SAMPLE_DURATION_MS) break;
+    iterations *= 2;
+  }
   const samples = [];
-  for (let index = 0; index < runs; index += 1) samples.push(time(() => operation(index, false)));
-  return summarize(samples);
+  for (let run = 0; run < runs; run += 1) {
+    const duration = time(() => {
+      for (let index = 0; index < iterations; index += 1) operation(invocation++, false);
+    });
+    samples.push(duration / iterations);
+  }
+  return { ...summarize(samples), iterations };
 }
 
 async function commandOutput(command, args) {
@@ -82,7 +97,11 @@ async function bundleSizes() {
     for await (const entry of Deno.readDir("dist/assets")) {
       if (!entry.isFile) continue;
       const stat = await Deno.stat(`dist/assets/${entry.name}`);
-      sizes.push({ file: entry.name, rawBytes: stat.size });
+      const bytes = await Deno.readFile(`dist/assets/${entry.name}`);
+      const compressed = await new Response(
+        new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip")),
+      ).arrayBuffer();
+      sizes.push({ file: entry.name, rawBytes: stat.size, gzipBytes: compressed.byteLength });
     }
   } catch {
     return [];
@@ -132,12 +151,15 @@ for (const fixture of fixtures) {
 }
 
 const commit = await commandOutput("git", ["rev-parse", "HEAD"]);
+const baselineSha = argument("--baseline", commit);
 const report = {
   schemaVersion: SCHEMA_VERSION,
   generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
   kind: "microbenchmark",
   formal: !smoke,
   commit,
+  baselineSha,
+  headSha: commit,
   createdAt: new Date().toISOString(),
   environment: await environment(),
   warmups,
@@ -145,6 +167,7 @@ const report = {
   metrics,
   bundle: await bundleSizes(),
   longTasks: [],
+  pathHitCounts: { fast: 0, bounded: 0, full: 0, available: false },
 };
 
 const output = argument("--output", `artifacts/performance/micro-${commit.slice(0, 12)}.json`);

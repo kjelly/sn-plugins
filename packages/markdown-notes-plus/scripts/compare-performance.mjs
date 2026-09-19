@@ -1,8 +1,15 @@
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function argument(name) {
-  const index = Deno.args.indexOf(name);
-  return index >= 0 ? Deno.args[index + 1] : undefined;
+  return argumentsFor(name)[0];
+}
+
+function argumentsFor(name) {
+  const values = [];
+  for (let index = 0; index < Deno.args.length; index += 1) {
+    if (Deno.args[index] === name && Deno.args[index + 1]) values.push(Deno.args[index + 1]);
+  }
+  return values;
 }
 
 function median(values) {
@@ -12,9 +19,15 @@ function median(values) {
 }
 
 async function run(command, args, cwd, stdout = "inherit") {
-  const result = await new Deno.Command(command, { args, cwd, stdout, stderr: "inherit" }).output();
-  if (!result.success) throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.code}`);
-  return stdout === "piped" ? new TextDecoder().decode(result.stdout).trim() : "";
+  const child = new Deno.Command(command, { args, cwd, stdout, stderr: "inherit" });
+  if (stdout === "piped") {
+    const result = await child.output();
+    if (!result.success) throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.code}`);
+    return new TextDecoder().decode(result.stdout).trim();
+  }
+  const status = await child.spawn().status;
+  if (!status.success) throw new Error(`${command} ${args.join(" ")} failed with exit code ${status.code}`);
+  return "";
 }
 
 async function readReport(path) {
@@ -26,7 +39,7 @@ async function readReport(path) {
 }
 
 function validateEnvironment(base, head) {
-  for (const key of ["os", "arch", "cpu", "cpuGovernor", "deno", "v8"]) {
+  for (const key of ["os", "arch", "cpu", "cpuGovernor", "deno", "v8", "browser", "browserVersion"]) {
     if (base.environment[key] !== head.environment[key]) {
       throw new Error(`Environment mismatch for ${key}: ${base.environment[key]} != ${head.environment[key]}`);
     }
@@ -35,23 +48,43 @@ function validateEnvironment(base, head) {
 
 function aggregate(reports) {
   const metrics = new Map();
+  let expectedKeys;
   for (const report of reports) {
+    const reportKeys = report.metrics.map((metric) => `${metric.fixture}:${metric.phase}`).sort();
+    if (new Set(reportKeys).size !== reportKeys.length) throw new Error("A performance report contains duplicate metrics");
+    if (expectedKeys && JSON.stringify(reportKeys) !== JSON.stringify(expectedKeys)) {
+      throw new Error("Performance batches do not contain the same metric set");
+    }
+    expectedKeys = reportKeys;
     for (const metric of report.metrics) {
       const key = `${metric.fixture}:${metric.phase}`;
-      const entry = metrics.get(key) ?? { fixture: metric.fixture, phase: metric.phase, medians: [], p95s: [] };
+      const entry = metrics.get(key) ?? { fixture: metric.fixture, phase: metric.phase, medians: [], p95s: [], madRatios: [] };
       entry.medians.push(metric.result.median);
       entry.p95s.push(metric.result.p95);
+      entry.madRatios.push(metric.result.median === 0
+        ? (metric.result.mad === 0 ? 0 : null)
+        : (metric.result.mad / metric.result.median) * 100);
       metrics.set(key, entry);
     }
   }
-  return new Map([...metrics].map(([key, value]) => [key, {
-    fixture: value.fixture,
-    phase: value.phase,
-    median: median(value.medians),
-    p95: median(value.p95s),
-    batchMedians: value.medians,
-    batchP95s: value.p95s,
-  }]));
+  return new Map([...metrics].map(([key, value]) => {
+    const center = median(value.medians);
+    const allBatchMediansZero = value.medians.every((sample) => sample === 0);
+    const variation = value.medians.length < 2 || allBatchMediansZero
+      ? 0
+      : center === 0 ? null : ((Math.max(...value.medians) - Math.min(...value.medians)) / center) * 100;
+    return [key, {
+      fixture: value.fixture,
+      phase: value.phase,
+      median: center,
+      p95: median(value.p95s),
+      batchMedians: value.medians,
+      batchP95s: value.p95s,
+      madRatios: value.madRatios,
+      interBatchMedianVariationPercent: variation,
+      stable: value.madRatios.every((ratio) => ratio !== null && ratio <= 5) && variation !== null && variation <= 5,
+    }];
+  }));
 }
 
 function compare(baseReports, headReports) {
@@ -69,6 +102,7 @@ function compare(baseReports, headReports) {
       head: headMetric,
       medianDeltaPercent: baseMetric.median === 0 ? 0 : ((headMetric.median / baseMetric.median) - 1) * 100,
       p95DeltaPercent: baseMetric.p95 === 0 ? 0 : ((headMetric.p95 / baseMetric.p95) - 1) * 100,
+      stable: baseMetric.stable && headMetric.stable,
     });
   }
   return metrics;
@@ -87,18 +121,20 @@ async function benchmarkSha(repositoryRoot, temporaryRoot, sha, label, batch) {
   return output;
 }
 
-const baseReportPath = argument("--base-report");
-const headReportPath = argument("--head-report");
+const baseReportPaths = argumentsFor("--base-report");
+const headReportPaths = argumentsFor("--head-report");
 let baseReports;
 let headReports;
 let baseIdentity;
 let headIdentity;
 let cleanup;
 
-if (baseReportPath || headReportPath) {
-  if (!baseReportPath || !headReportPath) throw new Error("Both --base-report and --head-report are required");
-  baseReports = [await readReport(baseReportPath)];
-  headReports = [await readReport(headReportPath)];
+if (baseReportPaths.length > 0 || headReportPaths.length > 0) {
+  if (baseReportPaths.length === 0 || headReportPaths.length === 0) {
+    throw new Error("At least one --base-report and --head-report are required");
+  }
+  baseReports = await Promise.all(baseReportPaths.map(readReport));
+  headReports = await Promise.all(headReportPaths.map(readReport));
   baseIdentity = baseReports[0].commit;
   headIdentity = headReports[0].commit;
 } else {
@@ -136,6 +172,13 @@ if (baseReportPath || headReportPath) {
     for (const [label, sha, batch] of order) paths[label].push(await benchmarkSha(repositoryRoot, temporaryRoot, sha, label, batch));
     baseReports = await Promise.all(paths.base.map(readReport));
     headReports = await Promise.all(paths.head.map(readReport));
+    const artifactDirectory = argument("--artifact-dir") ?? `${repositoryRoot}/packages/markdown-notes-plus/artifacts/performance`;
+    await Deno.mkdir(artifactDirectory, { recursive: true });
+    for (const label of ["base", "head"]) {
+      for (let index = 0; index < paths[label].length; index += 1) {
+        await Deno.copyFile(paths[label][index], `${artifactDirectory}/${label}-${String(label === "base" ? base : head).slice(0, 12)}-batch-${index + 1}.json`);
+      }
+    }
     baseIdentity = base;
     headIdentity = head;
   } finally {
@@ -143,13 +186,15 @@ if (baseReportPath || headReportPath) {
   }
 }
 
+const metrics = compare(baseReports, headReports);
 const report = {
   schemaVersion: SCHEMA_VERSION,
   kind: "performance-comparison",
   createdAt: new Date().toISOString(),
   base: baseIdentity,
   head: headIdentity,
-  metrics: compare(baseReports, headReports),
+  stable: metrics.every((metric) => metric.stable),
+  metrics,
 };
 const output = argument("--output") ?? `artifacts/performance/compare-${String(baseIdentity).slice(0, 12)}-${String(headIdentity).slice(0, 12)}.json`;
 await Deno.mkdir(output.slice(0, Math.max(0, output.lastIndexOf("/"))) || ".", { recursive: true });

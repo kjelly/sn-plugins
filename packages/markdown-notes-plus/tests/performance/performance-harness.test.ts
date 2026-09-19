@@ -4,6 +4,7 @@ import {
   getPerfTraceSnapshot,
   markAndMeasurePerf,
   markPerf,
+  measurePerf,
   setPerfTraceEnabledForTests,
 } from "../../src/performance/PerfTrace.ts";
 import {
@@ -91,6 +92,35 @@ Deno.test("performance trace records only-once lifecycle marks once per generati
     markPerf(PERF_MARKS.writingInteractive, {}, true);
     const snapshot = getPerfTraceSnapshot();
     assertEquals(snapshot.marks.filter((mark) => mark.name === PERF_MARKS.writingInteractive).length, 1);
+  } finally {
+    setPerfTraceEnabledForTests(false);
+  }
+});
+
+Deno.test("performance trace associates typing measurements with one explicit transaction sequence", () => {
+  setPerfTraceEnabledForTests(true);
+  try {
+    beginDocumentPerfTraceForText("text");
+    markPerf(PERF_MARKS.inputStart, { sequence: 1 });
+    markPerf(PERF_MARKS.canonicalCommitEnd, { sequence: 2 });
+    measurePerf(
+      PERF_MEASURES.inputToCanonical,
+      PERF_MARKS.inputStart,
+      PERF_MARKS.canonicalCommitEnd,
+      { sequence: 1 },
+    );
+    assertEquals(getPerfTraceSnapshot().measures.length, 0);
+
+    markPerf(PERF_MARKS.canonicalCommitEnd, { sequence: 1 });
+    measurePerf(
+      PERF_MEASURES.inputToCanonical,
+      PERF_MARKS.inputStart,
+      PERF_MARKS.canonicalCommitEnd,
+      { sequence: 1 },
+    );
+    const measures = getPerfTraceSnapshot().measures;
+    assertEquals(measures.length, 1);
+    assertEquals(measures[0].sequence, 1);
   } finally {
     setPerfTraceEnabledForTests(false);
   }

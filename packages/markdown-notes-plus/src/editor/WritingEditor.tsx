@@ -48,7 +48,7 @@ export type WritingEditorProps = {
   value: string;
   readOnly: boolean;
   writingProof: WritingCapabilityProof;
-  onChange: (value: string, proof: WritingCapabilityProof) => void;
+  onChange: (value: string, proof: WritingCapabilityProof, performanceSequence?: number) => void;
   command?: WritingCommand;
   insertPayload?: InsertPayload;
   headingNavigation?: WritingHeadingNavigation;
@@ -605,17 +605,17 @@ const writingOriginPlugin = new Plugin({
   },
 });
 
-const writingPerformancePlugin = new Plugin({
-  key: new PluginKey("markdown-notes-plus-writing-performance"),
-  filterTransaction(transaction) {
-    if (!transaction.docChanged) return true;
-    const origin = transaction.getMeta(WRITING_TRANSACTION_ORIGIN_META) as WritingMutationOrigin | undefined;
-    if (origin === undefined || origin === "user" || origin.kind === "command") {
-      markPerf(PERF_MARKS.transactionStart);
-    }
-    return true;
-  },
-});
+function createWritingPerformancePlugin(onTransactionStart: () => void): Plugin {
+  return new Plugin({
+    key: new PluginKey("markdown-notes-plus-writing-performance"),
+    filterTransaction(transaction) {
+      if (!transaction.docChanged) return true;
+      const origin = transaction.getMeta(WRITING_TRANSACTION_ORIGIN_META) as WritingMutationOrigin | undefined;
+      if (origin === undefined || origin === "user" || origin.kind === "command") onTransactionStart();
+      return true;
+    },
+  });
+}
 
 export function replaceAllWithOrigin(ctx: Ctx, markdown: string, origin: WritingMutationOrigin): void {
   const view = ctx.get(editorViewCtx);
@@ -647,6 +647,7 @@ type WritingEditorConfiguration = {
   libraryRef?: { current?: InsertLibrary };
   editability: WritingEditability;
   onRequestLinkRef: { current?: LinkRequest };
+  onTransactionStart: () => void;
   onMarkdownUpdated: (ctx: Ctx, markdown: string) => void;
 };
 
@@ -676,6 +677,7 @@ export function configureWritingEditor(editor: Editor, {
   libraryRef,
   editability,
   onRequestLinkRef,
+  onTransactionStart,
   onMarkdownUpdated,
 }: WritingEditorConfiguration): Editor {
   return editor
@@ -718,7 +720,7 @@ export function configureWritingEditor(editor: Editor, {
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use($prose(() => writingOriginPlugin))
-    .use($prose(() => writingPerformancePlugin))
+    .use($prose(() => createWritingPerformancePlugin(onTransactionStart)))
     .use($prose(() => createWritingFoldingPlugin()))
     .use($prose(() => createWritingShortcutsPlugin()))
     .use($prose(() => createWritingSmartKeysPlugin()))
@@ -783,6 +785,8 @@ export function WritingEditor({
   insertPayloadRef.current = insertPayload;
   const capabilityRef = useRef(false);
   const documentGenerationRef = useRef(0);
+  const transactionSequenceRef = useRef(0);
+  const pendingTransactionSequenceRef = useRef<number>();
   const onRequestLinkRef = useRef<LinkRequest>();
   const [linkDialog, setLinkDialog] = useState<PendingLinkDialog>();
   const appliedCommand = useRef<number>();
@@ -902,7 +906,7 @@ export function WritingEditor({
   useEffect(() => {
     if (!host.current) return undefined;
     const hostElement = host.current;
-    const markInputStart = () => markPerf(PERF_MARKS.inputStart);
+    const markInputStart = () => markPerf(PERF_MARKS.inputStart, { sequence: transactionSequenceRef.current + 1 });
     hostElement.addEventListener("beforeinput", markInputStart, true);
     let cancelled = false;
     const generation = gate.current.begin(value);
@@ -934,6 +938,12 @@ export function WritingEditor({
       libraryRef,
       editability: { readOnlyRef, capabilityRef },
       onRequestLinkRef,
+      onTransactionStart: () => {
+        const sequence = transactionSequenceRef.current + 1;
+        transactionSequenceRef.current = sequence;
+        pendingTransactionSequenceRef.current = sequence;
+        markPerf(PERF_MARKS.transactionStart, { sequence });
+      },
       onMarkdownUpdated: (ctx, markdown) => {
         if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);
         if (parserRef) parserRef.current = (docText: string) => ctx.get(parserCtx)(docText);
@@ -943,12 +953,15 @@ export function WritingEditor({
         const originState = writingOriginPluginKey.getState(view.state) ?? { origin: "user" as const };
         const origin = originState.origin;
         if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
+        const performanceSequence = pendingTransactionSequenceRef.current;
+        const performanceMetadata = performanceSequence === undefined ? {} : { sequence: performanceSequence };
         markAndMeasurePerf(
           PERF_MARKS.transactionToMarkdownEnd,
           PERF_MEASURES.transactionToMarkdown,
           PERF_MARKS.transactionStart,
+          performanceMetadata,
         );
-        markPerf(PERF_MARKS.mutationProofStart);
+        markPerf(PERF_MARKS.mutationProofStart, performanceMetadata);
         const proof = assessWritingMutation(
           valueRef.current,
           markdown,
@@ -966,6 +979,7 @@ export function WritingEditor({
           PERF_MARKS.mutationProofEnd,
           PERF_MEASURES.mutationProof,
           PERF_MARKS.mutationProofStart,
+          performanceMetadata,
         );
         if (!proof.editable) {
           capabilityRef.current = false;
@@ -974,7 +988,7 @@ export function WritingEditor({
           return;
         }
         if (markdown === valueRef.current) return;
-        onChangeRef.current(markdown, writingProofRef.current);
+        onChangeRef.current(markdown, writingProofRef.current, performanceSequence);
       },
     });
     markPerf(PERF_MARKS.milkdownCreateStart, {}, true);

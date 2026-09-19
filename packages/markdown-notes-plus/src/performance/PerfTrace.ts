@@ -7,6 +7,7 @@ export type PerfTraceMetadata = {
   headings?: number;
   tasks?: number;
   fixtureId?: string;
+  sequence?: number;
 };
 
 export type PerfTraceMark = PerfTraceMetadata & {
@@ -69,10 +70,14 @@ function markKey(name: PerfMarkName, generation: number): string {
   return `${generation}:${name}`;
 }
 
-function lastMark(name: PerfMarkName, generation: number): PerfTraceMark | undefined {
+function lastMark(name: PerfMarkName, generation: number, sequence?: number): PerfTraceMark | undefined {
   for (let index = state.marks.length - 1; index >= 0; index -= 1) {
     const candidate = state.marks[index];
-    if (candidate.name === name && candidate.generation === generation) return candidate;
+    if (
+      candidate.name === name &&
+      candidate.generation === generation &&
+      (sequence === undefined || candidate.sequence === sequence)
+    ) return candidate;
   }
   return undefined;
 }
@@ -80,7 +85,7 @@ function lastMark(name: PerfMarkName, generation: number): PerfTraceMark | undef
 function publishPerformanceMark(mark: PerfTraceMark): void {
   if (typeof performance === "undefined" || typeof performance.mark !== "function") return;
   try {
-    performance.mark(mark.name, { detail: { generation: mark.generation } });
+    performance.mark(mark.name, { detail: { generation: mark.generation, sequence: mark.sequence } });
   } catch {
     performance.mark(mark.name);
   }
@@ -157,8 +162,8 @@ export function measurePerf(
 ): PerfTraceMeasure | undefined {
   if (!isPerfTraceEnabled()) return undefined;
   const generation = metadata.generation ?? state.activeGeneration;
-  const start = lastMark(startName, generation);
-  const end = lastMark(endName, generation);
+  const start = lastMark(startName, generation, metadata.sequence);
+  const end = lastMark(endName, generation, metadata.sequence);
   if (!start || !end || end.startTime < start.startTime) return undefined;
   const key = `${generation}:${name}`;
   if (onlyOnce && once.has(key)) return state.measures.find((entry) => entry.name === name && entry.generation === generation);
@@ -173,7 +178,11 @@ export function measurePerf(
   state.measures.push(measure);
   if (typeof performance !== "undefined" && typeof performance.measure === "function") {
     try {
-      performance.measure(name, { start: start.startTime, duration: measure.duration, detail: { generation } });
+      performance.measure(name, {
+        start: start.startTime,
+        duration: measure.duration,
+        detail: { generation, sequence: metadata.sequence },
+      });
     } catch {
       // The in-memory trace remains authoritative on browsers without measure options.
     }

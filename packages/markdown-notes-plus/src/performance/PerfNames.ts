@@ -36,6 +36,7 @@ export const PERF_MEASURES = {
   inputToCanonical: "input_to_canonical_ms",
   transactionToMarkdown: "transaction_to_markdown_ms",
   transactionToCanonical: "transaction_to_canonical_ms",
+  projectionSchedule: "projection_schedule_ms",
 } as const;
 
 export type PerfMarkName = typeof PERF_MARKS[keyof typeof PERF_MARKS];
