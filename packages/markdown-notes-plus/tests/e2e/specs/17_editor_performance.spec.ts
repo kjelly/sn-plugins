@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -306,7 +306,7 @@ function buildMetrics(loadSamples: LoadSample[], typingSamples: TypingSample[]) 
 
 test.describe("editor performance contract", () => {
   test("records reproducible startup, long-task, and typing baselines without note content", async ({ browser }, testInfo) => {
-    test.setTimeout(6 * 60 * 60 * 1000);
+    test.setTimeout(24 * 60 * 60 * 1000);
     const smoke = process.env.PERF_SMOKE === "1";
     const loadRunsRequested = Number(process.env.PERF_LOAD_RUNS ?? process.env.PERF_RUNS ?? (smoke ? "1" : "40"));
     const typingRunsRequested = Number(process.env.PERF_TYPING_RUNS ?? process.env.PERF_RUNS ?? (smoke ? "1" : "20"));
@@ -326,13 +326,84 @@ test.describe("editor performance contract", () => {
     expect(cacheModes.length, `Unknown PERF_CACHE_MODE ${requestedCacheMode ?? ""}`).toBeGreaterThan(0);
     expect(inputKinds.length, `Unknown PERF_INPUT_KIND ${requestedInputKind ?? ""}`).toBeGreaterThan(0);
 
-    const loadSamples: LoadSample[] = [];
-    const typingSamples: TypingSample[] = [];
+    const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const baselineSha = process.env.PERF_BASELINE_SHA ?? commit;
+    const output = process.env.PERF_OUTPUT ?? `artifacts/performance/browser-${commit.slice(0, 12)}.json`;
+    const reportEnvironment = await environment(browser);
+    const browserIdentity = { name: "chromium", version: browser.version() };
+    const fixtureIdentity = fixtures.map((fixture) => ({ id: fixture.id, counts: fixture.counts }));
+    const bundle = await bundleSizes();
+    let loadSamples: LoadSample[] = [];
+    let typingSamples: TypingSample[] = [];
+
+    if (process.env.PERF_RESUME === "1") {
+      const previous = JSON.parse(await readFile(output, "utf8")) as Record<string, unknown>;
+      expect(previous.schemaVersion, "Resume schema must match").toBe(2);
+      expect(previous.commit, "Resume commit must match").toBe(commit);
+      expect(previous.baselineSha, "Resume baseline SHA must match").toBe(baselineSha);
+      expect(previous.formal, "Resume mode must match").toBe(!smoke);
+      expect(previous.environment, "Resume environment must match").toEqual(reportEnvironment);
+      expect(previous.browser, "Resume browser must match").toEqual(browserIdentity);
+      expect(previous.fixtures, "Resume fixtures must match").toEqual(fixtureIdentity);
+      expect(previous.cacheModes, "Resume cache modes must match").toEqual(cacheModes);
+      expect(previous.inputKinds, "Resume input kinds must match").toEqual(inputKinds);
+      expect(previous.requestedPhase, "Resume phase must match").toBe(requestedPhase);
+      expect(previous.warmups, "Resume warmups must match").toBe(warmups);
+      expect(previous.loadRuns, "Resume load runs must match").toBe(loadRuns);
+      expect(previous.typingRuns, "Resume typing runs must match").toBe(typingRuns);
+      expect(previous.typingCount, "Resume typing count must match").toBe(typingCount);
+      loadSamples = previous.loadSamples as LoadSample[];
+      typingSamples = previous.typingSamples as TypingSample[];
+    }
+
+    const writeReport = async (complete: boolean): Promise<void> => {
+      const metrics = buildMetrics(loadSamples, typingSamples);
+      const fullProofCount = typingSamples.reduce((total, sample) => total + sample.phases.mutation_proof_ms.length, 0);
+      const report = {
+        schemaVersion: 2,
+        generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
+        kind: "browser-benchmark",
+        formal: !smoke,
+        complete,
+        commit,
+        baselineSha,
+        headSha: commit,
+        createdAt: new Date().toISOString(),
+        environment: reportEnvironment,
+        browser: browserIdentity,
+        requestedPhase,
+        cacheModes,
+        inputKinds,
+        warmups,
+        loadRuns,
+        typingRuns,
+        typingCount,
+        fixtures: fixtureIdentity,
+        metrics,
+        bundle,
+        longTasks: loadSamples.map((sample) => ({ fixture: sample.fixture, cacheMode: sample.cacheMode, run: sample.run, ...longTaskSummary(sample.longTasks), samples: sample.longTasks })),
+        pathHitCounts: { fast: 0, bounded: 0, full: fullProofCount, available: true },
+        loadSamples,
+        typingSamples,
+      };
+      await mkdir(dirname(output), { recursive: true });
+      const temporaryOutput = `${output}.tmp-${process.pid}`;
+      await writeFile(temporaryOutput, `${JSON.stringify(report, null, 2)}\n`);
+      await rename(temporaryOutput, output);
+    };
+
     if (requestedPhase === "all" || requestedPhase === "load") {
       for (const fixture of fixtures) {
         for (const cacheMode of cacheModes) {
+          const existing = loadSamples.filter((sample) => sample.fixture === fixture.id && sample.cacheMode === cacheMode);
+          expect([0, loadRuns], `Checkpoint for ${fixture.id}/${cacheMode} must contain a complete group`).toContain(existing.length);
+          if (existing.length === loadRuns) {
+            console.log(`[perf] resumed load fixture=${fixture.id} cache=${cacheMode} samples=${loadRuns}`);
+            continue;
+          }
           for (let warmup = 0; warmup < warmups; warmup += 1) await runLoadSample(browser, fixture, cacheMode, -warmup - 1);
           for (let run = 0; run < loadRuns; run += 1) loadSamples.push(await runLoadSample(browser, fixture, cacheMode, run));
+          await writeReport(false);
           console.log(`[perf] completed load fixture=${fixture.id} cache=${cacheMode} samples=${loadRuns}`);
         }
       }
@@ -340,48 +411,25 @@ test.describe("editor performance contract", () => {
     if (requestedPhase === "all" || requestedPhase === "typing") {
       for (const fixture of fixtures) {
         for (const inputKind of inputKinds) {
+          const existing = typingSamples.filter((sample) => sample.fixture === fixture.id && sample.inputKind === inputKind);
+          expect([0, typingRuns], `Checkpoint for ${fixture.id}/${inputKind} must contain a complete group`).toContain(existing.length);
+          if (existing.length === typingRuns) {
+            console.log(`[perf] resumed typing fixture=${fixture.id} input=${inputKind} samples=${typingRuns}`);
+            continue;
+          }
           for (let warmup = 0; warmup < warmups; warmup += 1) {
             await runTypingSample(browser, fixture, inputKind, -warmup - 1, typingCount);
           }
           for (let run = 0; run < typingRuns; run += 1) {
             typingSamples.push(await runTypingSample(browser, fixture, inputKind, run, typingCount));
           }
+          await writeReport(false);
           console.log(`[perf] completed typing fixture=${fixture.id} input=${inputKind} samples=${typingRuns}`);
         }
       }
     }
 
-    const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    const baselineSha = process.env.PERF_BASELINE_SHA ?? commit;
-    const metrics = buildMetrics(loadSamples, typingSamples);
-    const fullProofCount = typingSamples.reduce((total, sample) => total + sample.phases.mutation_proof_ms.length, 0);
-    const report = {
-      schemaVersion: 2,
-      generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
-      kind: "browser-benchmark",
-      formal: !smoke,
-      commit,
-      baselineSha,
-      headSha: commit,
-      createdAt: new Date().toISOString(),
-      environment: await environment(browser),
-      browser: { name: "chromium", version: browser.version() },
-      cacheModes,
-      warmups,
-      loadRuns,
-      typingRuns,
-      typingCount,
-      fixtures: fixtures.map((fixture) => ({ id: fixture.id, counts: fixture.counts })),
-      metrics,
-      bundle: await bundleSizes(),
-      longTasks: loadSamples.map((sample) => ({ fixture: sample.fixture, cacheMode: sample.cacheMode, run: sample.run, ...longTaskSummary(sample.longTasks), samples: sample.longTasks })),
-      pathHitCounts: { fast: 0, bounded: 0, full: fullProofCount, available: true },
-      loadSamples,
-      typingSamples,
-    };
-    const output = process.env.PERF_OUTPUT ?? `artifacts/performance/browser-${commit.slice(0, 12)}.json`;
-    await mkdir(dirname(output), { recursive: true });
-    await writeFile(output, `${JSON.stringify(report, null, 2)}\n`);
+    await writeReport(true);
     await testInfo.attach("editor-performance.json", {
       path: output,
       contentType: "application/json",

@@ -35,6 +35,9 @@ async function readReport(path) {
   if (report.schemaVersion !== SCHEMA_VERSION || report.generatorVersion !== 1) {
     throw new Error(`Incompatible performance report schema: ${path}`);
   }
+  if (report.kind === "browser-benchmark" && report.complete !== true) {
+    throw new Error(`Incomplete browser performance checkpoint: ${path}`);
+  }
   return report;
 }
 
