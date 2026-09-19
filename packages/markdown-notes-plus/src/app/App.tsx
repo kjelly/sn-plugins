@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { DocumentState } from "../document/CanonicalDocument";
 import type { EditorRuntime } from "../standardnotes/EditorRuntime.ts";
 import {
@@ -66,6 +66,8 @@ import { scrollToolbarWithWheel } from "../utils/toolbarWheel.ts";
 import { analyzeKanban } from "../kanban/KanbanModel.ts";
 import { moveKanbanCard } from "../kanban/KanbanMove.ts";
 import type { KanbanMoveCommand } from "../kanban/KanbanView.tsx";
+import { PERF_MARKS, PERF_MEASURES } from "../performance/PerfNames.ts";
+import { markAndMeasurePerf, markPerf, measurePerf } from "../performance/PerfTrace.ts";
 
 const LazySourceEditor = React.lazy(async () => {
   const module = await import("../editor/SourceEditor");
@@ -77,7 +79,10 @@ const LazyMindMapView = React.lazy(async () => {
   return { default: module.MindMapView };
 });
 
-const writingEditorPromise = import("../editor/WritingEditor");
+const writingEditorPromise = import("../editor/WritingEditor").then((module) => {
+  markPerf(PERF_MARKS.writingChunkLoaded, {}, true);
+  return module;
+});
 const LazyWritingEditor = React.lazy(async () => {
   const module = await writingEditorPromise;
   return { default: module.WritingEditor };
@@ -320,7 +325,12 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
     setWritingCommand(undefined);
   };
   const snapshot = canonical.snapshot();
-  const analysis = useMemo(() => analyzeMarkdown(snapshot.text), [snapshot.text]);
+  const analysis = useMemo(() => {
+    markPerf(PERF_MARKS.analysisStart);
+    const result = analyzeMarkdown(snapshot.text);
+    markAndMeasurePerf(PERF_MARKS.analysisEnd, PERF_MEASURES.analysis, PERF_MARKS.analysisStart);
+    return result;
+  }, [snapshot.text]);
   const kanban = useMemo(() => analyzeKanban(snapshot.text, analysis), [snapshot.text, analysis]);
   const kanbanSuitable = kanban.candidates.length > 0;
   const mindmapSuitable = isMindmapSuitable(snapshot.text, analysis);
@@ -344,6 +354,11 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
   const writingVisible = mode === "writing" || mode === "split";
   const bridgeState = bridge.getState();
   const today = useMemo(() => new Date(`${todayKey}T00:00:00`), [todayKey]);
+
+  useLayoutEffect(() => {
+    if (snapshot.resetGeneration <= 0) return;
+    markAndMeasurePerf(PERF_MARKS.mountAppEnd, PERF_MEASURES.contextToApp, PERF_MARKS.contextReceived, {}, true);
+  }, [snapshot.resetGeneration]);
 
   useEffect(() => {
     const now = new Date();
@@ -551,12 +566,23 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
   }, [bridge]);
 
   const edit = (next: string, changeSet?: TextChangeSet, proof?: WritingCapabilityProof) => {
+    markPerf(PERF_MARKS.canonicalCommitStart);
+    let applied = false;
     if (!proof) {
-      if (appLifecycle.applyLocal(next, changeSet)) bridge.notifyLocalChange(canonical.text);
+      applied = appLifecycle.applyLocal(next, changeSet);
+      if (applied) bridge.notifyLocalChange(canonical.text);
+      markAndMeasurePerf(PERF_MARKS.canonicalCommitEnd, PERF_MEASURES.canonicalCommit, PERF_MARKS.canonicalCommitStart);
+      measurePerf(PERF_MEASURES.inputToCanonical, PERF_MARKS.inputStart, PERF_MARKS.canonicalCommitEnd);
+      measurePerf(PERF_MEASURES.transactionToCanonical, PERF_MARKS.transactionStart, PERF_MARKS.canonicalCommitEnd);
+      if (applied) markPerf(PERF_MARKS.projectionSchedule);
       return;
     }
-    const applied = appLifecycle.applyWritingLocalIfCurrent(proof, writingResetEpoch, next, changeSet);
+    applied = appLifecycle.applyWritingLocalIfCurrent(proof, writingResetEpoch, next, changeSet);
     if (applied) bridge.notifyLocalChange(canonical.text);
+    markAndMeasurePerf(PERF_MARKS.canonicalCommitEnd, PERF_MEASURES.canonicalCommit, PERF_MARKS.canonicalCommitStart);
+    measurePerf(PERF_MEASURES.inputToCanonical, PERF_MARKS.inputStart, PERF_MARKS.canonicalCommitEnd);
+    measurePerf(PERF_MEASURES.transactionToCanonical, PERF_MARKS.transactionStart, PERF_MARKS.canonicalCommitEnd);
+    if (applied) markPerf(PERF_MARKS.projectionSchedule);
   };
   const handleWritingCapabilityChange = useCallback((result: WritingRoundTripResult, proofSource?: string, proof?: WritingCapabilityProof) => {
     const current = canonical.snapshot();

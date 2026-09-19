@@ -1,6 +1,7 @@
 import { CanonicalDocument } from "../document/CanonicalDocument.ts";
 import { EditorKitLifecycle, type IncomingTextKind } from "./EditorKitLifecycle.ts";
 import { evaluateRecurringTasks } from "../tasks/RecurringTasks.ts";
+import { beginDocumentPerfTraceForText } from "../performance/PerfTrace.ts";
 
 type HostNote = { content?: { text?: unknown; [key: string]: unknown }; [key: string]: unknown };
 export type EditorKitDelegate = {
@@ -159,6 +160,7 @@ export class EditorKitBridge {
         this.incomingNote = undefined;
         if (incomingNote !== undefined) this.latestNote = incomingNote;
         if (kind === "initial-context") {
+          beginDocumentPerfTraceForText(text);
           this.cancelPendingSave();
           this.cancelRecurringEvaluation();
           this.document.initialize(text);

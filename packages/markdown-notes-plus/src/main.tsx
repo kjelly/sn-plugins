@@ -1,5 +1,7 @@
 import "./style.css";
 import { createEditorRuntime, startEditorRuntime } from "./standardnotes/EditorRuntime.ts";
+import { PERF_MARKS, PERF_MEASURES } from "./performance/PerfNames.ts";
+import { markAndMeasurePerf, markPerf } from "./performance/PerfTrace.ts";
 
 const root = document.getElementById("app");
 if (!root) throw new Error("Markdown Notes+ root element is missing");
@@ -19,12 +21,20 @@ const runtime = createEditorRuntime({
     content.textContent = text;
     shell.append(status, content);
     root.replaceChildren(shell);
+    markAndMeasurePerf(
+      PERF_MARKS.bootstrapPreviewRendered,
+      PERF_MEASURES.contextToPreview,
+      PERF_MARKS.contextReceived,
+      {},
+      true,
+    );
   },
 });
 
 // Standard Notes posts `component-registered` once from the iframe load
 // handler. Register the bridge before requesting React, Milkdown, or the App.
 startEditorRuntime(runtime);
+markPerf(PERF_MARKS.mountAppStart, {}, true);
 void import("./mountApp.tsx").then(({ mountApp }) => {
   previewActive = false;
   mountApp(root, runtime);

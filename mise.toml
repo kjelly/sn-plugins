@@ -71,6 +71,24 @@ depends = ["playwright:install"]
 dir = "packages/markdown-notes-plus"
 run = "npm run test:e2e:release"
 
+[tasks."test:e2e:perf"]
+description = "Run the Chromium editor performance contract"
+depends = ["playwright:install"]
+dir = "packages/markdown-notes-plus"
+run = "npm run test:e2e:perf"
+
+[tasks."bench:perf"]
+description = "Run deterministic Markdown Notes+ microbenchmarks"
+depends = ["build"]
+dir = "packages/markdown-notes-plus"
+run = "npm run bench:perf --"
+
+[tasks."bench:perf:compare"]
+description = "Compare isolated base/head performance benchmark reports"
+depends = ["deps"]
+dir = "packages/markdown-notes-plus"
+run = "npm run bench:perf:compare --"
+
 [tasks."test:e2e:sn-contract"]
 description = "Run the Standard Notes production security-contract browser test"
 depends = ["playwright:install"]

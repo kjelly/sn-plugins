@@ -15,6 +15,8 @@ import { toggleMark } from "@milkdown/prose/commands";
 import { WritingControlRegistry, writingTaskIsHidden, type WritingControlState } from "./WritingTaskControls";
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingCapabilityProof, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
 import { scanWritingNormalization, WRITING_CODEC_OPTIONS, type WritingCodec } from "../markdown/writingNormalization.ts";
+import { PERF_MARKS, PERF_MEASURES } from "../performance/PerfNames.ts";
+import { markAndMeasurePerf, markPerf } from "../performance/PerfTrace.ts";
 import { writingEmptyTaskListItem } from "../markdown/writingTaskCodec.ts";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
@@ -603,6 +605,18 @@ const writingOriginPlugin = new Plugin({
   },
 });
 
+const writingPerformancePlugin = new Plugin({
+  key: new PluginKey("markdown-notes-plus-writing-performance"),
+  filterTransaction(transaction) {
+    if (!transaction.docChanged) return true;
+    const origin = transaction.getMeta(WRITING_TRANSACTION_ORIGIN_META) as WritingMutationOrigin | undefined;
+    if (origin === undefined || origin === "user" || origin.kind === "command") {
+      markPerf(PERF_MARKS.transactionStart);
+    }
+    return true;
+  },
+});
+
 export function replaceAllWithOrigin(ctx: Ctx, markdown: string, origin: WritingMutationOrigin): void {
   const view = ctx.get(editorViewCtx);
   const doc = ctx.get(parserCtx)(markdown);
@@ -704,6 +718,7 @@ export function configureWritingEditor(editor: Editor, {
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use($prose(() => writingOriginPlugin))
+    .use($prose(() => writingPerformancePlugin))
     .use($prose(() => createWritingFoldingPlugin()))
     .use($prose(() => createWritingShortcutsPlugin()))
     .use($prose(() => createWritingSmartKeysPlugin()))
@@ -823,6 +838,7 @@ export function WritingEditor({
     const editor = editorRef.current;
     if (!editor) return undefined;
     if (gate.current.renderedMarkdown !== target) documentGenerationRef.current += 1;
+    markPerf(PERF_MARKS.roundtripProofStart, {}, true);
     const result = synchronizeWritingEditorValue({
       gate: gate.current,
       generation: generationRef.current,
@@ -841,6 +857,13 @@ export function WritingEditor({
         reportCapability(result, forceReport, target, proof);
       },
     });
+    markAndMeasurePerf(
+      PERF_MARKS.roundtripProofEnd,
+      PERF_MEASURES.roundtripProof,
+      PERF_MARKS.roundtripProofStart,
+      {},
+      true,
+    );
     if (result.kind === "unsupported" && editorRef.current === editor) {
       // Do not leave a stale projection visible while App admits the document
       // to Source-only mode. This also handles a protected update that lands
@@ -879,14 +902,27 @@ export function WritingEditor({
   useEffect(() => {
     if (!host.current) return undefined;
     const hostElement = host.current;
+    const markInputStart = () => markPerf(PERF_MARKS.inputStart);
+    hostElement.addEventListener("beforeinput", markInputStart, true);
     let cancelled = false;
     const generation = gate.current.begin(value);
     generationRef.current = generation;
+    markPerf(PERF_MARKS.writingPreflightStart, {}, true);
     const preflight = scanWritingNormalization(value);
+    markAndMeasurePerf(
+      PERF_MARKS.writingPreflightEnd,
+      PERF_MEASURES.writingPreflight,
+      PERF_MARKS.writingPreflightStart,
+      {},
+      true,
+    );
     if (preflight.unsupportedReason) {
       capabilityRef.current = false;
       onCapabilityChangeRef.current?.({ kind: "unsupported", editable: false, reason: preflight.unsupportedReason }, value, writingProof);
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+        hostElement.removeEventListener("beforeinput", markInputStart, true);
+      };
     }
     const editor = configureWritingEditor(Editor.make(), {
       host: hostElement,
@@ -907,6 +943,12 @@ export function WritingEditor({
         const originState = writingOriginPluginKey.getState(view.state) ?? { origin: "user" as const };
         const origin = originState.origin;
         if (!gate.current.markdownUpdated(generation, markdown, origin)) return;
+        markAndMeasurePerf(
+          PERF_MARKS.transactionToMarkdownEnd,
+          PERF_MEASURES.transactionToMarkdown,
+          PERF_MARKS.transactionStart,
+        );
+        markPerf(PERF_MARKS.mutationProofStart);
         const proof = assessWritingMutation(
           valueRef.current,
           markdown,
@@ -920,6 +962,11 @@ export function WritingEditor({
             document: view.state.doc,
           },
         );
+        markAndMeasurePerf(
+          PERF_MARKS.mutationProofEnd,
+          PERF_MEASURES.mutationProof,
+          PERF_MARKS.mutationProofStart,
+        );
         if (!proof.editable) {
           capabilityRef.current = false;
           onCapabilityChangeRef.current?.(proof, valueRef.current, writingProofRef.current);
@@ -930,7 +977,15 @@ export function WritingEditor({
         onChangeRef.current(markdown, writingProofRef.current);
       },
     });
+    markPerf(PERF_MARKS.milkdownCreateStart, {}, true);
     editor.create().then(() => {
+      markAndMeasurePerf(
+        PERF_MARKS.milkdownCreateEnd,
+        PERF_MEASURES.milkdownCreate,
+        PERF_MARKS.milkdownCreateStart,
+        {},
+        true,
+      );
       if (cancelled) {
         void editor.destroy();
         return;
@@ -946,8 +1001,20 @@ export function WritingEditor({
       // on the host document. Restore the pre-split behavior so immediate
       // keyboard input is delivered to the newly mounted ProseMirror view.
       if (!readOnlyRef.current) editor.action((ctx) => ctx.get(editorViewCtx).focus());
+      markAndMeasurePerf(
+        PERF_MARKS.writingInteractive,
+        PERF_MEASURES.contextToWritingInteractive,
+        PERF_MARKS.contextReceived,
+        {},
+        true,
+      );
     }).catch(() => { /* isolate editor initialization failure in its ErrorBoundary */ });
-    return () => { cancelled = true; editorRef.current = undefined; void editor.destroy(); };
+    return () => {
+      cancelled = true;
+      hostElement.removeEventListener("beforeinput", markInputStart, true);
+      editorRef.current = undefined;
+      void editor.destroy();
+    };
     // The editor owns its lifecycle. Content updates are handled below so a
     // canonical update cannot recreate Milkdown and lose selection/history.
     // eslint-disable-next-line react-hooks/exhaustive-deps
