@@ -72,7 +72,7 @@ export function KanbanView({ markdown, analysis, token, locked = false, fallback
     return <section className="kanban-view" aria-label="Kanban">
       <div className="kanban-empty">
         <h2>Kanban</h2>
-        <p>{sourceOnly ? boardReason(sourceOnly) : "Add one heading with direct Backlog, Doing, Review, and Done child headings to use Kanban."}</p>
+        <p>{sourceOnly ? boardReason(sourceOnly) : "Add one heading with at least two direct child headings as columns to use Kanban."}</p>
       </div>
     </section>;
   }

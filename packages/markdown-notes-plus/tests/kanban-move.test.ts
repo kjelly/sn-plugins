@@ -222,3 +222,32 @@ Deno.test("A same-revision Kanban move still applies through canonical admission
   assert(document.applyLocalIfCurrent(document.token, result.markdown, result.changeSet));
   assertEquals(document.text, result.markdown);
 });
+
+Deno.test("Kanban move works with arbitrary column names and custom board", () => {
+  const customSource = `# 專案進度
+## 待辦
+- [ ] 任務甲
+## 進行中
+- [ ] 任務乙
+## 完成
+`;
+  const model = analyzeKanban(customSource);
+  assertEquals(model.candidates.length, 1);
+  const board = model.candidates[0];
+  const todoCol = board.columns[0];
+  const doneCol = board.columns[2];
+  const result = moveKanbanCard(
+    { markdown: customSource },
+    todoCol.cards[0],
+    { boardAnchor: board.anchor, columnAnchor: doneCol.anchor },
+  );
+  assert(result.changed);
+  assertEquals(result.markdown, `# 專案進度
+## 待辦
+## 進行中
+- [ ] 任務乙
+## 完成
+- [ ] 任務甲
+`);
+});
+

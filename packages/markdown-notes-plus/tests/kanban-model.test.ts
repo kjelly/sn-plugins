@@ -82,3 +82,41 @@ Deno.test("Physical lines recognize bare CR without changing the legacy Markdown
   assertEquals(scanMarkdownStructure("- [ ] one\r- [ ] two\n").lines.length, 1);
   assertEquals(analyzeMarkdown("- [ ] one\r- [ ] two\n").tasks.length, 0);
 });
+
+Deno.test("Kanban model accepts boards with arbitrary column names and column counts >= 2", () => {
+  const source = `# 專案看板
+## 待辦事項
+- [ ] 任務一
+## 進行中
+- [ ] 任務二
+## 已完成
+- [x] 任務三
+`;
+  const model = analyzeKanban(source);
+  assertEquals(model.candidates.length, 1);
+  assertEquals(model.candidates[0].columns.map((column) => column.name), ["待辦事項", "進行中", "已完成"]);
+  assertEquals(model.candidates[0].columns[0].cards.map((card) => card.text), ["任務一"]);
+  assertEquals(model.candidates[0].columns[1].cards.map((card) => card.text), ["任務二"]);
+  assertEquals(model.candidates[0].columns[2].cards.map((card) => card.text), ["任務三"]);
+});
+
+Deno.test("Kanban model rejects boards with duplicate column names or fewer than 2 columns", () => {
+  const duplicateSource = `# Duplicate
+## Doing
+## Doing
+`;
+  const duplicateModel = analyzeKanban(duplicateSource);
+  assertEquals(duplicateModel.candidates.length, 0);
+  assertEquals(duplicateModel.boards.length, 1);
+  assertEquals(duplicateModel.boards[0].sourceOnly, true);
+  assert(duplicateModel.boards[0].reason?.includes("unique names"));
+
+  const singleColSource = `# Single
+## OnlyOne
+- [ ] Task
+`;
+  const singleColModel = analyzeKanban(singleColSource);
+  assertEquals(singleColModel.candidates.length, 0);
+  assertEquals(singleColModel.boards.length, 0);
+});
+

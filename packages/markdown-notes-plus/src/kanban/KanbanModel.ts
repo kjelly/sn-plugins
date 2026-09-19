@@ -1,7 +1,7 @@
 import { analyzeMarkdown, type MarkdownAnalysis, type MovableTaskSubtree, type SectionInfo, type TaskInfo } from "../markdown/analysis.ts";
 
 export const KANBAN_COLUMN_NAMES = ["Backlog", "Doing", "Review", "Done"] as const;
-export type KanbanColumnName = typeof KANBAN_COLUMN_NAMES[number];
+export type KanbanColumnName = typeof KANBAN_COLUMN_NAMES[number] | string;
 
 export type KanbanCardRef = { boardAnchor: number; cardAnchor: number };
 export type KanbanDropTarget = {
@@ -23,7 +23,7 @@ export type KanbanCard = KanbanCardRef & {
 
 export type KanbanColumn = {
   anchor: number;
-  name: KanbanColumnName;
+  name: string;
   section: SectionInfo;
   cards: KanbanCard[];
   dropAllowed: boolean;
@@ -64,26 +64,32 @@ function boardColumns(
   boardAnchor: number,
   directChildren: SectionInfo[],
 ): { columns: KanbanColumn[]; valid: boolean; sourceOnly: boolean; reason?: string } {
-  const matching = new Map<KanbanColumnName, SectionInfo[]>();
-  for (const name of KANBAN_COLUMN_NAMES) matching.set(name, []);
-  for (const child of directChildren) {
-    const name = KANBAN_COLUMN_NAMES.find((candidate) => candidate === child.text.trim());
-    if (name) matching.get(name)!.push(child);
-  }
-  const missing = KANBAN_COLUMN_NAMES.filter((name) => matching.get(name)!.length !== 1);
-  const directColumns = KANBAN_COLUMN_NAMES.flatMap((name) => matching.get(name)!.length === 1 ? [matching.get(name)![0]] : []);
-  const columnHasDescendantHeading = directColumns.some((column) => analysis.sections.some((section) => isDescendantHeading(section, column)));
-  const sourceOnly = columnHasDescendantHeading || missing.length > 0;
+  const columnHasDescendantHeading = directChildren.some((column) =>
+    analysis.sections.some((section) => isDescendantHeading(section, column))
+  );
+  const trimmedNames = directChildren.map((child) => child.text.trim());
+  const duplicateNames = trimmedNames.filter((name, idx) => trimmedNames.indexOf(name) !== idx);
+  const hasTooFewColumns = directChildren.length < 2;
+  const sourceOnly = columnHasDescendantHeading || hasTooFewColumns || duplicateNames.length > 0;
   const reason = columnHasDescendantHeading
     ? "A Kanban column contains a descendant heading; this board is source-only."
-    : missing.length > 0
-    ? `Board requires exactly one direct ${missing.join(", ")} heading.`
+    : hasTooFewColumns
+    ? "Board requires at least two column headings."
+    : duplicateNames.length > 0
+    ? `Board columns must have unique names; duplicate: ${[...new Set(duplicateNames)].join(", ")}.`
     : undefined;
-  const columns: KanbanColumn[] = KANBAN_COLUMN_NAMES.flatMap((name) => {
-    const section = matching.get(name)![0];
-    if (!section) return [];
-    return [{ anchor: section.anchor, name, section, cards: [], dropAllowed: !sourceOnly, ...(sourceOnly ? { reason } : {}) }];
+
+  const columns: KanbanColumn[] = directChildren.map((section) => {
+    return {
+      anchor: section.anchor,
+      name: section.text.trim() || "Untitled",
+      section,
+      cards: [],
+      dropAllowed: !sourceOnly,
+      ...(sourceOnly && reason ? { reason } : {}),
+    };
   });
+
   if (!sourceOnly) {
     for (const column of columns) {
       const tasks = analysis.tasks.filter((task) => {
@@ -108,21 +114,24 @@ function boardColumns(
       }
     }
   }
-  return { columns, valid: !sourceOnly && columns.length === KANBAN_COLUMN_NAMES.length, sourceOnly, ...(reason ? { reason } : {}) };
+  return { columns, valid: !sourceOnly && columns.length >= 2, sourceOnly, ...(reason ? { reason } : {}) };
 }
 
 export function analyzeKanban(markdown: string, analysis: MarkdownAnalysis = analyzeMarkdown(markdown)): KanbanModel {
   const boards: KanbanBoard[] = [];
+  const registeredColumnAnchors = new Set<number>();
   for (const section of analysis.sections) {
-    const directChildren = analysis.sections.filter((candidate) => candidate.parentAnchor === section.anchor && candidate.level === section.level + 1);
-    if (directChildren.length === 0) continue;
-    const directNamedCount = directChildren.filter((candidate) => KANBAN_COLUMN_NAMES.includes(candidate.text.trim() as KanbanColumnName)).length;
-    if (directNamedCount === 0) continue;
-    const namedDescendants = analysis.sections.filter((candidate) => sectionContains(section, candidate)).filter((candidate) => KANBAN_COLUMN_NAMES.includes(candidate.text.trim() as KanbanColumnName));
-    if (new Set(namedDescendants.map((candidate) => candidate.text.trim())).size < KANBAN_COLUMN_NAMES.length) continue;
+    if (registeredColumnAnchors.has(section.anchor)) continue;
+    const directChildren = analysis.sections.filter(
+      (candidate) => candidate.parentAnchor === section.anchor && candidate.level === section.level + 1
+    );
+    if (directChildren.length < 2) continue;
     const result = boardColumns(analysis, section.anchor, directChildren);
     const hasBoardShape = result.valid || result.sourceOnly;
     if (!hasBoardShape) continue;
+    for (const col of result.columns) {
+      registeredColumnAnchors.add(col.anchor);
+    }
     boards.push({
       anchor: section.anchor,
       title: section.text.trim(),
