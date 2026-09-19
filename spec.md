@@ -4,7 +4,7 @@
 > **目標套件**：`packages/markdown-notes-plus`
 > **起始程式碼版本**：`ba07fe3ca13aec98cf9d05ae17336b6985b48ba5`，已包含 `f2cd17d`、`43de10f`、`454d8e4` 與 `ba07fe3` 的 lazy-loading / bootstrap / deferred-work 改善。若正式執行不是從此 SHA 開始，必須在任何程式變更前更新本欄。
 >
-> **效能 baseline SHA**：`PENDING_PHASE_0_HARNESS_SHA`。由 Phase 0 的 harness-only commit 產生並回填為完整 SHA。該 commit 只能新增 fixture、instrumentation 與 runner，不得包含 optimization。回填後所有最終百分比目標固定相對此 SHA；不得因 `main` 前進而重設 baseline。Compare script 若仍看到此 placeholder 必須拒絕執行。
+> **效能 baseline SHA**：`02b430c7eb3300b56bd34fe4669270608682c668`。此 Phase 0 harness-only commit 只新增 fixture、instrumentation 與 runner，不包含 optimization。所有最終百分比目標固定相對此 SHA；不得因 `main` 前進而重設 baseline。
 > **原則**：任何效能改動都必須以 benchmark 證明改善，且不得降低 Markdown lossless round-trip、Standard Notes bridge、Writing stability、CSP 或跨裝置安全邊界。
 
 ---
