@@ -58,7 +58,8 @@ function aggregate(reports) {
     expectedKeys = reportKeys;
     for (const metric of report.metrics) {
       const key = `${metric.fixture}:${metric.phase}`;
-      const entry = metrics.get(key) ?? { fixture: metric.fixture, phase: metric.phase, medians: [], p95s: [], madRatios: [] };
+      const entry = metrics.get(key) ?? { fixture: metric.fixture, phase: metric.phase, primary: metric.primary === true, medians: [], p95s: [], madRatios: [] };
+      if (entry.primary !== (metric.primary === true)) throw new Error(`Performance batches disagree on primary metric ${key}`);
       entry.medians.push(metric.result.median);
       entry.p95s.push(metric.result.p95);
       entry.madRatios.push(metric.result.median === 0
@@ -76,6 +77,7 @@ function aggregate(reports) {
     return [key, {
       fixture: value.fixture,
       phase: value.phase,
+      primary: value.primary,
       median: center,
       p95: median(value.p95s),
       batchMedians: value.medians,
@@ -103,6 +105,7 @@ function compare(baseReports, headReports) {
       medianDeltaPercent: baseMetric.median === 0 ? 0 : ((headMetric.median / baseMetric.median) - 1) * 100,
       p95DeltaPercent: baseMetric.p95 === 0 ? 0 : ((headMetric.p95 / baseMetric.p95) - 1) * 100,
       stable: baseMetric.stable && headMetric.stable,
+      primary: baseMetric.primary || headMetric.primary,
     });
   }
   return metrics;
@@ -187,13 +190,15 @@ if (baseReportPaths.length > 0 || headReportPaths.length > 0) {
 }
 
 const metrics = compare(baseReports, headReports);
+const primaryMetrics = metrics.filter((metric) => metric.primary);
 const report = {
   schemaVersion: SCHEMA_VERSION,
   kind: "performance-comparison",
   createdAt: new Date().toISOString(),
   base: baseIdentity,
   head: headIdentity,
-  stable: metrics.every((metric) => metric.stable),
+  stable: (primaryMetrics.length > 0 ? primaryMetrics : metrics).every((metric) => metric.stable),
+  diagnosticStable: metrics.every((metric) => metric.stable),
   metrics,
 };
 const output = argument("--output") ?? `artifacts/performance/compare-${String(baseIdentity).slice(0, 12)}-${String(headIdentity).slice(0, 12)}.json`;

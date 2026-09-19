@@ -262,12 +262,18 @@ function buildMetrics(loadSamples: LoadSample[], typingSamples: TypingSample[]) 
   for (const [key, group] of loadGroups) {
     const [fixture, cacheMode] = key.split(":");
     for (const phase of STARTUP_MEASURES) {
-      metrics.push({ fixture, phase: `${cacheMode}:${phase}`, result: summarize(group.map((sample) => sample.phases[phase])) });
+      metrics.push({
+        fixture,
+        phase: `${cacheMode}:${phase}`,
+        primary: phase === "context_to_writing_interactive_ms",
+        result: summarize(group.map((sample) => sample.phases[phase])),
+      });
     }
     for (const field of ["count", "max", "totalBlockingTime"] as const) {
       metrics.push({
         fixture,
         phase: `${cacheMode}:long_tasks_${field}`,
+        primary: false,
         result: summarize(group.map((sample) => longTaskSummary(sample.longTasks)[field])),
       });
     }
@@ -283,8 +289,16 @@ function buildMetrics(loadSamples: LoadSample[], typingSamples: TypingSample[]) 
     for (const phase of TYPING_MEASURES) {
       const runP50 = group.map((sample) => median(sample.phases[phase]));
       const runP95 = group.map((sample) => nearestRank(sample.phases[phase], 0.95));
-      metrics.push({ fixture, phase: `typing:${inputKind}:${phase}:run_p50`, result: summarize(runP50) });
-      metrics.push({ fixture, phase: `typing:${inputKind}:${phase}:run_p95`, result: summarize(runP95) });
+      metrics.push({ fixture, phase: `typing:${inputKind}:${phase}:run_p50`, primary: false, result: summarize(runP50) });
+      metrics.push({ fixture, phase: `typing:${inputKind}:${phase}:run_p95`, primary: false, result: summarize(runP95) });
+      if (phase === "input_to_canonical_ms" && inputKind !== "syntax") {
+        metrics.push({
+          fixture,
+          phase: `typing:${inputKind}:typing_p95_ms`,
+          primary: true,
+          result: summarize(runP95),
+        });
+      }
     }
   }
   return metrics;

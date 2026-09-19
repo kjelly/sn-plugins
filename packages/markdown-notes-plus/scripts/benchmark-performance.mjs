@@ -68,18 +68,19 @@ async function commandOutput(command, args) {
 }
 
 async function environment() {
-  let cpu = "unknown";
+  const warnings = [];
+  let cpu = Deno.env.get("PERF_CPU_MODEL") ?? "unknown";
   try {
     const info = await Deno.readTextFile("/proc/cpuinfo");
     cpu = info.match(/^model name\s*:\s*(.+)$/m)?.[1] ?? cpu;
-  } catch {
-    // Non-Linux runners retain the explicit unknown value.
+  } catch (error) {
+    warnings.push(`cpu:${error instanceof Error ? error.message : String(error)}`);
   }
-  let governor = "unknown";
+  let governor = Deno.env.get("PERF_CPU_GOVERNOR") ?? "unknown";
   try {
     governor = (await Deno.readTextFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")).trim();
-  } catch {
-    // Some VMs do not expose a CPU governor.
+  } catch (error) {
+    warnings.push(`cpuGovernor:${error instanceof Error ? error.message : String(error)}`);
   }
   return {
     os: Deno.build.os,
@@ -88,6 +89,7 @@ async function environment() {
     cpuGovernor: governor,
     deno: Deno.version.deno,
     v8: Deno.version.v8,
+    warnings,
   };
 }
 
@@ -122,6 +124,7 @@ for (const fixture of fixtures) {
   metrics.push({
     fixture: fixture.id,
     phase: "analysis",
+    primary: false,
     counts: fixture.counts,
     result: benchmark(() => analyzeMarkdown(fixture.markdown), warmups, runs),
   });
@@ -131,6 +134,7 @@ for (const fixture of fixtures) {
     metrics.push({
       fixture: fixture.id,
       phase: "kanban",
+      primary: false,
       counts: fixture.counts,
       result: benchmark(() => analyzeKanban(fixture.markdown, analysis), warmups, runs),
     });
@@ -140,6 +144,7 @@ for (const fixture of fixtures) {
     metrics.push({
       fixture: fixture.id,
       phase: "writing_preflight_cold_text",
+      primary: false,
       counts: fixture.counts,
       result: benchmark(
         (index, warmup) => scanWritingNormalization(`${fixture.markdown}\nbench-${warmup ? "w" : "r"}-${index}`),
