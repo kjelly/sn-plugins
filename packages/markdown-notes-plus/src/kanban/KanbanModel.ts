@@ -118,6 +118,9 @@ function boardColumns(
 }
 
 export function analyzeKanban(markdown: string, analysis: MarkdownAnalysis = analyzeMarkdown(markdown)): KanbanModel {
+  if (analysis.sections.length < 3) {
+    return { markdown, analysis, boards: [], candidates: [] };
+  }
   const boards: KanbanBoard[] = [];
   const registeredColumnAnchors = new Set<number>();
   for (const section of analysis.sections) {

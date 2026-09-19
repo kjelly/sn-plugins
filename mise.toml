@@ -1,5 +1,8 @@
 min_version = "2026.9.1"
 
+[env]
+CDPATH = ""
+
 [tools]
 node = "20.19.1"
 deno = "2.9.6"

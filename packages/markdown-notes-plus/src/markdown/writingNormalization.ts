@@ -92,12 +92,27 @@ function unsupportedScanReason(reason: string): string {
   return `${reason} are not supported in Writing mode; use Source mode.`;
 }
 
+const MAX_SCAN_CACHE = 16;
+const scanCache = new Map<string, WritingNormalizationScan>();
+
+function setScanCache(markdown: string, result: WritingNormalizationScan): WritingNormalizationScan {
+  if (scanCache.size >= MAX_SCAN_CACHE) {
+    const firstKey = scanCache.keys().next().value;
+    if (firstKey !== undefined) scanCache.delete(firstKey);
+  }
+  scanCache.set(markdown, result);
+  return result;
+}
+
 /**
  * Scan and normalize only the deliberately small whitespace surface owned by
  * Writing. Every newline is retained as a token until the policy has made its
  * decision, so tabs and protected Markdown are never lost accidentally.
  */
 export function scanWritingNormalization(markdown: string): WritingNormalizationScan {
+  const cached = scanCache.get(markdown);
+  if (cached) return cached;
+
   const sourceLines = tokenizeLines(markdown);
   const structure = scanMarkdownStructure(markdown);
   const changes = new Map<WritingNormalizationCategory, number>();
@@ -107,9 +122,9 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
     const line = sourceLine.text;
     const opaque = isInOpaqueFencedRange(sourceLine.start, structure.opaqueFencedRanges);
     if (!opaque) {
-      if (isRawHtml(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) };
-      if (isReferenceSyntax(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) };
-      if (isUnknownExtension(line)) return { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) };
+      if (isRawHtml(line)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) });
+      if (isReferenceSyntax(line)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) });
+      if (isUnknownExtension(line)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) });
     }
 
     // Tables and fenced code blocks are first-class GFM nodes in the Writing
@@ -124,7 +139,7 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
         normalized = `${normalized.slice(0, marker.prefixLength)}-${normalized.slice(marker.prefixLength + 1)}`;
         addChange(changes, "bullet");
       } else if (marker?.marker === "+") {
-        return { markdown, changes: [], unsupportedReason: unsupportedScanReason("plus bullets") };
+        return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason("plus bullets") });
       }
     }
     if (!opaque && normalized.endsWith(" ") && !normalized.endsWith("  ") && !normalized.endsWith("\\ ")) {
@@ -179,9 +194,9 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
     addChange(changes, "final-newline");
   }
 
-  if (normalizedMarkdown === markdown) return { markdown: normalizedMarkdown, changes: [] };
-  if (changes.size === 0) return { markdown: normalizedMarkdown, changes: [{ category: "final-newline", count: 1 }] };
-  return { markdown: normalizedMarkdown, changes: makeChanges(changes) };
+  if (normalizedMarkdown === markdown) return setScanCache(markdown, { markdown: normalizedMarkdown, changes: [] });
+  if (changes.size === 0) return setScanCache(markdown, { markdown: normalizedMarkdown, changes: [{ category: "final-newline", count: 1 }] });
+  return setScanCache(markdown, { markdown: normalizedMarkdown, changes: makeChanges(changes) });
 }
 
 export function writingAstEquivalent(left: ProseNode, right: ProseNode): boolean {
