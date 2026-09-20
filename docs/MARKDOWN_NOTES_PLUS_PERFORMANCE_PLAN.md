@@ -4,7 +4,7 @@
 > **目標套件**：`packages/markdown-notes-plus`
 > **起始程式碼版本**：`ba07fe3ca13aec98cf9d05ae17336b6985b48ba5`，已包含 `f2cd17d`、`43de10f`、`454d8e4` 與 `ba07fe3` 的 lazy-loading / bootstrap / deferred-work 改善。若正式執行不是從此 SHA 開始，必須在任何程式變更前更新本欄。
 >
-> **效能 baseline SHA**：`02b430c7eb3300b56bd34fe4669270608682c668`。此 Phase 0 harness-only commit 只新增 fixture、instrumentation 與 runner，不包含 optimization。所有最終百分比目標固定相對此 SHA；不得因 `main` 前進而重設 baseline。
+> **候選效能 baseline SHA**：`9cd7d461a5cb879f16399d6196d520668cc3fef1`。此 replacement Phase 0 harness-only commit 只修正 fixture、instrumentation、正式抽樣、主指標與 checkpoint/resume runner，不包含 optimization；它取代 schema 尚未完整的 `02b430c7eb3300b56bd34fe4669270608682c668`。在相同 commit 的兩批正式報告通過 <=5% 穩定性門檻，且 10k / 100k / 500k / 1m 報告全部產生前，不得把候選 SHA 宣告為正式 baseline，也不得開始計算 optimization 百分比。
 > **原則**：任何效能改動都必須以 benchmark 證明改善，且不得降低 Markdown lossless round-trip、Standard Notes bridge、Writing stability、CSP 或跨裝置安全邊界。
 
 ---
@@ -288,6 +288,17 @@ Writing typing benchmark：
 - [ ] 每個 mark 的 generation 與唯一觸發語意有自動測試。
 - [ ] benchmark report schema 可由 compare script 驗證，base/head 環境不一致時拒絕比較。
 - [ ] 現有 test suite 全部通過。
+
+### 2026-09-19 正式 baseline 嘗試紀錄
+
+- 候選 harness commit：`9cd7d461a5cb879f16399d6196d520668cc3fef1`；工作樹不含 optimization。
+- `plain-10k` 已完成兩個獨立正式 batch。每批包含 cold/warm load 各 40 次，以及英文、CJK、syntax 各 20 個獨立 editor runs；每個 typing run 輸入 100 次。
+- 執行環境為 Linux x64、Intel Core i7-6700K、Chromium 151.0.7922.34；CPU governor 無法由此 VM 取得。量測期間主機 load average 約 3.6--4.9，並有多個使用者工作負載。
+- 穩定性結果為 `stable=false`：cold TTI inter-batch 6.95%、warm TTI 1.48%、英文 typing 3.34%、CJK typing 11.62%。cold/warm/CJK 的第一批 MAD/median 分別為 7.01%、8.67%、8.67%；第二批 cold/warm/英文分別為 5.58%、11.12%、7.77%。
+- 另將完整 Mise workflow 固定於 CPU 1、5 重測 load；cold/warm MAD/median 反而為 8.94% / 13.09%，已排除單靠限制 CPU affinity 能在此共享主機達標。該次測試在 load checkpoint 後主動停止，未列為完整 batch。
+- 報告位於 gitignored artifact directory：`baseline-9cd7d461a5cb-plain-10k-browser-batch-{1,2}.json` 與 `baseline-9cd7d461a5cb-plain-10k-browser-stability.json`。
+- 依本節規則，這些不穩定報告不得作為 optimization baseline。100k / 500k / 1m 正式 batch 暫停，直到在低背景負載、固定 CPU 條件的專用 benchmark host 上重跑；不得以放寬 5% 門檻、刪除離群值或挑選較快 run 宣告通過。
+- 驗證狀態：`mise run test:unit` 為 233 passed / 0 failed；lint、typecheck、integration 與 Chromium/Firefox release E2E 已在同一 harness 系列通過。Phase 0 驗收框維持未勾選，直到正式穩定 baseline 完成。
 
 ---
 

@@ -148,9 +148,12 @@ if (baseReportPaths.length > 0 || headReportPaths.length > 0) {
   const head = argument("--head");
   if (!base || !head) throw new Error("Use --base <sha> --head <sha> or --base-report <file> --head-report <file>");
   const repositoryRoot = await run("git", ["rev-parse", "--show-toplevel"], Deno.cwd(), "piped");
-  const spec = await Deno.readTextFile(`${repositoryRoot}/spec.md`);
+  const specPath = `${repositoryRoot}/docs/MARKDOWN_NOTES_PLUS_PERFORMANCE_PLAN.md`;
+  const spec = await Deno.readTextFile(specPath);
   if (spec.includes("PENDING_PHASE_0_HARNESS_SHA")) {
-    throw new Error("spec.md still contains PENDING_PHASE_0_HARNESS_SHA; create and record the harness-only baseline commit first");
+    throw new Error(
+      "docs/MARKDOWN_NOTES_PLUS_PERFORMANCE_PLAN.md still contains PENDING_PHASE_0_HARNESS_SHA; create and record the harness-only baseline commit first",
+    );
   }
   const temporaryRoot = await Deno.makeTempDir({ prefix: "markdown-notes-perf-" });
   cleanup = async () => {

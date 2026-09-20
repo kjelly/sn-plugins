@@ -14,7 +14,7 @@
 ### 非目標（明確排除）
 
 - Review 診斷面板（`ReviewDiagnostics.ts` / `ReviewPanel.tsx` 引擎已實作但 UI 未掛載至 `App.tsx`）。
-- spec.md 中的待實作功能：Callouts、Code Block 輔助工具、Smart Paste、Navigation Palette、UI Preferences 同步。
+- 本設計當時列為待實作的功能：Callouts、Code Block 輔助工具、Smart Paste、Navigation Palette、UI Preferences 同步。
 - 開發者內部架構（CanonicalDocument / EditorKitBridge / round-trip 保證機制等）僅在「使用者可感知的行為」層級描述（例如「Writing 顯示會自動切到 Source」），不深入原始碼層。
 
 ---
