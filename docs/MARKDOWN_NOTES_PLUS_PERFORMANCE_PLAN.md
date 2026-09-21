@@ -4,7 +4,7 @@
 > **目標套件**：`packages/markdown-notes-plus`
 > **起始程式碼版本**：`ba07fe3ca13aec98cf9d05ae17336b6985b48ba5`，已包含 `f2cd17d`、`43de10f`、`454d8e4` 與 `ba07fe3` 的 lazy-loading / bootstrap / deferred-work 改善。若正式執行不是從此 SHA 開始，必須在任何程式變更前更新本欄。
 >
-> **候選效能 baseline SHA**：`9cd7d461a5cb879f16399d6196d520668cc3fef1`。此 replacement Phase 0 harness-only commit 只修正 fixture、instrumentation、正式抽樣、主指標與 checkpoint/resume runner，不包含 optimization；它取代 schema 尚未完整的 `02b430c7eb3300b56bd34fe4669270608682c668`。在相同 commit 的兩批正式報告通過 <=5% 穩定性門檻，且 10k / 100k / 500k / 1m 報告全部產生前，不得把候選 SHA 宣告為正式 baseline，也不得開始計算 optimization 百分比。
+> **正式 Phase 0 baseline 測試 SHA（候選，尚未驗收）**：`7b4c31822409555888f14999b3b5ce826884aa67`。所有新的正式 baseline JSON 必須由此 immutable harness-only commit 產生；它修正 mock-host 初始內容載入順序，以及 Writing / mobile E2E 的 selection/caret 同步競態，不包含產品 optimization。它取代未通過 correctness gate 的 `9cd7d461a5cb879f16399d6196d520668cc3fef1`；舊 SHA 及其報告只保留為失敗歷史，不得 resume、合併或作為 optimization baseline。在相同 commit 的兩批正式報告通過 <=5% 穩定性門檻，且 10k / 100k / 500k / 1m 報告全部產生前，不得把候選 SHA 宣告為已驗收 baseline，也不得開始計算 optimization 百分比。
 > **原則**：任何效能改動都必須以 benchmark 證明改善，且不得降低 Markdown lossless round-trip、Standard Notes bridge、Writing stability、CSP 或跨裝置安全邊界。
 
 ---
@@ -289,7 +289,7 @@ Writing typing benchmark：
 - [ ] benchmark report schema 可由 compare script 驗證，base/head 環境不一致時拒絕比較。
 - [ ] 現有 test suite 全部通過。
 
-### 2026-09-19 正式 baseline 嘗試紀錄
+### 2026-09-19 正式 baseline 嘗試紀錄（已由新候選取代）
 
 - 候選 harness commit：`9cd7d461a5cb879f16399d6196d520668cc3fef1`；工作樹不含 optimization。
 - `plain-10k` 已完成兩個獨立正式 batch。每批包含 cold/warm load 各 40 次，以及英文、CJK、syntax 各 20 個獨立 editor runs；每個 typing run 輸入 100 次。
@@ -299,6 +299,12 @@ Writing typing benchmark：
 - 報告位於 gitignored artifact directory：`baseline-9cd7d461a5cb-plain-10k-browser-batch-{1,2}.json` 與 `baseline-9cd7d461a5cb-plain-10k-browser-stability.json`。
 - 依本節規則，這些不穩定報告不得作為 optimization baseline。100k / 500k / 1m 正式 batch 暫停，直到在低背景負載、固定 CPU 條件的專用 benchmark host 上重跑；不得以放寬 5% 門檻、刪除離群值或挑選較快 run 宣告通過。
 - 驗證狀態：`mise run test:unit` 為 233 passed / 0 failed；lint、typecheck、integration 與 Chromium/Firefox release E2E 已在同一 harness 系列通過。Phase 0 驗收框維持未勾選，直到正式穩定 baseline 完成。
+
+### 2026-09-21 正式 baseline SHA 更新
+
+- 新的正式測試候選固定為 `7b4c31822409555888f14999b3b5ce826884aa67`；不得再以 `9cd7d461a5cb879f16399d6196d520668cc3fef1` 產生或續跑正式 baseline。
+- 新候選只包含 test host 與 browser E2E harness 修正，不包含產品程式碼或 optimization。已從該 SHA 的 detached immutable checkout 依序通過 `mise run lint`、`mise run typecheck`、`mise run test:unit`、`mise run test:integration` 與 `mise run test:e2e:release`。
+- 新 SHA 的正式 browser 與 microbenchmark 尚未完成，因此 Phase 0 驗收框維持未勾選，且目前沒有可供 optimization 比較的已驗收 baseline。
 
 ---
 
