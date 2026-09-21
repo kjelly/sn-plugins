@@ -18,11 +18,15 @@ export class MockHost {
   constructor(private readonly page: Page) {}
 
   async goto(initialText?: string, uuid = "default-note-uuid", locked = false, mobile = false): Promise<void> {
-    await this.page.goto(mobile ? "/test-host.html?mobile=1" : "/test-host.html");
+    await this.page.goto(mobile ? "/test-host.html?mobile=1&deferEditorStart=1" : "/test-host.html?deferEditorStart=1");
     await this.page.waitForFunction(() => typeof (window as unknown as { __SN_MOCK_HOST__?: unknown }).__SN_MOCK_HOST__ !== "undefined");
     if (initialText !== undefined) {
       await this.setNote(initialText, uuid, locked);
     }
+    await this.page.evaluate(() => {
+      const host = (window as unknown as { __SN_MOCK_HOST__: { startEditor: () => void } }).__SN_MOCK_HOST__;
+      host.startEditor();
+    });
     // Wait for the iframe handshake to finish
     await this.page.evaluate(async () => {
       const host = (window as unknown as { __SN_MOCK_HOST__: { waitForHandshake: () => Promise<void> } }).__SN_MOCK_HOST__;

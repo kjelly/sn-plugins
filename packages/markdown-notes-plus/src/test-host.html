@@ -23,16 +23,19 @@
   <body>
     <iframe
       id="editor-frame"
-      src="./index.html"
       title="Markdown Notes+"
       sandbox="allow-scripts allow-top-navigation-by-user-activation allow-popups allow-modals allow-forms allow-downloads"
     ></iframe>
     <script>
       (function() {
         const iframe = document.getElementById("editor-frame");
-        const isMobile = new URLSearchParams(window.location.search).get("mobile") === "1";
+        const query = new URLSearchParams(window.location.search);
+        const isMobile = query.get("mobile") === "1";
+        const deferEditorStart = query.get("deferEditorStart") === "1";
         let streamContextMessageId = null;
         let registered = false;
+        let editorStarted = false;
+        let regInterval = null;
         let currentNote = {
           uuid: "default-note-uuid",
           content_type: "Note",
@@ -74,14 +77,19 @@
           });
         }
 
-        // Try registering periodically until handshake completes
-        const regInterval = setInterval(() => {
-          if (registered) {
-            clearInterval(regInterval);
-          } else {
-            sendRegistration();
-          }
-        }, 50);
+        function startEditor() {
+          if (editorStarted) return;
+          editorStarted = true;
+          iframe.src = "./index.html";
+          // Try registering periodically until handshake completes.
+          regInterval = setInterval(() => {
+            if (registered) {
+              clearInterval(regInterval);
+            } else {
+              sendRegistration();
+            }
+          }, 50);
+        }
 
         window.addEventListener("message", (event) => {
           if (event.source !== iframe.contentWindow) return;
@@ -109,7 +117,7 @@
           if (msg.action === "stream-context-item") {
             registered = true;
             streamContextMessageId = msg.messageId;
-            clearInterval(regInterval);
+            if (regInterval !== null) clearInterval(regInterval);
             if (handshakeResolve) handshakeResolve();
 
             // Reply with current note
@@ -150,6 +158,7 @@
         });
 
         window.__SN_MOCK_HOST__ = {
+          startEditor,
           getSaves() {
             return receivedSaves;
           },
@@ -249,6 +258,7 @@
             });
           }
         };
+        if (!deferEditorStart) startEditor();
       })();
     </script>
   </body>

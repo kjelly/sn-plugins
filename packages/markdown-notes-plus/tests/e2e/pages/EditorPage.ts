@@ -242,6 +242,32 @@ export class EditorPage {
     await this.page.keyboard.type(text);
   }
 
+  async selectAllInWriting(): Promise<void> {
+    await this.writingEditor.evaluate((element) => {
+      const editable = element as HTMLElement;
+      editable.focus({ preventScroll: true });
+      const range = document.createRange();
+      range.selectNodeContents(editable);
+      const selection = globalThis.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+  }
+
+  async placeWritingCaretAt(target: Locator, edge: "start" | "end"): Promise<void> {
+    await target.evaluate((element, requestedEdge) => {
+      const editable = element.closest<HTMLElement>('[contenteditable="true"]');
+      if (!editable) throw new Error("Expected an editable Writing surface");
+      editable.focus({ preventScroll: true });
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(requestedEdge === "start");
+      const selection = globalThis.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }, edge);
+  }
+
   async selectAllAndTypeInSource(text: string): Promise<void> {
     await this.sourceEditor.click();
     await this.page.keyboard.press("ControlOrMeta+a");

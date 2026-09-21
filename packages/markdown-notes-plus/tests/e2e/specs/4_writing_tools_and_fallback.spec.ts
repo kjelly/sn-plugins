@@ -72,8 +72,7 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await expect(editor.status).toHaveText("Ready");
     await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
 
-    await editor.writingEditor.locator("p").click();
-    await page.keyboard.press("End");
+    await editor.placeWritingCaretAt(editor.writingEditor.locator("p"), "end");
     await page.keyboard.press("Enter");
     await page.waitForTimeout(350);
 
@@ -153,9 +152,9 @@ test.describe("Writing Tools & Lossless Guard", () => {
     // Wait for Writing editor to initialize
     await expect(editor.status).toHaveText("Ready");
 
-    // Click into the writing editor and move to end
-    await editor.writingEditor.click();
-    await page.keyboard.press("ControlOrMeta+End");
+    // Move to the document end without racing Chromium's asynchronous
+    // selectionchange handling before the structural Enter key.
+    await editor.placeWritingCaretAt(editor.writingEditor, "end");
     await page.keyboard.press("Enter");
 
     // Type /task to trigger the slash menu

@@ -229,8 +229,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
 
     await host.goto("Slash menu target test\n", "note-mobile-slash-targets", false);
     await expect(editor.status).toHaveText("Ready");
-    await editor.writingEditor.click();
-    await page.keyboard.press("ControlOrMeta+End");
+    await editor.placeWritingCaretAt(editor.writingEditor, "end");
     await page.keyboard.press("Enter");
     await page.keyboard.type("/");
 
@@ -372,8 +371,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
 
     await host.goto("Selected text\n", "note-mobile-link-dialog", false);
     await expect(editor.status).toHaveText("Ready");
-    await editor.writingEditor.click();
-    await editor.writingEditor.press("ControlOrMeta+a");
+    await editor.selectAllInWriting();
     await editor.writingLinkButton.click();
 
     const dialog = editor.frame.getByRole("dialog", { name: "Insert link" });
@@ -395,8 +393,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await expect(editor.sourceEditor).not.toContainText("javascript:");
 
     await editor.switchMode("Writing");
-    await editor.writingEditor.click();
-    await editor.writingEditor.press("ControlOrMeta+a");
+    await editor.selectAllInWriting();
     await editor.writingLinkButton.click();
     await expect(dialog).toBeVisible();
     await input.fill("https://confirm.example/selected");
@@ -426,8 +423,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
 
     await host.goto("Stale local text\n", "note-mobile-stale-link", false);
     await expect(editor.status).toHaveText("Ready");
-    await editor.writingEditor.click();
-    await page.keyboard.press("ControlOrMeta+a");
+    await editor.selectAllInWriting();
     await editor.writingLinkButton.click();
 
     const dialog = editor.frame.getByRole("dialog", { name: "Insert link" });
@@ -447,8 +443,7 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
 
     await host.goto("Lockable text\n", "note-mobile-lock-after-dialog", false);
     await expect(editor.status).toHaveText("Ready");
-    await editor.writingEditor.click();
-    await page.keyboard.press("ControlOrMeta+a");
+    await editor.selectAllInWriting();
     await editor.writingLinkButton.click();
 
     const dialog = editor.frame.getByRole("dialog", { name: "Insert link" });
