@@ -42,6 +42,10 @@ const state: PerfTraceSnapshot = {
 
 const once = new Set<string>();
 const pendingBeforeDocument = new Map<PerfMarkName, number>();
+const PRE_DOCUMENT_MARKS = new Set<PerfMarkName>([
+  PERF_MARKS.mountAppStart,
+  PERF_MARKS.writingChunkLoaded,
+]);
 let environmentChecked = false;
 
 function traceGlobal(): PerfTraceGlobal {
@@ -107,6 +111,11 @@ export function beginDocumentPerfTrace(metadata: Omit<PerfTraceMetadata, "genera
   state.measures.length = 0;
   once.clear();
   for (const [name, startTime] of pendingBeforeDocument) {
+    // Only process-level startup marks are meaningful before a document
+    // exists. Adopting document-scoped marks (especially
+    // writing_interactive) creates an end mark older than context_received
+    // and silently prevents the corresponding measure from being recorded.
+    if (!PRE_DOCUMENT_MARKS.has(name)) continue;
     const mark = { name, generation: state.activeGeneration, startTime };
     state.marks.push(mark);
     once.add(markKey(name, state.activeGeneration));

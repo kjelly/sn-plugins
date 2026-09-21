@@ -90,6 +90,29 @@ function valuesFor(trace: BrowserPerfTrace, name: string): number[] {
   return trace.measures.filter((measure) => measure.name === name).map((measure) => measure.duration);
 }
 
+function validateLoadSample(sample: LoadSample, identity: string): void {
+  for (const phase of STARTUP_MEASURES) {
+    expect(Number.isFinite(sample.phases[phase]), `${identity} must contain ${phase}`).toBe(true);
+    expect(sample.phases[phase], `${identity} ${phase} must not be negative`).toBeGreaterThanOrEqual(0);
+  }
+  expect(
+    sample.phases.context_to_writing_interactive_ms,
+    `${identity} must contain a positive context_to_writing_interactive_ms measure`,
+  ).toBeGreaterThan(0);
+}
+
+function validateTypingSample(sample: TypingSample, typingCount: number, identity: string): void {
+  expect(sample.requestedInputs, `${identity} requested input count`).toBe(typingCount);
+  expect(sample.committedInputs, `${identity} committed input count`).toBe(typingCount);
+  expect(sample.fallbackAt, `${identity} must not fall back before all inputs commit`).toBeUndefined();
+  for (const phase of TYPING_MEASURES) {
+    const values = sample.phases[phase];
+    expect(Array.isArray(values), `${identity} must contain ${phase}`).toBe(true);
+    expect(values, `${identity} ${phase} samples`).toHaveLength(typingCount);
+    expect(values.every((value) => Number.isFinite(value) && value >= 0), `${identity} ${phase} samples must be finite`).toBe(true);
+  }
+}
+
 function longTaskSummary(tasks: number[]): { count: number; max: number; totalBlockingTime: number } {
   return {
     count: tasks.filter((duration) => duration > 50).length,
@@ -153,11 +176,20 @@ async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: Cach
   try {
     await new MockHost(page).goto(fixture.markdown, `load-${fixture.id}-${cacheMode}-${run}`);
     const { trace, longTasks } = await readTrace(page);
-    const phases = Object.fromEntries(STARTUP_MEASURES.map((name) => [name, valuesFor(trace, name).at(-1) ?? 0]));
+    const phases: Record<string, number> = {};
+    for (const name of STARTUP_MEASURES) {
+      const values = valuesFor(trace, name);
+      expect(values.length, `${fixture.id}/${cacheMode}/${run} must record ${name}`).toBeGreaterThan(0);
+      const value = values.at(-1);
+      if (value === undefined) throw new Error(`${fixture.id}/${cacheMode}/${run} is missing ${name}`);
+      phases[name] = value;
+    }
     expect(trace.marks.some((mark) => mark.name === "context_received")).toBe(true);
     expect(trace.marks.some((mark) => mark.name === "writing_interactive")).toBe(true);
     expect(JSON.stringify(trace)).not.toContain(fixture.markdown.slice(0, 64));
-    return { fixture: fixture.id, cacheMode, run, phases, longTasks };
+    const sample = { fixture: fixture.id, cacheMode, run, phases, longTasks };
+    validateLoadSample(sample, `${fixture.id}/${cacheMode}/${run}`);
+    return sample;
   } finally {
     await context.close();
   }
@@ -182,7 +214,7 @@ async function runTypingSample(
     const editor = new EditorPage(page);
     await host.goto(fixture.markdown, `typing-${fixture.id}-${inputKind}-${run}`);
     await expect(editor.writingEditor).toBeEditable();
-    await editor.writingEditor.click();
+    await editor.placeWritingCaretAtEnd();
     const frame = page.frames().find((candidate) => candidate.url().includes("/index.html"));
     if (!frame) throw new Error("Editor frame is missing");
     let committedInputs = 0;
@@ -204,17 +236,18 @@ async function runTypingSample(
     }
     const { trace, longTasks } = await readTrace(page);
     const phases = Object.fromEntries(TYPING_MEASURES.map((name) => [name, valuesFor(trace, name)]));
-    const transactionSequences = trace.measures
-      .filter((measure) => measure.name === "transaction_to_canonical_ms")
-      .map((measure) => measure.sequence);
-    expect(transactionSequences.every((sequence) => sequence !== undefined)).toBe(true);
-    expect(new Set(transactionSequences).size).toBe(transactionSequences.length);
-    if (inputKind !== "syntax") {
-      expect(fallbackAt).toBeUndefined();
-      expect(committedInputs).toBe(typingCount);
+    for (const name of TYPING_MEASURES) {
+      const sequences = trace.measures
+        .filter((measure) => measure.name === name)
+        .map((measure) => measure.sequence);
+      expect(sequences, `${fixture.id}/${inputKind}/${run} ${name} sequence count`).toHaveLength(typingCount);
+      expect(sequences.every((sequence) => sequence !== undefined), `${name} requires explicit sequences`).toBe(true);
+      expect(new Set(sequences).size, `${name} sequences must be unique`).toBe(sequences.length);
     }
     expect(JSON.stringify(trace)).not.toContain(fixture.markdown.slice(0, 64));
-    return { fixture: fixture.id, inputKind, run, requestedInputs: typingCount, committedInputs, ...(fallbackAt === undefined ? {} : { fallbackAt }), phases, longTasks };
+    const sample = { fixture: fixture.id, inputKind, run, requestedInputs: typingCount, committedInputs, ...(fallbackAt === undefined ? {} : { fallbackAt }), phases, longTasks };
+    validateTypingSample(sample, typingCount, `${fixture.id}/${inputKind}/${run}`);
+    return sample;
   } finally {
     await context.close();
   }
@@ -354,6 +387,8 @@ test.describe("editor performance contract", () => {
       expect(previous.typingCount, "Resume typing count must match").toBe(typingCount);
       loadSamples = previous.loadSamples as LoadSample[];
       typingSamples = previous.typingSamples as TypingSample[];
+      for (const sample of loadSamples) validateLoadSample(sample, `resume/${sample.fixture}/${sample.cacheMode}/${sample.run}`);
+      for (const sample of typingSamples) validateTypingSample(sample, typingCount, `resume/${sample.fixture}/${sample.inputKind}/${sample.run}`);
     }
 
     const writeReport = async (complete: boolean): Promise<void> => {

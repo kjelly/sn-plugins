@@ -31,11 +31,25 @@ const runtime = createEditorRuntime({
   },
 });
 
+let mountApplication: (() => void) | undefined;
+let appMounted = false;
+const tryMountApplication = () => {
+  if (appMounted || !mountApplication || runtime.canonical.snapshot().resetGeneration <= 0) return;
+  appMounted = true;
+  previewActive = false;
+  unsubscribeDocumentReady();
+  mountApplication();
+};
+const unsubscribeDocumentReady = runtime.subscribeHostChange(tryMountApplication);
+
 // Standard Notes posts `component-registered` once from the iframe load
 // handler. Register the bridge before requesting React, Milkdown, or the App.
+// The bridge-owned preview must render the initial document before React can
+// replace it; otherwise fast module loading turns the intended preview metric
+// and user-visible startup path into a race.
 startEditorRuntime(runtime);
 markPerf(PERF_MARKS.mountAppStart, {}, true);
 void import("./mountApp.tsx").then(({ mountApp }) => {
-  previewActive = false;
-  mountApp(root, runtime);
+  mountApplication = () => mountApp(root, runtime);
+  tryMountApplication();
 });

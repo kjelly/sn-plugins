@@ -167,6 +167,20 @@ export class EditorPage {
     await this.reviewTabBtn.click();
   }
 
+  async placeWritingCaretAtEnd(): Promise<void> {
+    await this.writingEditor.evaluate((element) => {
+      const editable = element as HTMLElement;
+      editable.focus();
+      const selection = editable.ownerDocument.getSelection();
+      if (!selection) throw new Error("Writing selection is unavailable");
+      const range = editable.ownerDocument.createRange();
+      range.selectNodeContents(editable);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+  }
+
   /**
    * A document which Writing can only represent after harmless formatting
    * normalization opens a modal and may keep a read-only Writing preview.

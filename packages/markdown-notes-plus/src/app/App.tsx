@@ -243,6 +243,33 @@ function WritingNormalizationDialog({
   </div>;
 }
 
+function WritingFallbackDialog({
+  reason,
+  onSource,
+  onDiscard,
+}: {
+  reason: string;
+  onSource: () => void;
+  onDiscard: () => void;
+}) {
+  return <div className="writing-normalization-backdrop">
+    <div
+      className="writing-normalization-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Writing edit needs Source confirmation"
+    >
+      <h2>這次輸入需要 Source mode</h2>
+      <p>Writing 無法證明這次輸入能以完全相同的 Markdown 保存，因此已暫停編輯，但不會自動切換模式。</p>
+      <p>{reason}</p>
+      <div className="writing-normalization-actions">
+        <button type="button" autoFocus onClick={onSource}>前往 Source 並保留輸入</button>
+        <button type="button" onClick={onDiscard}>捨棄此次輸入</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
   return <ErrorBoundaryImpl>{children}</ErrorBoundaryImpl>;
 }
@@ -278,6 +305,7 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<number>();
   const [writingHeadingNavigation, setWritingHeadingNavigation] = useState<WritingHeadingNavigation>();
   const [sourceFallbackText, setSourceFallbackText] = useState<string>();
+  const [writingFallbackReason, setWritingFallbackReason] = useState<string>();
   const [writingCommand, setWritingCommand] = useState<WritingCommand>();
   const [library, setLibrary] = useState<InsertLibrary>(() => createEmptyLibrary());
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -480,6 +508,21 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
     if (resolvedMode === "source") setWritingNormalizationPrompt(false);
     setMode(resolvedMode);
   }, [appLifecycle, writingCapability]);
+
+  const handleContinueWritingFallbackInSource = useCallback(() => {
+    setWritingFallbackReason(undefined);
+    requestMode("source");
+  }, [requestMode]);
+
+  const handleDiscardWritingFallback = useCallback(() => {
+    setWritingFallbackReason(undefined);
+    appLifecycle.retireFallback();
+    appLifecycle.retireWritingEditor();
+  }, [appLifecycle]);
+
+  useEffect(() => {
+    if (sourceFallbackText === undefined) setWritingFallbackReason(undefined);
+  }, [sourceFallbackText]);
 
   useEffect(() => {
     if (!mindmapSuitable && (mode === "mindmap" || mode === "split")) {
@@ -897,6 +940,11 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
       onSource={handleLeaveWritingNormalizationInSource}
       onCancel={handleCancelWritingNormalization}
     /> : null}
+    {sourceFallbackText !== undefined && mode !== "source" ? <WritingFallbackDialog
+      reason={writingFallbackReason ?? "This edit cannot be preserved exactly in Writing; use Source mode."}
+      onSource={handleContinueWritingFallbackInSource}
+      onDiscard={handleDiscardWritingFallback}
+    /> : null}
     {snapshot.pendingRemote !== undefined ? <aside className="conflict" role="alert"><span>Another device changed this note.</span><button type="button" onClick={() => bridge.resolveConflict("keep-local")} title="Keep local edits (Standard Notes creates a Conflicted Copy if needed)">Keep local</button><button type="button" onClick={() => bridge.resolveConflict("accept-remote")} title="Discard local changes and use remote version">Accept remote</button></aside> : null}
     <div className={`workspace-layout ${sidebarOpen && mode !== "mindmap" ? "with-sidebar" : "sidebar-collapsed"}`}>
       {focusedSection ? (
@@ -945,7 +993,7 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-          </div><ErrorBoundary><React.Suspense fallback={<pre className="writing-loading-preview" aria-label="Note preview while Writing editor loads">{snapshot.text}</pre>}><LazyWritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof, performanceSequence) => edit(next, undefined, proof, performanceSequence)} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, _result, proof) => {
+          </div><ErrorBoundary>{snapshot.resetGeneration > 0 ? <React.Suspense fallback={<pre className="writing-loading-preview" aria-label="Note preview while Writing editor loads">{snapshot.text}</pre>}><LazyWritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof, performanceSequence) => edit(next, undefined, proof, performanceSequence)} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, result, proof) => {
           const currentProof = canonical.snapshot();
           if (proof.documentInstanceId !== canonical.token.instanceId ||
             proof.documentRevision !== canonical.token.revision ||
@@ -956,8 +1004,11 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
             intent: { actor: "user", pendingWriting: false },
             systemSourceAdmission: undefined,
           });
-          appLifecycle.preserveWritingFallback(markdown); requestMode("source");
-        }} /></React.Suspense></ErrorBoundary></section>
+          setWritingFallbackReason(result.kind === "lossless"
+            ? "Writing could not commit this edit safely."
+            : result.reason);
+          appLifecycle.preserveWritingFallback(markdown);
+        }} /></React.Suspense> : <pre className="writing-loading-preview" aria-label="Waiting for note context" />}</ErrorBoundary></section>
         {mode === "source" ? <section className="source-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Source tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button type="button" onClick={requestSourceSearch}>Search / Replace</button><button type="button" disabled={snapshot.locked || !sourceEditorReady} onMouseDown={(e) => e.preventDefault()} onClick={() => setTemplateModalOpen(true)} title="Templates & Snippets Manager">Templates</button><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><React.Suspense fallback={<div className="loading">Loading source editor…</div>}><LazySourceEditor ref={sourceEditorRef} value={sourceFallbackText ?? snapshot.text} resetGeneration={snapshot.resetGeneration} readOnly={snapshot.locked} onChange={editSource} onReady={handleSourceReady} onSelection={selectSourceSection} /></React.Suspense></ErrorBoundary></section> : null}
         {mode === "split" || mode === "mindmap" ? <section className="map-pane pane"><div className={`pane-toolbar ${mode === "mindmap" ? "app-toolbar" : ""}`} role="toolbar" aria-label="Mindmap tools" onWheel={handleToolbarWheel}>{mode === "mindmap" ? <><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} /><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button></> : null}<label>Tasks <select value={filter} onChange={(event) => setFilter(event.target.value as MindMapFilter)}><option value="all">All</option><option value="open">Open only</option><option value="hide">Hide tasks</option></select></label><label>Scope <select value={mindMapScope} onChange={(event) => setMindMapScope(event.target.value as MindMapScope)} disabled={!currentSection && mindMapScope === "current-section"}><option value="entire-note">Entire note</option><option value="current-section" disabled={!currentSection}>Current section</option></select></label><span className="map-controls">Pan · Zoom · Fit on refresh</span>{mode === "mindmap" ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}</div><ErrorBoundary><React.Suspense fallback={<div className="loading">Loading mind map…</div>}><LazyMindMapView markdown={mapMarkdown} readOnly={snapshot.locked} onToggleTask={toggleMindmapTask} deadlineDay={todayKey} /></React.Suspense></ErrorBoundary></section> : null}
         {mode === "kanban" ? <section className="kanban-pane pane"><div className="pane-toolbar app-toolbar" role="toolbar" aria-label="Kanban tools" onWheel={handleToolbarWheel}><SidebarToggleButton sidebarOpen={sidebarOpen} onToggle={toggleSidebar} /><EditorNavigationControls mode={mode} onModeChange={requestMode} historyDisabled={snapshot.locked} onUndo={() => localHistoryMutation(() => canonical.undo())} onRedo={() => localHistoryMutation(() => canonical.redo())} mindmapSuitable={mindmapSuitable} kanbanSuitable={kanbanSuitable} /><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button><StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /></div><ErrorBoundary><React.Suspense fallback={<div className="loading">Loading kanban…</div>}><LazyKanbanView markdown={snapshot.text} analysis={analysis} token={canonical.token} locked={snapshot.locked} fallback={appLifecycle.hasFallback} conflicted={snapshot.pendingRemote !== undefined} onMove={handleMoveKanbanCard} /></React.Suspense></ErrorBoundary></section> : null}

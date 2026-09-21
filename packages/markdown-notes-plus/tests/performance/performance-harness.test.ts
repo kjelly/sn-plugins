@@ -59,6 +59,7 @@ Deno.test("performance trace resets generations and measures matching marks with
   setPerfTraceEnabledForTests(true);
   try {
     markPerf(PERF_MARKS.mountAppStart, {}, true);
+    markPerf(PERF_MARKS.writingInteractive, {}, true);
     const firstGeneration = beginDocumentPerfTraceForText("# private heading\n");
     markAndMeasurePerf(
       PERF_MARKS.bootstrapPreviewRendered,
@@ -71,6 +72,7 @@ Deno.test("performance trace resets generations and measures matching marks with
     assertEquals(first.activeGeneration, firstGeneration);
     assertEquals(first.measures.length, 1);
     assertEquals(first.marks.some((mark) => mark.name === PERF_MARKS.mountAppStart), true);
+    assertEquals(first.marks.some((mark) => mark.name === PERF_MARKS.writingInteractive), false);
     assertEquals(JSON.stringify(first).includes("private heading"), false);
 
     const secondGeneration = beginDocumentPerfTraceForText("second note");

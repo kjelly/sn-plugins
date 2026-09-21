@@ -188,7 +188,9 @@ Deno.test("App routes every mode request through the fallback-aware transition",
   assert(modeChangeHandlers.every((handler) => handler === "requestMode"), "mode navigation requests must use requestMode");
   assert(source.includes("onSetMode={requestMode}"), "palette mode requests must use requestMode");
   assert(source.includes('requestMode("writing")'), "automatic suitability correction must use requestMode");
-  assert(source.includes('preserveWritingFallback(markdown); requestMode("source")'), "fallback entry must use requestMode");
+  assert(source.includes("appLifecycle.preserveWritingFallback(markdown);"), "fallback entry must preserve rejected input");
+  assert(!source.includes('appLifecycle.preserveWritingFallback(markdown); requestMode("source")'), "fallback entry must not switch modes automatically");
+  assert(source.includes('aria-label="Writing edit needs Source confirmation"'), "fallback entry must ask for an explicit Source decision");
   const templateHandler = source.slice(source.indexOf("const handleInsertTemplate"), source.indexOf("const handleInsertSnippet"));
   const snippetHandler = source.slice(source.indexOf("const handleInsertSnippet"), source.indexOf("const requestMode"));
   assert(!templateHandler.includes("canonical.applyLocal"), "template insertion must not bypass the lifecycle");
@@ -555,7 +557,7 @@ Deno.test("blank Writing first edit reaches canonical and emits one save after f
   assertEquals(harness.saves.map((save) => save.text), ["x\n"]);
 });
 
-Deno.test("rejected Writing mutation preserves input in Source fallback without silent save", async () => {
+Deno.test("rejected Writing mutation waits for explicit Source confirmation without silent save", async () => {
   const harness = fakeBridgeHarness();
   const canonical = "text";
   await deliverBridgeContext(harness, canonical, "note-writing-source-fallback");
@@ -570,16 +572,16 @@ Deno.test("rejected Writing mutation preserves input in Source fallback without 
   let sourceFallback: string | undefined;
   const preserveForSourceFallback = (value: string) => {
     sourceFallback = value;
-    mode = "source";
   };
   preserveForSourceFallback(rejected);
 
-  assertEquals(mode, "source");
+  assertEquals(mode, "writing");
   assertEquals(sourceFallback, rejected);
   assertEquals(harness.document.text, canonical);
   harness.clock.runAll();
   assert(harness.saves.length === 0, "rejected Writing input must not be silently saved");
 
+  mode = "source";
   const explicitSourceEdit = sourceFallback!.replace("\r\n", "\n");
   assert(harness.document.applyLocal(explicitSourceEdit), "an explicit Source edit must cross the canonical boundary");
   harness.bridge.notifyLocalChange(harness.document.text);

@@ -605,9 +605,17 @@ const writingOriginPlugin = new Plugin({
   },
 });
 
-function createWritingPerformancePlugin(onTransactionStart: () => void): Plugin {
+function createWritingPerformancePlugin(onInputStart: () => void, onTransactionStart: () => void): Plugin {
   return new Plugin({
     key: new PluginKey("markdown-notes-plus-writing-performance"),
+    props: {
+      handleDOMEvents: {
+        beforeinput: () => {
+          onInputStart();
+          return false;
+        },
+      },
+    },
     filterTransaction(transaction) {
       if (!transaction.docChanged) return true;
       const origin = transaction.getMeta(WRITING_TRANSACTION_ORIGIN_META) as WritingMutationOrigin | undefined;
@@ -647,6 +655,7 @@ type WritingEditorConfiguration = {
   libraryRef?: { current?: InsertLibrary };
   editability: WritingEditability;
   onRequestLinkRef: { current?: LinkRequest };
+  onInputStart: () => void;
   onTransactionStart: () => void;
   onMarkdownUpdated: (ctx: Ctx, markdown: string) => void;
 };
@@ -677,6 +686,7 @@ export function configureWritingEditor(editor: Editor, {
   libraryRef,
   editability,
   onRequestLinkRef,
+  onInputStart,
   onTransactionStart,
   onMarkdownUpdated,
 }: WritingEditorConfiguration): Editor {
@@ -720,7 +730,7 @@ export function configureWritingEditor(editor: Editor, {
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use($prose(() => writingOriginPlugin))
-    .use($prose(() => createWritingPerformancePlugin(onTransactionStart)))
+    .use($prose(() => createWritingPerformancePlugin(onInputStart, onTransactionStart)))
     .use($prose(() => createWritingFoldingPlugin()))
     .use($prose(() => createWritingShortcutsPlugin()))
     .use($prose(() => createWritingSmartKeysPlugin()))
@@ -906,8 +916,6 @@ export function WritingEditor({
   useEffect(() => {
     if (!host.current) return undefined;
     const hostElement = host.current;
-    const markInputStart = () => markPerf(PERF_MARKS.inputStart, { sequence: transactionSequenceRef.current + 1 });
-    hostElement.addEventListener("beforeinput", markInputStart, true);
     let cancelled = false;
     const generation = gate.current.begin(value);
     generationRef.current = generation;
@@ -925,7 +933,6 @@ export function WritingEditor({
       onCapabilityChangeRef.current?.({ kind: "unsupported", editable: false, reason: preflight.unsupportedReason }, value, writingProof);
       return () => {
         cancelled = true;
-        hostElement.removeEventListener("beforeinput", markInputStart, true);
       };
     }
     const editor = configureWritingEditor(Editor.make(), {
@@ -938,6 +945,9 @@ export function WritingEditor({
       libraryRef,
       editability: { readOnlyRef, capabilityRef },
       onRequestLinkRef,
+      onInputStart: () => {
+        markPerf(PERF_MARKS.inputStart, { sequence: transactionSequenceRef.current + 1 });
+      },
       onTransactionStart: () => {
         const sequence = transactionSequenceRef.current + 1;
         transactionSequenceRef.current = sequence;
@@ -983,7 +993,9 @@ export function WritingEditor({
         );
         if (!proof.editable) {
           capabilityRef.current = false;
-          onCapabilityChangeRef.current?.(proof, valueRef.current, writingProofRef.current);
+          // Mutation rejection is not a new capability result for the
+          // canonical document. Preserve the user's serializer output and let
+          // the App ask what to do instead of forcing an automatic mode jump.
           onLosslessFallbackRef.current?.(markdown, proof, writingProofRef.current);
           return;
         }
@@ -1025,7 +1037,6 @@ export function WritingEditor({
     }).catch(() => { /* isolate editor initialization failure in its ErrorBoundary */ });
     return () => {
       cancelled = true;
-      hostElement.removeEventListener("beforeinput", markInputStart, true);
       editorRef.current = undefined;
       void editor.destroy();
     };
