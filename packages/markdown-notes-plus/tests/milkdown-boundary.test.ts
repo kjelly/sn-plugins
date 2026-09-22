@@ -12,7 +12,7 @@ import { ParserState, SerializerState } from "@milkdown/transformer";
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import { CanonicalDocument } from "../src/document/CanonicalDocument";
-import { applyWritingCommand, writingLinkHref } from "../src/editor/WritingCommands";
+import { applyWritingCommand, insertWritingMarkdown, writingLinkHref } from "../src/editor/WritingCommands";
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, isWritingLexicallySafe, WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingMutationOrigin, type WritingOriginState } from "../src/editor/WritingEditorLifecycle";
 import { writingCommandPlan, type WritingCommandName } from "../src/editor/WritingCommandPlan";
 import { taskOrdinalAtDocumentPosition, WritingControlRegistry } from "../src/editor/WritingTaskControls";
@@ -418,6 +418,67 @@ function serializeCommandThroughCanonical(source: string, command: WritingComman
 
   state = state.apply(state.tr.insertText("Buy groceries", state.selection.from));
   assert.equal(serialize(state.doc), "- [ ] Buy groceries\n", "typing after task creation must keep the task marker");
+}
+
+{
+  const { schema, parse, serialize } = createWritingEnvironment(writingCommonmark, true);
+  const source = "- [ ] Selected label\n";
+  let state = EditorState.create({ schema, doc: parse(source) });
+  let paragraphPosition: number | undefined;
+  state.doc.descendants((node, position) => {
+    if (paragraphPosition === undefined && node.type.name === "paragraph") paragraphPosition = position + 1;
+    return paragraphPosition === undefined;
+  });
+  assert.notEqual(paragraphPosition, undefined, "task paragraph must exist");
+  const from = paragraphPosition!;
+  const to = from + "Selected label".length;
+  state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, from, to)));
+  const view = {
+    get state() { return state; },
+    dispatch(transaction: typeof state.tr) { state = state.apply(transaction); },
+    focus() {},
+    editable: true,
+  };
+
+  assert.equal(
+    insertWritingMarkdown(view as never, parse, "[Selected label](https://example.test/selected)"),
+    true,
+    "selected task text should accept an inline Markdown link",
+  );
+  const serialized = serialize(state.doc);
+  assert.equal(serialized, "- [ ] [Selected label](https://example.test/selected)\n", "link paste must stay inside the task paragraph");
+  assert.equal(
+    assessWritingMutation(source, serialized, "user", undefined, { codec: { parse, serialize }, document: state.doc }).editable,
+    true,
+    "task link paste must remain editable in Writing",
+  );
+}
+
+{
+  const { schema, parse, serialize } = createWritingEnvironment(writingCommonmark, true);
+  const source = "- [ ] Task target\n";
+  let state = EditorState.create({ schema, doc: parse(source) });
+  let paragraphPosition: number | undefined;
+  state.doc.descendants((node, position) => {
+    if (paragraphPosition === undefined && node.type.name === "paragraph") paragraphPosition = position + 1;
+    return paragraphPosition === undefined;
+  });
+  assert.notEqual(paragraphPosition, undefined, "task paragraph must exist");
+  const cursor = paragraphPosition! + "Task target".length;
+  state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, cursor)));
+  const view = {
+    get state() { return state; },
+    dispatch(transaction: typeof state.tr) { state = state.apply(transaction); },
+    focus() {},
+    editable: true,
+  };
+
+  assert.equal(
+    insertWritingMarkdown(view as never, parse, "[https://example.test/direct](https://example.test/direct)"),
+    true,
+    "a URL pasted at a task cursor should insert an inline Markdown link",
+  );
+  assert.equal(serialize(state.doc), "- [ ] Task target[https://example.test/direct](https://example.test/direct)\n", "cursor link paste must stay inside the task paragraph");
 }
 
 {

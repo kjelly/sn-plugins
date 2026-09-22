@@ -257,6 +257,29 @@ test.describe("Writing mode stability contract", () => {
     await expect.poll(() => host.getLatestSavedText()).toContain("[Selected label](https://example.test/selected)");
   });
 
+  test("URL paste stays inline inside a task", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", "Synthetic ClipboardEvent paste semantics are not supported consistently in Firefox.");
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("- [ ] Selected task label\n", "writing-paste-task-selected-url", false);
+    let taskContent = editor.writingEditor.locator(".task-content").first();
+    await selectContents(taskContent);
+    await pasteInto(taskContent, "https://example.test/task-selected");
+    await expect(taskContent.locator("a")).toHaveAttribute("href", "https://example.test/task-selected");
+    await expect(taskContent.locator("a")).toContainText("Selected task label");
+    await expectWritingStable(page, editor);
+    await expect.poll(() => host.getLatestSavedText()).toContain("- [ ] [Selected task label](https://example.test/task-selected)");
+
+    await host.setNote("- [ ] Task URL target\n", "writing-paste-task-cursor-url", false);
+    taskContent = editor.writingEditor.locator(".task-content").first();
+    await placeCaretAt(taskContent, "end");
+    await pasteInto(taskContent, "https://example.test/task-cursor");
+    await expect(taskContent.locator("a")).toHaveAttribute("href", "https://example.test/task-cursor");
+    await expectWritingStable(page, editor);
+    await expect.poll(() => host.getLatestSavedText()).toContain("- [ ] Task URL target[https://example.test/task-cursor](https://example.test/task-cursor)");
+  });
+
   test("cross-paragraph, full-selection, and mouse-drag replacement stay in Writing", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);

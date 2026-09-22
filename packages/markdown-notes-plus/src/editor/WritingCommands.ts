@@ -14,6 +14,22 @@ type WritingView = Pick<ProseEditorView, "state" | "dispatch" | "focus" | "edita
 type WritingState = WritingView["state"];
 type WritingTransaction = ReturnType<WritingState["tr"]["setMeta"]>;
 
+function parsedContentForInsertion(view: ProseEditorView, parsed: ProseNode, from: number, to: number) {
+  const paragraph = parsed.childCount === 1 && parsed.firstChild?.type === view.state.schema.nodes.paragraph
+    ? parsed.firstChild
+    : undefined;
+  if (!paragraph) return parsed.content;
+
+  try {
+    const $from = view.state.doc.resolve(from);
+    const $to = view.state.doc.resolve(to);
+    if ($from.sameParent($to) && $from.parent.isTextblock && !($from.parent.type.spec.code ?? false)) return paragraph.content;
+  } catch {
+    // Keep the block fragment when the insertion range is not resolvable.
+  }
+  return parsed.content;
+}
+
 function linkMarkAtSelection(state: WritingState, selection = state.selection, doc = state.doc): { mark: Mark; from: number; to: number; stored: boolean } | undefined {
   const type = state.schema.marks.link;
   if (!type) return undefined;
@@ -324,7 +340,7 @@ export function insertWritingMarkdown(
   const from = range ? range.from : view.state.selection.from;
   const to = range ? range.to : view.state.selection.to;
 
-  tr = tr.replaceWith(from, to, parsed.content);
+  tr = tr.replaceWith(from, to, parsedContentForInsertion(view, parsed, from, to));
   tr = tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, "user");
 
   if (typeof cursorOffset === "number" && cursorOffset >= 0) {
