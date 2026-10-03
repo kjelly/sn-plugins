@@ -62,6 +62,37 @@ function tokenizeLines(markdown: string): LineToken[] {
   return lines;
 }
 
+/** Ignore literal inline code and escaped punctuation when screening syntax. */
+function syntaxOutsideInlineCode(line: string): string {
+  const visible = line.split("");
+  for (let index = 0; index < line.length;) {
+    if (line[index] === "\\" && index + 1 < line.length && /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(line[index + 1])) {
+      visible[index] = " ";
+      visible[index + 1] = " ";
+      index += 2;
+      continue;
+    }
+    if (line[index] !== "`") { index += 1; continue; }
+    let openingEnd = index + 1;
+    while (line[openingEnd] === "`") openingEnd += 1;
+    const delimiterLength = openingEnd - index;
+    let closingStart = openingEnd;
+    while (closingStart < line.length) {
+      if (line[closingStart] !== "`") { closingStart += 1; continue; }
+      let closingEnd = closingStart + 1;
+      while (line[closingEnd] === "`") closingEnd += 1;
+      if (closingEnd - closingStart === delimiterLength) {
+        visible.fill(" ", index, closingEnd);
+        index = closingEnd;
+        break;
+      }
+      closingStart = closingEnd;
+    }
+    if (closingStart >= line.length) index = openingEnd;
+  }
+  return visible.join("");
+}
+
 function isRawHtml(line: string): boolean {
   const withoutAutolinks = line.replace(/<(?:https?|mailto):[^>]+>/gi, "");
   return /<!--|<\/?[A-Za-z][^>]*>|<![A-Z]|<\?[A-Za-z]/.test(withoutAutolinks);
@@ -122,9 +153,10 @@ export function scanWritingNormalization(markdown: string): WritingNormalization
     const line = sourceLine.text;
     const opaque = isInOpaqueFencedRange(sourceLine.start, structure.opaqueFencedRanges);
     if (!opaque) {
-      if (isRawHtml(line)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) });
-      if (isReferenceSyntax(line)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) });
-      if (isUnknownExtension(line)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) });
+      const syntax = syntaxOutsideInlineCode(line);
+      if (isRawHtml(syntax)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.html) });
+      if (isReferenceSyntax(syntax)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.reference) });
+      if (isUnknownExtension(syntax)) return setScanCache(markdown, { markdown, changes: [], unsupportedReason: unsupportedScanReason(unsupported.unknown) });
     }
 
     // Tables and fenced code blocks are first-class GFM nodes in the Writing

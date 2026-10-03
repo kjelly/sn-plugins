@@ -682,6 +682,21 @@ Deno.test("Writing normalization rejects unsupported extensions outside fenced c
   assertEquals(scanWritingNormalization("```text\n:::literal\n```\n").unsupportedReason, undefined);
 });
 
+Deno.test("Writing normalization leaves inline code and escaped syntax literal", () => {
+  for (const source of [
+    "Use `<div>` in code.\n",
+    "Use ``code with ` and <div>`` here.\n",
+    "Use `[label][reference]` and `??highlight??` as examples.\n",
+    "Show \\<div> literally.\n",
+  ]) {
+    assertEquals(scanWritingNormalization(source).unsupportedReason, undefined, source);
+  }
+  assertEquals(scanWritingNormalization("Use `<div>` then <span>raw</span>.\n").unsupportedReason,
+    "Raw HTML are not supported in Writing mode; use Source mode.");
+  assertEquals(scanWritingNormalization("Use `example` then [label][reference].\n").unsupportedReason,
+    "reference links are not supported in Writing mode; use Source mode.");
+});
+
 Deno.test("normalizes only GFM-confirmed bare HTTP(S) URLs with exact UTF-16 changes", () => {
   const source = "😀 https://one.test/a, [two](https://two.test) <https://three.test> https://四.test/路.";
   const result = normalizeBareUrls(source);

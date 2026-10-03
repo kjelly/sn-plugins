@@ -129,6 +129,45 @@ test.describe("Writing mode stability contract", () => {
     await expect.poll(() => host.getLatestSavedText()).toContain("inserted");
   });
 
+  test("typing Markdown shortcuts keeps the resulting blocks editable in Writing", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    const cases = [
+      { name: "heading", typed: "# Heading from keyboard", selector: "h1", saved: "# Heading from keyboard" },
+      { name: "bullet", typed: "- Bullet from keyboard", selector: "li p", saved: "- Bullet from keyboard" },
+      { name: "numbered", typed: "1. Numbered from keyboard", selector: "ol li p", saved: "1. Numbered from keyboard" },
+      { name: "quote", typed: "> Quote from keyboard", selector: "blockquote p", saved: "> Quote from keyboard" },
+    ];
+
+    await host.goto("", "writing-keyboard-heading", false);
+    for (const [index, scenario] of cases.entries()) {
+      if (index > 0) await host.setNote("", `writing-keyboard-${scenario.name}`, false);
+      await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+      await editor.writingEditor.click();
+      await page.keyboard.type(scenario.typed);
+      await expect(editor.writingEditor.locator(scenario.selector)).toContainText(scenario.typed.split(" ").slice(1).join(" "));
+      await expectWritingStable(page, editor);
+      await expect.poll(() => host.getLatestSavedText()).toContain(scenario.saved);
+    }
+  });
+
+  test("HTML-looking text inside inline code stays in Writing after a host update", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    const markdown = "Use `<div>` in code.\n";
+
+    await host.goto(markdown, "writing-inline-code-html", false);
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await placeCaretAt(editor.writingEditor.locator("p"), "end");
+    await page.keyboard.type(" Still editing.");
+    await expectWritingStable(page, editor);
+    await expect.poll(() => host.getLatestSavedText()).toContain("Use `<div>` in code. Still editing.");
+
+    await host.updateCurrentNote(await host.getLatestSavedText() ?? "");
+    await expectWritingStable(page, editor);
+    await expect(editor.writingEditor.locator("code")).toHaveText("<div>");
+  });
+
   test("supported toolbar transformations stay in Writing", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
@@ -208,7 +247,9 @@ test.describe("Writing mode stability contract", () => {
     await input.fill("");
     await dialog.getByRole("button", { name: "Done", exact: true }).click();
     await expect(editor.writingEditor.locator("a")).toHaveCount(0);
-    await placeCaretAt(paragraph, "end");
+    // Unlinking preserves the selected label. ArrowRight is the user's
+    // explicit move to the end before typing more text.
+    await page.keyboard.press("ArrowRight");
     await page.keyboard.type(" after-link");
     await expectWritingStable(page, editor);
     await expect.poll(() => host.getLatestSavedText()).toContain("Link text after-link");
@@ -278,6 +319,23 @@ test.describe("Writing mode stability contract", () => {
     await expect(taskContent.locator("a")).toHaveAttribute("href", "https://example.test/task-cursor");
     await expectWritingStable(page, editor);
     await expect.poll(() => host.getLatestSavedText()).toContain("- [ ] Task URL target[https://example.test/task-cursor](https://example.test/task-cursor)");
+  });
+
+  test("pasting a copied HTML link keeps its label and stays in Writing", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", "Synthetic ClipboardEvent paste semantics are not supported consistently in Firefox.");
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+
+    await host.goto("Before link\n", "writing-paste-html-link", false);
+    const paragraph = editor.writingEditor.locator("p").first();
+    await placeCaretAt(paragraph, "end");
+    await pasteInto(paragraph, "Example site", '<a href="https://example.test/page">Example site</a>');
+
+    const link = paragraph.locator("a");
+    await expect(link).toHaveAttribute("href", "https://example.test/page");
+    await expect(link).toHaveText("Example site");
+    await expectWritingStable(page, editor);
+    await expect.poll(() => host.getLatestSavedText()).toContain("Before link[Example site](https://example.test/page)");
   });
 
   test("cross-paragraph, full-selection, and mouse-drag replacement stay in Writing", async ({ page }) => {
