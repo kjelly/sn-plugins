@@ -51,13 +51,13 @@ Deno.test("production Mermaid renderer artifacts have a network-denying isolated
 Deno.test("production editor keeps a small bridge shell and defers editor UI chunks", async () => {
   const entryPattern = /<script type="module" crossorigin src="\.\/assets\/(index-[^"]+\.js)"><\/script>/;
   const mountChunkPattern = /import\("\.\/(mountApp-[^"]+\.js)"\)/;
-  const deferredChunkPattern = /import\("\.\/(SourceEditor|MindMapView|WritingEditor)-[^"]+\.js"\)/g;
+  const deferredChunkPattern = /import\("\.\/(SourceEditor|MindMapView|WritingEditor|FlashcardView)-[^"]+\.js"\)/g;
 
   for (const path of artifactPaths) {
     const html = await Deno.readTextFile(path);
     const entryMatch = html.match(entryPattern);
     if (!entryMatch) throw new Error(`Missing production entry script in ${path.pathname}`);
-    if (/modulepreload[^>]+(?:mountApp|SourceEditor|MindMapView|WritingEditor)-/.test(html)) {
+    if (/modulepreload[^>]+(?:mountApp|SourceEditor|MindMapView|WritingEditor|FlashcardView)-/.test(html)) {
       throw new Error(`Optional editor chunks must not be preloaded by ${path.pathname}`);
     }
 
@@ -68,7 +68,7 @@ Deno.test("production editor keeps a small bridge shell and defers editor UI chu
     const mountUrl = new URL(`./assets/${mountMatch[1]}`, path);
     const mountChunk = await Deno.readTextFile(mountUrl);
     const deferredChunks = new Set([...mountChunk.matchAll(deferredChunkPattern)].map((match) => match[1]));
-    for (const expected of ["SourceEditor", "MindMapView", "WritingEditor"]) {
+    for (const expected of ["SourceEditor", "MindMapView", "WritingEditor", "FlashcardView"]) {
       if (!deferredChunks.has(expected)) throw new Error(`${expected} must remain a dynamic import in ${mountUrl.pathname}`);
     }
     if (new TextEncoder().encode(entry).byteLength >= 100_000) {

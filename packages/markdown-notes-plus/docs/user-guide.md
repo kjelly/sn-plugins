@@ -1,6 +1,6 @@
 # Markdown Notes+ 使用者功能說明手冊
 
-Markdown Notes+ 是 Standard Notes 的 Markdown 編輯器：以「單一筆記的原始 Markdown 字串」為唯一資料真相，在其上提供四種編輯與檢視模式（Writing、Source、Split、Mind Map），並把任務清單、大綱、心智圖當作同一份內容的三種投影。本手冊涵蓋所有已上線功能，每個功能以「操作步驟 + 語法範例 + 注意事項」呈現。
+Markdown Notes+ 是 Standard Notes 的 Markdown 編輯器：以「單一筆記的原始 Markdown 字串」為唯一資料真相，在其上提供 Writing、Source、Split、Mind Map、Kanban 與 Flashcards 模式，並把任務清單、大綱、心智圖、看板與問答卡當作同一份內容的投影。本手冊涵蓋所有已上線功能，每個功能以「操作步驟 + 語法範例 + 注意事項」呈現。
 
 ## 目錄
 
@@ -9,6 +9,7 @@ Markdown Notes+ 是 Standard Notes 的 Markdown 編輯器：以「單一筆記�
 3. [Writing 模式（所見即所得）](#3-writing-模式所見即所得)
 4. [Source 模式（原始 Markdown）](#4-source-模式原始-markdown)
 5. [Split 模式與 Mind Map（心智圖）](#5-split-模式與-mind-map心智圖)
+   - [Flashcards 模式](#55-flashcards-模式)
 6. [側邊欄 Inspector](#6-側邊欄-inspector)
 7. [任務系統](#7-任務系統)
 8. [多裝置同步與衝突處理](#8-多裝置同步與衝突處理)
@@ -23,7 +24,7 @@ Markdown Notes+ 是 Standard Notes 的 Markdown 編輯器：以「單一筆記�
 
 Markdown Notes+（Standard Notes 外掛識別碼 `markdown-notes-plus`）安裝於 Standard Notes 後，即可用來編輯任何 Markdown 筆記。它的核心設計是：**筆記內容永遠是一份純 Markdown 字串**，所有模式與面板只是同一份字串的不同呈現方式，因此在任何地方做的修改都會即時同步到其他視圖。
 
-### 四種編輯模式一覽
+### 六種編輯與投影模式一覽
 
 | 模式 | 定位 | 適用情境 |
 |------|------|----------|
@@ -31,6 +32,8 @@ Markdown Notes+（Standard Notes 外掛識別碼 `markdown-notes-plus`）安裝�
 | Source | 原始 Markdown 編輯（CodeMirror 6 引擎） | 精確控制字元、修正 Writing 無法表達的內容、搜尋取代 |
 | Split | Writing 與心智圖並排 | 邊寫邊看結構投影 |
 | Mind Map | 全屏心智圖（Markmap 引擎） | 檢視整份筆記的階層結構、總覽任務 |
+| Kanban | 標題欄位式任務看板 | 拖曳可攜式 Markdown 任務 |
+| Flashcards | Q&A 唯讀學習投影 | 複習筆記中的問答區段，不改動原文 |
 
 ### 3 分鐘快速導覽
 
@@ -46,15 +49,17 @@ Markdown Notes+（Standard Notes 外掛識別碼 `markdown-notes-plus`）安裝�
 
 ### 2.1 模式切換
 
-每個編輯區上方的工具列在符合條件時會提供模式切換按鈕：`Writing`、`Source`、`Mindmap`、`Split`、`Kanban`。點擊即切換；Writing 編輯器在模式切換間會保留自己的游標與復原歷史。
+每個編輯區上方的工具列在符合條件時會提供模式切換按鈕：`Writing`、`Source`、`Mindmap`、`Split`、`Kanban`、`Flashcards`。點擊即切換；Writing 編輯器在模式切換間會保留自己的游標與復原歷史。
 
 **Mind Map 適用性自動偵測**：只有當筆記包含標題（`#` 開頭或底線式標題）或任何清單項目時，`Mindmap` 與 `Split` 按鈕才會出現。純文字筆記只有 Writing / Source 兩種模式可選。若你把一篇結構化筆記改成純文字，編輯器會自動退回 Writing 模式。
 
 **Kanban 適用性自動偵測**：只要筆記包含看板結構——即一個父標題，且直屬下一層至少有 2 個子標題作為欄位（例如 `待辦` / `進行中` / `完成`，欄位名稱不限，欄位內無更深層標題），`Kanban` 模式按鈕就會自動出現，亦可透過 `Ctrl/Cmd+P` 命令面板切換。各欄位底下的待辦事項（`- [ ]`）即為可拖曳的看板卡片。
 
+**Flashcards 適用性自動偵測**：筆記只要含有完整匹配的 Q&A 標題，`Flashcards` 按鈕便會出現；一般標題如 `QA Environment` 不會誤判。解析問答與答案 Markdown 的較重程式碼只會在實際進入 Flashcards 時載入。
+
 ### 2.2 Undo / Redo
 
-每個模式的工具列都有 `Undo`（復原）與 `Redo`（重做）按鈕。Writing 與 Source 各自保有自己的一份編輯歷史；工具列上的 Undo/Redo 操作的是整份筆記的變更歷史（包含打勾任務、大綱搬移等結構操作）。
+編輯／結構操作模式的工具列提供 `Undo`（復原）與 `Redo`（重做）按鈕。Writing 與 Source 各自保有自己的一份編輯歷史；工具列上的 Undo/Redo 操作的是整份筆記的變更歷史（包含打勾任務、大綱搬移等結構操作）。Flashcards 的學習動作不屬於文件歷史，因此不顯示 Undo/Redo。
 
 ### 2.3 狀態列訊息
 
@@ -74,7 +79,7 @@ Markdown Notes+（Standard Notes 外掛識別碼 `markdown-notes-plus`）安裝�
 
 ### 2.4 唯讀（Locked）狀態
 
-筆記在 Standard Notes 中被設為保護（locked）時：所有編輯按鈕停用、任務 checkbox 與刪除鈕停用、大綱結構操作停用、心智圖 checkbox 鎖定。解鎖後自動恢復。
+筆記在 Standard Notes 中被設為保護（locked）時：所有編輯按鈕停用、任務 checkbox 與刪除鈕停用、大綱結構操作停用、心智圖 checkbox 鎖定。Flashcards 是唯讀投影，因此 locked 筆記仍可正常複習。解鎖後編輯功能自動恢復。
 
 ### 2.5 外觀主題
 
@@ -239,6 +244,44 @@ Writing 模式只會在「呈現結果能逐字還原成原始 Markdown」時才
 ### 5.4 適用性
 
 只有**含標題或任何清單項目**的筆記才會顯示 `Mindmap` / `Split` 模式按鈕（見 2.1）。心智圖是唯讀投影：可以在上面切換任務、點連結，但不能直接編輯文字內容。
+
+### 5.5 Flashcards 模式
+
+在下列任一個完整標題下，以普通 Markdown 撰寫 `Q:` / `A:` 配對：`Q&A`、`Q & A`、`Q＆A`、`QA`、`Questions & Answers`。大小寫、全形 ampersand 與合理空白會正規化，但 `QA Environment` 等部分名稱不會匹配。Q/A 標記亦接受小寫與全形冒號（例如 `q：`）。
+
+```markdown
+## Q&A
+
+Q: What is a Kubernetes Pod?
+
+A: Kubernetes 中最小的部署單位，可以包含一個或多個 container。
+
+Q: Deployment 和 StatefulSet 的主要差異？
+
+A:
+Deployment 適合 stateless workload。
+
+StatefulSet 提供：
+
+- stable identity
+- stable storage
+- ordered deployment
+```
+
+答案可以包含多段文字、清單、引用、程式碼區塊、GFM 表格與安全連結。Raw HTML 不會執行；危險協定連結不可點擊；圖片只顯示替代文字，不會自動發出網路請求。程式碼與 HTML 區塊裡看似 `Q:` / `A:` 的內容不會建立卡片。
+
+工具列可選擇全部或單一 Q&A 區段，並可 Shuffle 或 Reset。卡片操作如下：
+
+| 操作 | 按鈕／快捷鍵 |
+|------|---------------|
+| 顯示／隱藏答案 | `Space` |
+| 上一張／下一張 | `←` / `→` |
+| 本次已熟悉並移出佇列 | `Known` / `K` |
+| 本次稍後再看、移到佇列尾端 | `Again` / `A` |
+| 洗牌 | `Shuffle` / `S` |
+| 重設目前範圍 | `Reset` / `R` |
+
+Flashcards 永遠不會修改或儲存筆記內容。Known、Again、顯示狀態與順序只存在於目前畫面 session；離開、重新載入或切換筆記都可能重設。此功能沒有 FSRS、SM-2、到期日或間隔排程，也不會跨裝置同步學習紀錄。
 
 ---
 

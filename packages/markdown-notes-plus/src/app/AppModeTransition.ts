@@ -1,4 +1,4 @@
-export type AppMode = "writing" | "split" | "source" | "mindmap" | "kanban";
+export type AppMode = "writing" | "split" | "source" | "mindmap" | "kanban" | "flashcards";
 
 import type { WritingCapability } from "../editor/WritingEditorLifecycle.ts";
 

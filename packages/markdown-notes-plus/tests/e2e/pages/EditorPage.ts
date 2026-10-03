@@ -1,6 +1,6 @@
 import { expect, type FrameLocator, type Locator, type Page } from "@playwright/test";
 
-export type EditorMode = "Writing" | "Split" | "Source" | "Mindmap" | "Kanban";
+export type EditorMode = "Writing" | "Split" | "Source" | "Mindmap" | "Kanban" | "Flashcards";
 
 export class EditorPage {
   readonly frame: FrameLocator;
@@ -44,6 +44,21 @@ export class EditorPage {
   readonly kanbanPane: Locator;
   readonly kanbanColumns: Locator;
   readonly kanbanDropZones: Locator;
+
+  // Flashcards pane
+  readonly flashcardPane: Locator;
+  readonly flashcardView: Locator;
+  readonly flashcardQuestion: Locator;
+  readonly flashcardAnswer: Locator;
+  readonly flashcardRevealButton: Locator;
+  readonly flashcardPreviousButton: Locator;
+  readonly flashcardNextButton: Locator;
+  readonly flashcardKnownButton: Locator;
+  readonly flashcardAgainButton: Locator;
+  readonly flashcardShuffleButton: Locator;
+  readonly flashcardResetButton: Locator;
+  readonly flashcardSectionSelect: Locator;
+  readonly flashcardProgress: Locator;
 
   // Sidebar & Layout
   readonly workspaceLayout: Locator;
@@ -107,6 +122,20 @@ export class EditorPage {
     this.kanbanPane = this.frame.locator(".kanban-pane");
     this.kanbanColumns = this.kanbanPane.locator(".kanban-column");
     this.kanbanDropZones = this.kanbanPane.locator(".kanban-drop-zone");
+
+    this.flashcardPane = this.frame.locator(".flashcard-pane");
+    this.flashcardView = this.flashcardPane.locator(".flashcard-view");
+    this.flashcardQuestion = this.flashcardView.locator(".flashcard-question-text");
+    this.flashcardAnswer = this.flashcardView.locator(".flashcard-answer");
+    this.flashcardRevealButton = this.flashcardView.getByRole("button", { name: /answer/i });
+    this.flashcardPreviousButton = this.flashcardView.getByRole("button", { name: "Previous" });
+    this.flashcardNextButton = this.flashcardView.getByRole("button", { name: "Next" });
+    this.flashcardKnownButton = this.flashcardView.getByRole("button", { name: "Known" });
+    this.flashcardAgainButton = this.flashcardView.getByRole("button", { name: "Again" });
+    this.flashcardShuffleButton = this.flashcardView.getByRole("button", { name: "Shuffle" });
+    this.flashcardResetButton = this.flashcardView.getByRole("button", { name: "Reset", exact: true });
+    this.flashcardSectionSelect = this.flashcardView.getByRole("combobox", { name: "Flashcard section" });
+    this.flashcardProgress = this.flashcardView.locator(".flashcard-progress");
 
     this.workspaceLayout = this.frame.locator(".workspace-layout");
     this.sidebarPane = this.frame.locator(".sidebar-pane");
@@ -223,32 +252,47 @@ export class EditorPage {
   get kanbanModeButton(): Locator {
     return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Kanban" }).first();
   }
+  get flashcardModeButton(): Locator {
+    return this.frame.locator(".mode-buttons:visible").getByRole("button", { name: "Flashcards" }).first();
+  }
 
   kanbanCard(text: string): Locator {
     return this.kanbanPane.locator(".kanban-card", { hasText: text }).first();
   }
 
   async switchMode(mode: EditorMode): Promise<void> {
+    const confirmSourceFallback = async (): Promise<boolean> => {
+      if (mode !== "Source") return false;
+      const dialog = this.frame.getByRole("dialog", { name: "Writing edit needs Source confirmation" });
+      if (!(await dialog.isVisible().catch(() => false))) return false;
+      await dialog.getByRole("button", { name: "前往 Source 並保留輸入" }).click();
+      await expect(this.sourceEditor).toBeVisible();
+      return true;
+    };
+
+    if (await confirmSourceFallback()) return;
     // On compact layouts the open drawer/backdrop covers the mode controls.
     // Closing it models the real user interaction and avoids force-clicking
     // through an overlay that Standard Notes users cannot bypass.
-    await this.closeSidebar();
-    const modeButton = this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first();
-    if (await modeButton.getAttribute("class") === "active") {
+    try {
+      await this.closeSidebar();
+      const modeButton = this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first();
+      if (await modeButton.getAttribute("class") !== "active") {
+        try {
+          await modeButton.click({ timeout: 2000 });
+        } catch (error) {
+          // A lossless fallback can activate Source between the state check and
+          // Playwright's pointer dispatch. In that case the active button is
+          // the source of truth.
+          if (await modeButton.getAttribute("class") !== "active") throw error;
+        }
+      }
       if (mode === "Source") await expect(this.sourceEditor).toBeVisible();
       if (mode === "Mindmap" || mode === "Split") await expect(this.mindmapSvg).toBeVisible();
-      return;
-    }
-    try {
-      await modeButton.click({ timeout: 2000 });
+      if (mode === "Flashcards") await expect(this.flashcardView).toBeVisible();
     } catch (error) {
-      // A lossless fallback can activate Source between the state check and
-      // Playwright's pointer dispatch. In that case the requested transition
-      // has already completed and the active button is the source of truth.
-      if (await modeButton.getAttribute("class") !== "active") throw error;
+      if (!(await confirmSourceFallback())) throw error;
     }
-    if (mode === "Source") await expect(this.sourceEditor).toBeVisible();
-    if (mode === "Mindmap" || mode === "Split") await expect(this.mindmapSvg).toBeVisible();
   }
 
   async typeInSource(text: string): Promise<void> {

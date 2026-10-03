@@ -15,11 +15,17 @@ Deno.test("linkOpener - isSafeExternalUrl validates safe and unsafe protocols", 
   assertEquals(isSafeExternalUrl("sn://app"), true);
   assertEquals(isSafeExternalUrl("#section-anchor"), true);
   assertEquals(isSafeExternalUrl("/relative/path"), true);
+  assertEquals(isSafeExternalUrl("file:///tmp/example.md"), true);
 
   assertEquals(isSafeExternalUrl("javascript:alert(1)"), false);
   assertEquals(isSafeExternalUrl("JAVASCRIPT:alert(1)"), false);
   assertEquals(isSafeExternalUrl("vbscript:msgbox(1)"), false);
   assertEquals(isSafeExternalUrl("data:text/html,<script>alert(1)</script>"), false);
+  assertEquals(isSafeExternalUrl("\u0001javascript:alert(1)"), false);
+  assertEquals(isSafeExternalUrl("java\tscript:alert(1)"), false);
+  assertEquals(isSafeExternalUrl("\u0001data:text/html,payload"), false);
+  assertEquals(isSafeExternalUrl("\u0001vbscript:msgbox(1)"), false);
+  assertEquals(isSafeExternalUrl("blob:https://example.com/asset"), false);
   assertEquals(isSafeExternalUrl(""), false);
   assertEquals(isSafeExternalUrl("   "), false);
 });
@@ -45,6 +51,9 @@ Deno.test("linkOpener - openExternalLink opens safe urls with _blank and noopene
 
   const resultUnsafe = openExternalLink("javascript:alert(1)", mockOpener);
   assertEquals(resultUnsafe, false);
+  const resultObfuscated = openExternalLink("\u0001javascript:alert(1)", mockOpener);
+  assertEquals(resultObfuscated, false);
+  assertEquals(openedUrl, "https://standardnotes.com");
 });
 
 Deno.test("linkOpener - deduplicates rapid link opening to prevent duplicate tabs", () => {

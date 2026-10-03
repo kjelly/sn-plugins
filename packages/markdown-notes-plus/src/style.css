@@ -95,7 +95,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .editing-grid { display: grid; min-height: 0; height: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 4px; }
 .mode-split .editing-grid { grid-template-columns: minmax(0, 1fr) minmax(260px, .85fr); }
 .mode-split .map-pane { grid-column: 2; grid-row: 1; }
-.kanban-pane { min-width: 0; }
+.kanban-pane, .flashcard-pane { min-width: 0; }
 .pane { min-width: 0; min-height: 0; height: 100%; border: 1px solid var(--editor-border); border-radius: 5px; overflow: hidden; background: color-mix(in srgb, var(--editor-bg) 96%, var(--editor-fg)); display: flex; flex-direction: column; }
 .writing-pane, .source-pane, .map-pane { display: flex; flex-direction: column; height: 100%; }
 .writing-pane[hidden] { display: none; }
@@ -125,6 +125,36 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .kanban-card-drop-before:hover { border-top: 2px solid var(--editor-accent); }
 .kanban-empty { margin: auto; max-width: 520px; padding: 18px; border: 1px dashed var(--editor-border); border-radius: 8px; color: var(--editor-muted); text-align: center; }
 .kanban-empty h2 { margin-top: 0; color: var(--editor-fg); }
+.flashcard-view { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 10px; padding: 12px; overflow: hidden; background: var(--editor-bg); color: var(--editor-fg); }
+.flashcard-study-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 0 0 auto; }
+.flashcard-study-toolbar h2 { margin: 0 auto 0 0; font-size: 1.05rem; }
+.flashcard-study-toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--editor-muted); }
+.flashcard-study-toolbar select { min-height: 34px; max-width: min(320px, 55vw); border: 1px solid var(--editor-border); border-radius: 5px; padding: 3px 7px; background: var(--editor-bg); color: var(--editor-fg); }
+.flashcard-progress { display: flex; justify-content: center; gap: clamp(14px, 5vw, 48px); flex: 0 0 auto; color: var(--editor-muted); font-variant-numeric: tabular-nums; }
+.flashcard-card { display: flex; flex: 1 1 auto; min-height: 0; width: min(780px, 100%); margin: 0 auto; flex-direction: column; gap: 12px; padding: clamp(14px, 3vw, 26px); overflow-y: auto; border: 1px solid var(--editor-border); border-radius: 9px; background: var(--editor-bg); box-shadow: 0 2px 8px color-mix(in srgb, var(--editor-fg) 8%, transparent); }
+.flashcard-card-meta { color: var(--editor-muted); font-size: .82rem; }
+.flashcard-question h3, .flashcard-answer h3 { margin: 0 0 8px; color: var(--editor-muted); font-size: .78rem; letter-spacing: .05em; text-transform: uppercase; }
+.flashcard-question-text { font-size: clamp(1.08rem, 2.3vw, 1.45rem); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.flashcard-reveal { align-self: center; min-width: 140px; min-height: 40px; border-color: var(--editor-accent); color: var(--editor-accent); }
+.flashcard-answer { padding-top: 12px; border-top: 1px solid var(--editor-border); overflow-wrap: anywhere; }
+.flashcard-markdown > :first-child, .flashcard-markdown > :first-child > :first-child { margin-top: 0; }
+.flashcard-markdown > :last-child, .flashcard-markdown > :last-child > :last-child { margin-bottom: 0; }
+.flashcard-markdown pre { max-width: 100%; padding: 9px; overflow: auto; border-radius: 5px; background: var(--editor-code-bg); white-space: pre; }
+.flashcard-markdown code { border-radius: 3px; padding: 1px 3px; background: var(--editor-code-bg); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.flashcard-markdown pre code { padding: 0; background: transparent; }
+.flashcard-markdown blockquote { margin-left: 0; padding-left: 12px; border-left: 3px solid var(--editor-border); color: var(--editor-muted); }
+.flashcard-table-scroll { max-width: 100%; overflow-x: auto; }
+.flashcard-markdown table { border-collapse: collapse; }
+.flashcard-markdown td { padding: 5px 8px; border: 1px solid var(--editor-border); }
+.flashcard-raw-html, .flashcard-image-placeholder, .flashcard-unsafe-link { color: var(--editor-muted); }
+.flashcard-unsafe-link { text-decoration: line-through; text-decoration-style: dotted; }
+.flashcard-actions { display: grid; grid-template-columns: repeat(4, minmax(80px, 1fr)); gap: 8px; width: min(780px, 100%); margin: 0 auto; flex: 0 0 auto; }
+.flashcard-actions button { min-height: 40px; }
+.flashcard-actions button:nth-child(2) { border-style: dashed; }
+.flashcard-actions button:nth-child(3) { border-color: var(--editor-accent); }
+.flashcard-empty, .flashcard-complete { margin: auto; max-width: 520px; padding: 22px; border: 1px dashed var(--editor-border); border-radius: 8px; text-align: center; color: var(--editor-muted); }
+.flashcard-empty h3, .flashcard-complete h3 { margin-top: 0; color: var(--editor-fg); }
+.flashcard-view button:focus-visible, .flashcard-view select:focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 2px; }
 .pane-toolbar { min-height: 34px; padding: 3px 6px; border-bottom: 1px solid var(--editor-border); color: var(--editor-muted); font-size: .84rem; display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-shrink: 0; }
 .pane-toolbar::-webkit-scrollbar { display: none; }
 .pane-toolbar button { min-height: 26px; padding: 1px 7px; font-size: 0.82rem; flex-shrink: 0; white-space: nowrap; }
@@ -1552,6 +1582,13 @@ button { -webkit-tap-highlight-color: transparent; }
   .workspace-layout.with-sidebar .sidebar-pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(85vw, 320px); z-index: 100; background: var(--editor-bg); box-shadow: -4px 0 20px color-mix(in srgb, var(--editor-fg) 25%, transparent); padding: 12px; padding-top: max(12px, env(safe-area-inset-top)); padding-right: max(12px, env(safe-area-inset-right)); padding-bottom: max(12px, env(safe-area-inset-bottom)); border-left: 1px solid var(--editor-border); }
   .mode-split .editing-grid { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   .mode-split .map-pane { grid-column: 1; grid-row: 2; }
+  .flashcard-view { padding: 8px; gap: 8px; }
+  .flashcard-study-toolbar h2 { flex-basis: 100%; }
+  .flashcard-study-toolbar label { flex: 1 1 auto; }
+  .flashcard-study-toolbar select { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+  .flashcard-card { padding: 14px; }
+  .flashcard-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .flashcard-actions button, .flashcard-study-toolbar button, .flashcard-study-toolbar select { min-height: 40px; }
 }
 
 /* CSP-compliant helpers without inline styles */

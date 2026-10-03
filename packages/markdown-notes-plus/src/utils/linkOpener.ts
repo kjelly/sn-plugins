@@ -1,17 +1,15 @@
-/**
- * Validate whether a URL is safe to open as an external link.
- * Blocks dangerous schemes such as javascript:, vbscript:, and data:.
- */
+const ALLOWED_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:", "sn:", "file:", "tel:", "ftp:"]);
+const RELATIVE_LINK_BASE = "https://editor.invalid/";
+
+/** Validate the protocol after browser-style URL parsing, including control characters. */
 export function isSafeExternalUrl(url: string): boolean {
-  if (!url) return false;
   const trimmed = url.trim();
   if (!trimmed) return false;
-
-  // Block dangerous pseudo-protocols
-  if (/^(javascript|vbscript|data):/i.test(trimmed)) {
+  try {
+    return ALLOWED_LINK_PROTOCOLS.has(new URL(trimmed, RELATIVE_LINK_BASE).protocol);
+  } catch {
     return false;
   }
-  return true;
 }
 
 export type WindowOpener = (url: string, target?: string, features?: string) => Window | null;

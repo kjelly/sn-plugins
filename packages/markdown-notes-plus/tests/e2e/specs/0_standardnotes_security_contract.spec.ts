@@ -404,6 +404,36 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
     await expectSecurityAuditClean(audit);
   });
 
+  test("P0: Flashcards omits raw HTML, dangerous links, and external image requests", async ({ page }) => {
+    const audit = await setupSecurityAuditor(page);
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    const imageRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("example.invalid/tracker.png")) imageRequests.push(request.url());
+    });
+    const source = `## Q&A
+Q: Is this inert?
+A:
+<script>window.__flashcardPwned = true</script>
+
+[bad](javascript:alert(1))
+
+![tracker](https://example.invalid/tracker.png)
+`;
+    await host.goto(source, "sec-flashcards", false);
+    await host.clearSaves();
+    await editor.switchMode("Flashcards");
+    await editor.flashcardRevealButton.click();
+
+    await expect(editor.flashcardAnswer.locator("script, img")).toHaveCount(0);
+    await expect(editor.flashcardAnswer.getByRole("link", { name: "bad" })).toHaveCount(0);
+    expect(await editor.frame.locator("body").evaluate(() => (window as unknown as { __flashcardPwned?: boolean }).__flashcardPwned)).toBeUndefined();
+    expect(imageRequests).toEqual([]);
+    expect(await host.getSaves()).toEqual([]);
+    await expectSecurityAuditClean(audit);
+  });
+
   test("P0: Production Bundle Static Security Audit - No WASM, octet-stream, or localStorage leaks", () => {
     const distDir = path.resolve(process.cwd(), "dist");
     if (!fs.existsSync(distDir)) {

@@ -27,6 +27,7 @@ export interface NavigationPaletteModalProps {
   onSelectHeading: (anchor: number) => void;
   onSetMode: (mode: AppMode) => void;
   kanbanSuitable?: boolean;
+  flashcardSuitable?: boolean;
   onToggleSidebar: () => void;
   onOpenTemplates: () => void;
   library?: InsertLibrary;
@@ -41,6 +42,7 @@ export function NavigationPaletteModal({
   onSelectHeading,
   onSetMode,
   kanbanSuitable = false,
+  flashcardSuitable = false,
   onToggleSidebar,
   onOpenTemplates,
   library,
@@ -102,6 +104,14 @@ export function NavigationPaletteModal({
       subtitle: "Heading-based task board",
       badge: "Mode",
       action: () => { onSetMode("kanban"); onClose(); },
+    });
+    if (flashcardSuitable) items.push({
+      id: "cmd-mode-flashcards",
+      kind: "command",
+      title: "Switch to Flashcards Mode",
+      subtitle: "Study Q&A sections",
+      badge: "Mode",
+      action: () => { onSetMode("flashcards"); onClose(); },
     });
     items.push({
       id: "cmd-toggle-sidebar",
@@ -170,7 +180,7 @@ export function NavigationPaletteModal({
     }
 
     return items;
-  }, [analysis, kanbanSuitable, library, onClose, onInsertSnippet, onInsertTemplate, onOpenTemplates, onSelectHeading, onSetMode, onToggleSidebar]);
+  }, [analysis, flashcardSuitable, kanbanSuitable, library, onClose, onInsertSnippet, onInsertTemplate, onOpenTemplates, onSelectHeading, onSetMode, onToggleSidebar]);
 
   const filteredItems = useMemo(() => {
     const q = query.toLowerCase().trim();

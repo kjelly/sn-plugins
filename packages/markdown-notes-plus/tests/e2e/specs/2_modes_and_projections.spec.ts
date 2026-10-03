@@ -14,6 +14,7 @@ test.describe("Modes and Projections", () => {
     await expect(editor.writingPane).toBeVisible();
     await expect(editor.sourcePane).toHaveCount(0);
     await expect(editor.mindmapPane).toHaveCount(0);
+    await expect(editor.flashcardModeButton).toHaveCount(0);
 
     // Switch to Split mode (Writing + Mindmap)
     await editor.switchMode("Split");

@@ -173,8 +173,13 @@ async function readTrace(page: Page): Promise<{ trace: BrowserPerfTrace; longTas
 
 async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: CacheMode, run: number): Promise<LoadSample> {
   const { context, page } = await openMeasuredPage(browser, fixture, cacheMode, `load-${fixture.id}-${cacheMode}-${run}`);
+  const flashcardRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/Flashcard(?:View|Model|Markdown)/u.test(request.url())) flashcardRequests.push(request.url());
+  });
   try {
     await new MockHost(page).goto(fixture.markdown, `load-${fixture.id}-${cacheMode}-${run}`);
+    expect(flashcardRequests, "normal Writing startup must not load the Flashcards feature chunk").toEqual([]);
     const { trace, longTasks } = await readTrace(page);
     const phases: Record<string, number> = {};
     for (const name of STARTUP_MEASURES) {
@@ -209,10 +214,15 @@ async function runTypingSample(
   typingCount: number,
 ): Promise<TypingSample> {
   const { context, page } = await openMeasuredPage(browser, fixture, "warm", `typing-${fixture.id}-${inputKind}-${run}`);
+  const flashcardRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/Flashcard(?:View|Model|Markdown)/u.test(request.url())) flashcardRequests.push(request.url());
+  });
   try {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
     await host.goto(fixture.markdown, `typing-${fixture.id}-${inputKind}-${run}`);
+    expect(flashcardRequests, "normal Writing typing must not load the Flashcards feature chunk").toEqual([]);
     await expect(editor.writingEditor).toBeEditable();
     await editor.placeWritingCaretAtEnd();
     const frame = page.frames().find((candidate) => candidate.url().includes("/index.html"));

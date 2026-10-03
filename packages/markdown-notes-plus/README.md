@@ -14,8 +14,41 @@ exports it needs.
 
 The durable source is the exact Markdown string in `CanonicalDocument` and
 Standard Notes `content.text`. Milkdown owns Writing mode, CodeMirror 6 owns
-Source mode, and Markmap owns the derived SVG Mind Map. Task, outline, and map
-projections are derived from the shared container-aware Markdown analysis.
+Source mode, and Markmap owns the derived SVG Mind Map. Task, outline, map,
+Kanban, and Flashcards projections are derived from the shared
+container-aware Markdown analysis.
+
+Flashcards is a read-only projection. A note exposes the mode when it contains
+an exact `Q&A`, `Q & A`, `Q＆A`, `QA`, or `Questions & Answers` heading.
+Complete `Q:` / `A:` pairs below those headings become study cards; answers
+may contain multiline GFM Markdown. Revealing, navigation, shuffle, Known,
+Again, reset, and section filters never change or save the canonical Markdown.
+Study state is session-only: it may reset when leaving/reloading and is not
+synchronized or scheduled with FSRS/SM-2.
+
+```markdown
+## Q&A
+
+Q: What is a Kubernetes Pod?
+
+A: Kubernetes 中最小的部署單位，可以包含一個或多個 container。
+
+Q: Deployment 和 StatefulSet 的主要差異？
+
+A:
+Deployment 適合 stateless workload。
+
+StatefulSet 提供：
+
+- stable identity
+- stable storage
+- ordered deployment
+```
+
+Flashcards shortcuts are `Space` (show/hide), left/right arrows, `K` (Known),
+`A` (Again), `S` (shuffle), and `R` (reset). Raw HTML is omitted, unsafe link
+schemes are not clickable, and Markdown images are shown as non-fetching
+placeholders.
 
 Writing mode preserves only documents whose actual Milkdown serializer output
 matches the canonical Markdown. Remote replacements are applied with a
