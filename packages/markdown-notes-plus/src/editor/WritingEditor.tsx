@@ -612,7 +612,7 @@ const writingOriginPlugin = new Plugin({
   },
 });
 
-function createWritingPerformancePlugin(onInputStart: () => void, onTransactionStart: () => void): Plugin {
+function createWritingPerformancePlugin(onInputStart: () => void, onTransactionStart: () => void, onViewUpdate: () => void): Plugin {
   return new Plugin({
     key: new PluginKey("markdown-notes-plus-writing-performance"),
     props: {
@@ -629,6 +629,13 @@ function createWritingPerformancePlugin(onInputStart: () => void, onTransactionS
       if (origin === undefined || origin === "user" || origin.kind === "command") onTransactionStart();
       return true;
     },
+    view: () => ({
+      update(view, previousState) {
+        if (view.state.doc.eq(previousState.doc)) return;
+        const origin = writingOriginPluginKey.getState(view.state)?.origin;
+        if (origin === "user" || origin?.kind === "command") onViewUpdate();
+      },
+    }),
   });
 }
 
@@ -664,6 +671,7 @@ type WritingEditorConfiguration = {
   onRequestLinkRef: { current?: LinkRequest };
   onInputStart: () => void;
   onTransactionStart: () => void;
+  onViewUpdate: () => void;
   onMarkdownUpdated: (ctx: Ctx, markdown: string) => void;
 };
 
@@ -695,6 +703,7 @@ export function configureWritingEditor(editor: Editor, {
   onRequestLinkRef,
   onInputStart,
   onTransactionStart,
+  onViewUpdate,
   onMarkdownUpdated,
 }: WritingEditorConfiguration): Editor {
   const profileNodeViews = isPerfTraceEnabled();
@@ -739,7 +748,7 @@ export function configureWritingEditor(editor: Editor, {
       if (parserRef) parserRef.current = (markdown: string) => ctx.get(parserCtx)(markdown);
     })
     .use($prose(() => writingOriginPlugin))
-    .use($prose(() => createWritingPerformancePlugin(onInputStart, onTransactionStart)))
+    .use($prose(() => createWritingPerformancePlugin(onInputStart, onTransactionStart, onViewUpdate)))
     .use($prose(() => createWritingFoldingPlugin()))
     .use($prose(() => createWritingShortcutsPlugin()))
     .use($prose(() => createWritingSmartKeysPlugin()))
@@ -909,10 +918,17 @@ export function WritingEditor({
             parse: (source) => ctx.get(parserCtx)(source),
             serialize: (document) => ctx.get(serializerCtx)(document),
           };
+          markPerf(PERF_MARKS.fullProofParseStart, {}, true);
           const document = codec.parse(documentSource);
-          return document
-            ? assessWritingRoundTrip(documentSource, codec.serialize(document), codec)
-            : { kind: "unsupported", editable: false, reason: "Writing could not parse this note; use Source mode." };
+          markAndMeasurePerf(PERF_MARKS.fullProofParseEnd, PERF_MEASURES.fullProofParse, PERF_MARKS.fullProofParseStart, {}, true);
+          if (!document) return { kind: "unsupported", editable: false, reason: "Writing could not parse this note; use Source mode." };
+          markPerf(PERF_MARKS.fullProofSerializeStart, {}, true);
+          const serialized = codec.serialize(document);
+          markAndMeasurePerf(PERF_MARKS.fullProofSerializeEnd, PERF_MEASURES.fullProofSerialize, PERF_MARKS.fullProofSerializeStart, {}, true);
+          markPerf(PERF_MARKS.fullProofClassifyStart, {}, true);
+          const result = assessWritingRoundTrip(documentSource, serialized, codec);
+          markAndMeasurePerf(PERF_MARKS.fullProofClassifyEnd, PERF_MEASURES.fullProofClassify, PERF_MARKS.fullProofClassifyStart, {}, true);
+          return result;
         }) ?? { kind: "unsupported", editable: false, reason: "Writing codec proof is unavailable; use Source mode." };
         fullProofCacheRef.current = { source: documentSource, result: documentResult };
       }
@@ -1024,7 +1040,13 @@ export function WritingEditor({
     const generation = gate.current.begin(editorValue);
     generationRef.current = generation;
     markPerf(PERF_MARKS.writingPreflightStart, {}, true);
-    const preflight = scanWritingNormalization(editorValue);
+    // A window can be locally safe while a later section is Source-only.
+    // Reject the complete note before paying for either Milkdown creation or
+    // its whole-document codec proof; the scanner retains the exact source.
+    const preflight = scanWritingNormalization(fullValueRef.current);
+    const fragmentPreflight = windowPlanRef.current && !preflight.unsupportedReason
+      ? scanWritingNormalization(editorValue)
+      : preflight;
     markAndMeasurePerf(
       PERF_MARKS.writingPreflightEnd,
       PERF_MEASURES.writingPreflight,
@@ -1032,9 +1054,10 @@ export function WritingEditor({
       {},
       true,
     );
-    if (preflight.unsupportedReason) {
+    const unsupportedReason = preflight.unsupportedReason ?? fragmentPreflight.unsupportedReason;
+    if (unsupportedReason) {
       capabilityRef.current = false;
-      onCapabilityChangeRef.current?.({ kind: "unsupported", editable: false, reason: preflight.unsupportedReason }, fullValueRef.current, writingProof);
+      onCapabilityChangeRef.current?.({ kind: "unsupported", editable: false, reason: unsupportedReason }, fullValueRef.current, writingProof);
       return () => {
         cancelled = true;
       };
@@ -1057,6 +1080,16 @@ export function WritingEditor({
         transactionSequenceRef.current = sequence;
         pendingTransactionSequenceRef.current = sequence;
         markPerf(PERF_MARKS.transactionStart, { sequence });
+      },
+      onViewUpdate: () => {
+        const sequence = pendingTransactionSequenceRef.current;
+        if (sequence === undefined) return;
+        markAndMeasurePerf(
+          PERF_MARKS.transactionToViewEnd,
+          PERF_MEASURES.transactionToView,
+          PERF_MARKS.transactionStart,
+          { sequence },
+        );
       },
       onMarkdownUpdated: (ctx, markdown) => {
         if (serializerRef) serializerRef.current = (doc: ProseNode) => ctx.get(serializerCtx)(doc);

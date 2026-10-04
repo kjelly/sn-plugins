@@ -223,6 +223,7 @@ Instrumentation 不得 import React/Milkdown，也不得增加 bridge shell 的�
 - `milkdown_create_start/end`：呼叫 `editor.create()` 前至 promise resolved。
 - `milkdown_parser_ready`、`milkdown_state_ready`、`milkdown_view_ready`：分別代表 parser 建立、初始 Markdown 解析與 state 建立、初始 ProseMirror DOM view 建立完成；對應 `milkdown_setup_ms`、`milkdown_initial_state_ms`、`milkdown_initial_view_ms`，剩餘收尾為 `milkdown_tail_ms`。`writing_task_node_views_ms` 和 `writing_folding_decorations_ms` 是其中同步工作加總，不得與 create 各階段直接相加。
 - `roundtrip_proof_start/end`：initial live codec proof 邊界。
+- `full_proof_parse_start/end`、`full_proof_serialize_start/end`、`full_proof_classify_start/end`：大筆記分段編輯時，完整筆記 proof 的解析、序列化與判定成本（必要時判定也會重驗 codec）；這些階段包含於 `roundtrip_proof_ms`，不可重複加總。
 - `writing_interactive`：Milkdown create 完成、initial proof 已發布、editor 的 `editable` 狀態已設定，且非 read-only 時已完成 focus request。每個 document/editor generation 最多記錄一次。
 
 所有 mark/measure 都必須帶內部 generation 關聯，但 performance entry 名稱不得包含 note text。測試用 trace collector 負責把 generation 與時間整理成 report。
@@ -280,7 +281,8 @@ Writing typing benchmark：
 - 以 test-only、content-free hook 記錄 input/transaction sequence 到 matching canonical revision commit 的時間，不以 debounce save completion 作終點。
 - 分別輸出 p50/p95。
 - 另測含 Markdown syntax 字元的 adversarial sequence：`* _ # [ ] < >`。
-- 同時拆分 `transaction_to_markdown`（Milkdown full serialization）、`mutation_proof`、`canonical_commit`、`projection_schedule`；否則不能判斷 full serializer 與 scanner 各自的成本。
+- 同時拆分 `transaction_to_view`（ProseMirror DOM 更新）、`transaction_to_markdown`（包含 Milkdown listener 固定的 200ms debounce，再做 full serialization）、`mutation_proof`、`canonical_commit`、`projection_schedule`；`transaction_to_markdown` 不能單獨當成 serializer CPU 成本。
+- Browser benchmark schema 6 新增 `transaction_to_view_ms`，並在分段大筆記報告中記錄完整 proof 的三個子階段；schema 5 報告不得直接拿來當 schema 6 的可比批次。
 
 ## 4.5 Phase 0 驗收
 

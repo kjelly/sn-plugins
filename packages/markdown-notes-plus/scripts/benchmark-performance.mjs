@@ -3,7 +3,7 @@ import { scanWritingNormalization } from "../src/markdown/writingNormalization.t
 import { analyzeKanban } from "../src/kanban/KanbanModel.ts";
 import { allPerfFixtures, PERF_FIXTURE_GENERATOR_VERSION } from "../tests/performance/perfFixtures.ts";
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const MIN_SAMPLE_DURATION_MS = 100;
 
 function argument(name, fallback) {

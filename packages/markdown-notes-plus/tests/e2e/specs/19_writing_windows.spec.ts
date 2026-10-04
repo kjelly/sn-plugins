@@ -66,3 +66,27 @@ test("whole-note search from a section opens Source search", async ({ page }) =>
   await expect(editor.sourcePane).toBeVisible();
   await expect(editor.sourceSearchPanel).toBeVisible();
 });
+
+test("unsupported syntax outside the first window skips Milkdown creation", async ({ page }) => {
+  await page.addInitScript(() => {
+    (globalThis as typeof globalThis & { __MARKDOWN_NOTES_PERF_ENABLED__?: boolean }).__MARKDOWN_NOTES_PERF_ENABLED__ = true;
+  });
+  const source = `${generateMixedFixture(180 * 1024, "writing-window-unsupported").markdown}\n<div>Source-only HTML</div>\n`;
+  const host = new MockHost(page, 120_000);
+  const editor = new EditorPage(page);
+  await host.goto(source, "writing-window-unsupported-note", false);
+
+  await expect(editor.sourcePane).toBeVisible();
+  await expect(editor.writingEditor).toHaveCount(0);
+  expect(await host.getLatestSavedText()).toBeUndefined();
+  const frame = page.frames().find((candidate) => candidate.url().includes("/index.html"));
+  expect(frame).toBeDefined();
+  const marks = await frame!.evaluate(() => {
+    const trace = (globalThis as typeof globalThis & {
+      __MARKDOWN_NOTES_PERF_TRACE__?: { marks: Array<{ name: string }> };
+    }).__MARKDOWN_NOTES_PERF_TRACE__;
+    return trace?.marks.map((mark) => mark.name) ?? [];
+  });
+  expect(marks).toContain("writing_preflight_end");
+  expect(marks).not.toContain("milkdown_create_start");
+});

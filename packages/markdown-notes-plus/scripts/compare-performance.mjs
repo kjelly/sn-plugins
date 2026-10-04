@@ -1,4 +1,4 @@
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const STARTUP_MEASURES = [
   "context_to_preview_ms",
   "context_to_app_ms",
@@ -19,12 +19,14 @@ const STARTUP_MEASURES = [
 ];
 const TYPING_MEASURES = [
   "input_to_canonical_ms",
+  "transaction_to_view_ms",
   "transaction_to_markdown_ms",
   "mutation_proof_ms",
   "canonical_commit_ms",
   "transaction_to_canonical_ms",
   "projection_schedule_ms",
 ];
+const WINDOWED_STARTUP_MEASURES = ["full_proof_parse_ms", "full_proof_serialize_ms", "full_proof_classify_ms"];
 
 function argument(name) {
   return argumentsFor(name)[0];
@@ -78,6 +80,11 @@ function validateBrowserReport(report, path) {
     const label = `${path}:${sample.fixture}:${sample.cacheMode}:${sample.run}`;
     if (!sample.phases || typeof sample.phases !== "object") throw new Error(`${label} is missing startup phases`);
     for (const phase of STARTUP_MEASURES) {
+      requireFiniteNumber(sample.phases[phase], `${label}:${phase}`);
+      if (sample.phases[phase] < 0) throw new Error(`${label}:${phase} must not be negative`);
+    }
+    for (const phase of WINDOWED_STARTUP_MEASURES) {
+      if (sample.phases[phase] === undefined) continue;
       requireFiniteNumber(sample.phases[phase], `${label}:${phase}`);
       if (sample.phases[phase] < 0) throw new Error(`${label}:${phase} must not be negative`);
     }

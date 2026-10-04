@@ -59,8 +59,15 @@ const STARTUP_MEASURES = [
   "writing_focus_ms",
 ] as const;
 
+const WINDOWED_STARTUP_MEASURES = [
+  "full_proof_parse_ms",
+  "full_proof_serialize_ms",
+  "full_proof_classify_ms",
+] as const;
+
 const TYPING_MEASURES = [
   "input_to_canonical_ms",
+  "transaction_to_view_ms",
   "transaction_to_markdown_ms",
   "mutation_proof_ms",
   "canonical_commit_ms",
@@ -103,6 +110,11 @@ function valuesFor(trace: BrowserPerfTrace, name: string): number[] {
 function validateLoadSample(sample: LoadSample, identity: string): void {
   for (const phase of STARTUP_MEASURES) {
     expect(Number.isFinite(sample.phases[phase]), `${identity} must contain ${phase}`).toBe(true);
+    expect(sample.phases[phase], `${identity} ${phase} must not be negative`).toBeGreaterThanOrEqual(0);
+  }
+  for (const phase of WINDOWED_STARTUP_MEASURES) {
+    if (sample.phases[phase] === undefined) continue;
+    expect(Number.isFinite(sample.phases[phase]), `${identity} ${phase} must be finite`).toBe(true);
     expect(sample.phases[phase], `${identity} ${phase} must not be negative`).toBeGreaterThanOrEqual(0);
   }
   expect(
@@ -214,6 +226,10 @@ async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: Cach
       const value = values.at(-1);
       if (value === undefined) throw new Error(`${fixture.id}/${cacheMode}/${run} is missing ${name}`);
       phases[name] = value;
+    }
+    for (const name of WINDOWED_STARTUP_MEASURES) {
+      const value = valuesFor(trace, name).at(-1);
+      if (value !== undefined) phases[name] = value;
     }
     expect(trace.marks.some((mark) => mark.name === "context_received")).toBe(true);
     const interactive = trace.marks.find((mark) => mark.name === "writing_interactive");
@@ -363,6 +379,10 @@ function buildMetrics(loadSamples: LoadSample[], typingSamples: TypingSample[]) 
         result: summarize(group.map((sample) => sample.phases[phase])),
       });
     }
+    for (const phase of WINDOWED_STARTUP_MEASURES) {
+      if (!group.every((sample) => Number.isFinite(sample.phases[phase]))) continue;
+      metrics.push({ fixture, phase: `${cacheMode}:${phase}`, primary: false, result: summarize(group.map((sample) => sample.phases[phase])) });
+    }
     for (const field of ["count", "max", "totalBlockingTime"] as const) {
       metrics.push({
         fixture,
@@ -432,7 +452,7 @@ test.describe("editor performance contract", () => {
 
     if (process.env.PERF_RESUME === "1") {
       const previous = JSON.parse(await readFile(output, "utf8")) as Record<string, unknown>;
-      expect(previous.schemaVersion, "Resume schema must match").toBe(5);
+      expect(previous.schemaVersion, "Resume schema must match").toBe(6);
       expect(previous.commit, "Resume commit must match").toBe(commit);
       expect(previous.baselineSha, "Resume baseline SHA must match").toBe(baselineSha);
       expect(previous.formal, "Resume mode must match").toBe(!smoke);
@@ -456,7 +476,7 @@ test.describe("editor performance contract", () => {
       const metrics = buildMetrics(loadSamples, typingSamples);
       const fullProofCount = typingSamples.reduce((total, sample) => total + sample.phases.mutation_proof_ms.length, 0);
       const report = {
-        schemaVersion: 5,
+        schemaVersion: 6,
         generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
         kind: "browser-benchmark",
         formal: !smoke,
