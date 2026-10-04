@@ -5,6 +5,7 @@ import {
   markAndMeasurePerf,
   markPerf,
   measurePerf,
+  recordPerfDuration,
   setPerfTraceEnabledForTests,
 } from "../../src/performance/PerfTrace.ts";
 import {
@@ -123,6 +124,21 @@ Deno.test("performance trace associates typing measurements with one explicit tr
     const measures = getPerfTraceSnapshot().measures;
     assertEquals(measures.length, 1);
     assertEquals(measures[0].sequence, 1);
+  } finally {
+    setPerfTraceEnabledForTests(false);
+  }
+});
+
+Deno.test("performance trace records accumulated startup work once per document", () => {
+  setPerfTraceEnabledForTests(true);
+  try {
+    beginDocumentPerfTraceForText("first");
+    recordPerfDuration(PERF_MEASURES.writingTaskNodeViews, 12.5, {}, true);
+    recordPerfDuration(PERF_MEASURES.writingTaskNodeViews, 99, {}, true);
+    assertEquals(getPerfTraceSnapshot().measures.map((measure) => measure.duration), [12.5]);
+    beginDocumentPerfTraceForText("second");
+    recordPerfDuration(PERF_MEASURES.writingTaskNodeViews, 2, {}, true);
+    assertEquals(getPerfTraceSnapshot().measures.map((measure) => measure.duration), [2]);
   } finally {
     setPerfTraceEnabledForTests(false);
   }

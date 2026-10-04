@@ -6,6 +6,7 @@ const LISTENER_SETTLE_MS = 350;
 
 async function placeCaretInside(locator: Locator): Promise<void> {
   await locator.evaluate((element) => {
+    element.closest<HTMLElement>('[contenteditable="true"]')?.focus();
     const walker = document.createTreeWalker(element, globalThis.NodeFilter.SHOW_TEXT);
     const text = walker.nextNode();
     if (!text?.textContent) throw new Error("Expected editable text");
@@ -20,6 +21,7 @@ async function placeCaretInside(locator: Locator): Promise<void> {
 
 async function placeCaretAt(locator: Locator, edge: "start" | "end"): Promise<void> {
   await locator.evaluate((element, requestedEdge) => {
+    element.closest<HTMLElement>('[contenteditable="true"]')?.focus();
     const range = document.createRange();
     range.selectNodeContents(element);
     range.collapse(requestedEdge === "start");
@@ -31,6 +33,7 @@ async function placeCaretAt(locator: Locator, edge: "start" | "end"): Promise<vo
 
 async function selectContents(locator: Locator): Promise<void> {
   await locator.evaluate((element) => {
+    element.closest<HTMLElement>('[contenteditable="true"]')?.focus();
     const range = document.createRange();
     range.selectNodeContents(element);
     const selection = globalThis.getSelection();
@@ -44,6 +47,7 @@ async function selectAcross(start: Locator, end: Locator): Promise<void> {
   const endHandle = await end.elementHandle();
   if (!startHandle || !endHandle) throw new Error("Expected selection endpoints");
   await startHandle.evaluate((startElement, endElement) => {
+    startElement.closest<HTMLElement>('[contenteditable="true"]')?.focus();
     const firstText = startElement.firstChild;
     const lastText = endElement.lastChild;
     if (!firstText || !lastText) throw new Error("Expected text selection endpoints");
@@ -247,9 +251,8 @@ test.describe("Writing mode stability contract", () => {
     await input.fill("");
     await dialog.getByRole("button", { name: "Done", exact: true }).click();
     await expect(editor.writingEditor.locator("a")).toHaveCount(0);
-    // Unlinking preserves the selected label. ArrowRight is the user's
-    // explicit move to the end before typing more text.
-    await page.keyboard.press("ArrowRight");
+    await expect(paragraph).toHaveText("Link text");
+    await placeCaretAt(paragraph, "end");
     await page.keyboard.type(" after-link");
     await expectWritingStable(page, editor);
     await expect.poll(() => host.getLatestSavedText()).toContain("Link text after-link");

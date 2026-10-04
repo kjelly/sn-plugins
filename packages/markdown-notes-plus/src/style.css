@@ -398,27 +398,33 @@ body.outline-pointer-dragging .outline-drag-handle { touch-action: none; }
   color: var(--editor-bg);
 }
 
-/* Writing Fold Gutter Button */
-.writing-fold-gutter-btn {
+/* Writing fold gutter: a heading pseudo-element avoids one DOM widget per heading. */
+.milkdown-writing .editor > :is(h1, h2, h3, h4, h5, h6) {
+  --writing-fold-gutter-width: 1.2em;
+  position: relative;
+  padding-left: var(--writing-fold-gutter-width);
+}
+.milkdown-writing .editor > :is(h1, h2, h3, h4, h5, h6)::before {
+  content: "▾";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--writing-fold-gutter-width);
+  height: 100%;
   cursor: pointer;
   user-select: none;
   font-size: 0.85em;
   color: var(--editor-muted);
-  margin-right: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   opacity: 0.65;
-  vertical-align: 0.08em;
   transition: opacity 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
-.writing-fold-gutter-btn.is-expanded::before {
-  content: "▾";
-}
-.writing-fold-gutter-btn.is-folded::before {
+.milkdown-writing .editor > :is(h1, h2, h3, h4, h5, h6)[data-folded="true"]::before {
   content: "▸";
 }
-.writing-fold-gutter-btn:hover {
+.milkdown-writing .editor > :is(h1, h2, h3, h4, h5, h6):hover::before {
   opacity: 1;
   color: var(--editor-accent);
 }
@@ -1434,7 +1440,8 @@ blockquote.callout-type-caution::before {
   .mode-buttons button { min-height: 40px; }
   .sidebar-close-btn { width: 40px; height: 40px; font-size: 16px; }
   .outline-structural-actions { display: inline-flex; }
-  .writing-fold-gutter-btn, .btn-file-import { min-width: 40px; min-height: 40px; }
+  .milkdown-writing .editor > :is(h1, h2, h3, h4, h5, h6) { --writing-fold-gutter-width: 40px; min-height: 40px; }
+  .btn-file-import { min-width: 40px; min-height: 40px; }
   .outline-action-btn { width: 40px; height: 40px; font-size: 1rem; border-radius: 5px; }
   .section-task-actions button { width: 40px; height: 40px; font-size: 1rem; border-radius: 5px; }
   .outline-panel li { min-height: 44px; }
@@ -1510,7 +1517,8 @@ html.mobile .pane-toolbar button { min-width: 42px; }
 html.mobile .outline-fold-toggle { width: 40px; height: 40px; }
 html.mobile .outline-action-btn,
 html.mobile .section-task-actions button { width: 40px; height: 40px; }
-html.mobile .writing-fold-gutter-btn, html.mobile .btn-file-import { min-width: 40px; min-height: 40px; }
+html.mobile .milkdown-writing .editor > :is(h1, h2, h3, h4, h5, h6) { --writing-fold-gutter-width: 40px; min-height: 40px; }
+html.mobile .btn-file-import { min-width: 40px; min-height: 40px; }
 html.mobile .outline-panel li { min-height: 44px; }
 html.mobile .outline-panel li .outline-heading-btn { min-height: 44px; }
 html.mobile .outline-panel li { display: block; }

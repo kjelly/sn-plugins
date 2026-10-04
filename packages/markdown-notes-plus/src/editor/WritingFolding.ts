@@ -2,6 +2,8 @@ import { Plugin, PluginKey, type EditorState, type Transaction } from "@milkdown
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/prose/view";
 import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { MarkdownAnalysis, SectionInfo } from "../markdown/analysis.ts";
+import { PERF_MEASURES } from "../performance/PerfNames.ts";
+import { isPerfTraceEnabled, recordPerfDuration } from "../performance/PerfTrace.ts";
 
 export const writingFoldingPluginKey = new PluginKey<WritingFoldingState>("writingFoldingPlugin");
 
@@ -112,14 +114,14 @@ export function computeHiddenBlockRanges(
 }
 
 /**
- * Build ProseMirror decorations for folded heading widgets and hidden blocks.
+ * Build ProseMirror decorations only for hidden blocks.
  */
 export function buildFoldingDecorations(
   doc: ProseNode,
   foldedPositions: Set<number>,
   focusedPosition?: number,
-  onToggleFold?: (pos: number) => void,
 ): DecorationSet {
+  if (foldedPositions.size === 0 && focusedPosition === undefined) return DecorationSet.empty;
   const decorations: Decoration[] = [];
   const hiddenRanges = computeHiddenBlockRanges(doc, foldedPositions, focusedPosition);
 
@@ -140,38 +142,16 @@ export function buildFoldingDecorations(
     }
   }
 
-  // Add fold/unfold button widget on headings with content
-  doc.forEach((child, pos) => {
-    if (child.type.name === "heading") {
-      const isFolded = foldedPositions.has(pos);
-      decorations.push(
-        Decoration.widget(pos + 1, (view: EditorView) => {
-          const btn = document.createElement("span");
-          btn.className = `writing-fold-gutter-btn ${isFolded ? "is-folded" : "is-expanded"}`;
-          btn.title = isFolded ? "Expand section" : "Collapse section";
-          btn.contentEditable = "false";
-          btn.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          });
-          btn.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (onToggleFold) {
-              onToggleFold(pos);
-            } else {
-              // deno-lint-ignore no-explicit-any
-              const tr = (view.state as any).tr.setMeta(writingFoldingPluginKey, { togglePos: pos });
-              view.dispatch(tr);
-            }
-          });
-          return btn;
-        }, { side: -1 }),
-      );
+  // Only folded headings need an explicit state decoration. Expanded headings
+  // render their gutter through CSS with no per-heading ProseMirror work.
+  for (const pos of foldedPositions) {
+    const heading = doc.nodeAt(pos);
+    if (heading?.type.name === "heading") {
+      decorations.push(Decoration.node(pos, pos + heading.nodeSize, { "data-folded": "true" }));
     }
-  });
+  }
 
-  return DecorationSet.create(doc, decorations);
+  return decorations.length ? DecorationSet.create(doc, decorations) : DecorationSet.empty;
 }
 
 /**
@@ -181,6 +161,16 @@ export function createWritingFoldingPlugin(
   onToggleFold?: (pos: number) => void,
   // deno-lint-ignore no-explicit-any
 ): Plugin<any> {
+  const gutterHeading = (event: MouseEvent, view: EditorView): HTMLElement | undefined => {
+    const target = event.target;
+    if (!(target instanceof Element)) return undefined;
+    const heading = target.closest<HTMLElement>("h1, h2, h3, h4, h5, h6");
+    if (!heading || heading.parentElement !== view.dom) return undefined;
+    const rect = heading.getBoundingClientRect();
+    const gutterWidth = parseFloat(getComputedStyle(heading).paddingLeft);
+    if (event.clientX < rect.left || event.clientX > rect.left + gutterWidth) return undefined;
+    return heading;
+  };
   let cachedDecorations: {
     doc: ProseNode;
     foldedPositions: Set<number>;
@@ -241,6 +231,25 @@ export function createWritingFoldingPlugin(
       },
     },
     props: {
+      handleDOMEvents: {
+        mousedown(view, event) {
+          if (!gutterHeading(event, view)) return false;
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        },
+        click(view, event) {
+          const heading = gutterHeading(event, view);
+          if (!heading) return false;
+          const pos = view.posAtDOM(heading, 0) - 1;
+          if (!Number.isInteger(pos) || view.state.doc.nodeAt(pos)?.type.name !== "heading") return false;
+          event.preventDefault();
+          event.stopPropagation();
+          if (onToggleFold) onToggleFold(pos);
+          else view.dispatch(view.state.tr.setMeta(writingFoldingPluginKey, { togglePos: pos }));
+          return true;
+        },
+      },
       // deno-lint-ignore no-explicit-any
       decorations(state: any): any {
         const pluginState = writingFoldingPluginKey.getState(state);
@@ -251,12 +260,14 @@ export function createWritingFoldingPlugin(
           cached.focusedPosition === pluginState.focusedHeadingPosition) {
           return cached.value;
         }
+        const profile = isPerfTraceEnabled();
+        const started = profile ? performance.now() : 0;
         const value = buildFoldingDecorations(
           state.doc,
           pluginState.foldedHeadingPositions,
           pluginState.focusedHeadingPosition,
-          onToggleFold,
         );
+        if (profile) recordPerfDuration(PERF_MEASURES.writingFoldingDecorations, performance.now() - started, {}, true);
         cachedDecorations = {
           doc: state.doc,
           foldedPositions: pluginState.foldedHeadingPositions,

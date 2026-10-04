@@ -3,6 +3,7 @@ import type { MarkdownAnalysis } from "../markdown/analysis.ts";
 import {
   getAllCollapsibleAnchors,
   getVisibleOutlineHeadings,
+  buildOutlineSectionFacts,
 } from "./OutlineProjection.ts";
 import { OutlineRow } from "./OutlineRow.tsx";
 import type { OutlineDragState } from "./OutlineDragState.ts";
@@ -79,6 +80,7 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
   const visibleHeadings = useMemo(() => getVisibleOutlineHeadings(analysis, collapsedAnchors), [analysis, collapsedAnchors]);
   const collapsibleAnchors = useMemo(() => getAllCollapsibleAnchors(analysis), [analysis]);
   const collapsibleAnchorSet = useMemo(() => new Set(collapsibleAnchors), [collapsibleAnchors]);
+  const sectionFacts = useMemo(() => buildOutlineSectionFacts(analysis), [analysis]);
   const hasCollapsible = collapsibleAnchors.length > 0;
 
   const clearDrag = () => {
@@ -239,7 +241,7 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
               <OutlineRow
                 key={heading.from}
                 heading={heading}
-                analysis={analysis}
+                facts={sectionFacts.get(heading.from)!}
                 isCollapsed={isCollapsed}
                 hasChildren={hasChildren}
                 isActive={isActive}

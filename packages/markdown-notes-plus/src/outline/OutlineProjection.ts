@@ -60,6 +60,79 @@ export function getVisibleOutlineHeadings(
   return visible;
 }
 
+export type OutlineSectionFacts = {
+  taskCount: number;
+  completedCount: number;
+  openCount: number;
+  hasSetext: boolean;
+  hasLevelSix: boolean;
+  hasPreviousSibling: boolean;
+  hasNextSibling: boolean;
+};
+
+/** Build row facts once instead of scanning all headings and tasks per row. */
+export function buildOutlineSectionFacts(analysis: MarkdownAnalysis): Map<number, OutlineSectionFacts> {
+  const facts = new Map<number, OutlineSectionFacts>();
+  const lastSibling = new Map<string, OutlineSectionFacts>();
+  for (const section of analysis.sections) {
+    const row: OutlineSectionFacts = {
+      taskCount: 0,
+      completedCount: 0,
+      openCount: 0,
+      hasSetext: false,
+      hasLevelSix: false,
+      hasPreviousSibling: false,
+      hasNextSibling: false,
+    };
+    facts.set(section.anchor, row);
+    const siblingKey = `${section.parentAnchor ?? "root"}:${section.level}`;
+    const previous = lastSibling.get(siblingKey);
+    if (previous) {
+      previous.hasNextSibling = true;
+      row.hasPreviousSibling = true;
+    }
+    lastSibling.set(siblingKey, row);
+  }
+
+  for (const heading of analysis.headings) {
+    let section = analysis.sectionByAnchor(heading.from);
+    while (section) {
+      const row = facts.get(section.anchor);
+      if (row) {
+        if (heading.syntax === "setext") row.hasSetext = true;
+        if (heading.level >= 6) row.hasLevelSix = true;
+      }
+      section = section.parentAnchor === undefined ? undefined : analysis.sectionByAnchor(section.parentAnchor);
+    }
+  }
+
+  for (const task of analysis.tasks) {
+    let low = 0;
+    let high = analysis.sections.length - 1;
+    let sectionIndex = -1;
+    while (low <= high) {
+      const middle = (low + high) >>> 1;
+      if (analysis.sections[middle].from <= task.itemStart) {
+        sectionIndex = middle;
+        low = middle + 1;
+      } else high = middle - 1;
+    }
+    let section = sectionIndex < 0 ? undefined : analysis.sections[sectionIndex];
+    while (section) {
+      if (task.itemEnd <= section.to) {
+        const row = facts.get(section.anchor);
+        if (row) {
+          row.taskCount += 1;
+          if (task.checked) row.completedCount += 1;
+          else row.openCount += 1;
+        }
+      }
+      section = section.parentAnchor === undefined ? undefined : analysis.sectionByAnchor(section.parentAnchor);
+    }
+  }
+  return facts;
+}
+
 /**
  * Reconcile collapsed outline anchors across a canonical text transition.
  */

@@ -200,6 +200,23 @@ export function measurePerf(
   return measure;
 }
 
+/** Record accumulated synchronous work whose calls are interleaved with other work. */
+export function recordPerfDuration(
+  name: PerfMeasureName,
+  duration: number,
+  metadata: Partial<PerfTraceMetadata> = {},
+  onlyOnce = false,
+): void {
+  if (!isPerfTraceEnabled()) return;
+  const generation = metadata.generation ?? state.activeGeneration;
+  if (generation <= 0 || !Number.isFinite(duration) || duration < 0) return;
+  const key = `${generation}:${name}`;
+  if (onlyOnce && once.has(key)) return;
+  if (onlyOnce) once.add(key);
+  state.measures.push({ ...metadata, name, generation, startTime: now(), duration });
+  syncGlobal();
+}
+
 export function markAndMeasurePerf(
   markName: PerfMarkName,
   measureName: PerfMeasureName,

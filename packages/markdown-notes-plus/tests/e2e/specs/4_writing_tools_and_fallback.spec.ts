@@ -98,6 +98,7 @@ test.describe("Writing Tools & Lossless Guard", () => {
 
     const paragraphs = editor.writingEditor.locator("p");
     await paragraphs.nth(1).evaluate((paragraph) => {
+      paragraph.closest<HTMLElement>('[contenteditable="true"]')?.focus();
       const text = paragraph.firstChild;
       if (!text) throw new Error("Expected paragraph text");
       const selection = globalThis.getSelection();

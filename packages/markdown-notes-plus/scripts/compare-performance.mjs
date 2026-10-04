@@ -1,4 +1,4 @@
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const STARTUP_MEASURES = [
   "context_to_preview_ms",
   "context_to_app_ms",
@@ -6,6 +6,12 @@ const STARTUP_MEASURES = [
   "analysis_ms",
   "writing_preflight_ms",
   "milkdown_create_ms",
+  "milkdown_setup_ms",
+  "milkdown_initial_state_ms",
+  "milkdown_initial_view_ms",
+  "milkdown_tail_ms",
+  "writing_task_node_views_ms",
+  "writing_folding_decorations_ms",
   "roundtrip_proof_ms",
   "proof_to_enable_ms",
   "writing_enable_ms",

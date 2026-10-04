@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Ctx, MilkdownPlugin } from "@milkdown/ctx";
-import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx, rootCtx, serializerCtx, SerializerReady } from "@milkdown/core";
+import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, EditorStateReady, EditorViewReady, parserCtx, ParserReady, remarkStringifyOptionsCtx, rootCtx, serializerCtx, SerializerReady } from "@milkdown/core";
 import { commonmark, linkSchema, remarkPreserveEmptyLinePlugin } from "@milkdown/preset-commonmark";
 import { gfm } from "@milkdown/preset-gfm";
 import { history } from "@milkdown/plugin-history";
@@ -16,7 +16,7 @@ import { WritingControlRegistry, writingTaskIsHidden, type WritingControlState }
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingCapabilityProof, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
 import { scanWritingNormalization, WRITING_CODEC_OPTIONS, type WritingCodec } from "../markdown/writingNormalization.ts";
 import { PERF_MARKS, PERF_MEASURES } from "../performance/PerfNames.ts";
-import { markAndMeasurePerf, markPerf, measurePerf } from "../performance/PerfTrace.ts";
+import { isPerfTraceEnabled, markAndMeasurePerf, markPerf, measurePerf, recordPerfDuration } from "../performance/PerfTrace.ts";
 import { writingEmptyTaskListItem } from "../markdown/writingTaskCodec.ts";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
@@ -690,6 +690,8 @@ export function configureWritingEditor(editor: Editor, {
   onTransactionStart,
   onMarkdownUpdated,
 }: WritingEditorConfiguration): Editor {
+  const profileNodeViews = isPerfTraceEnabled();
+  let taskNodeViewDuration = 0;
   return editor
     .config((ctx) => {
       ctx.set(rootCtx, host);
@@ -703,13 +705,12 @@ export function configureWritingEditor(editor: Editor, {
         editable: () => !readOnlyRef.current,
         nodeViews: {
           ...options.nodeViews,
-          list_item: (node, view, getPos) => taskListItemView(
-            node,
-            view,
-            getPos,
-            readOnlyRef,
-            controls,
-          ),
+          list_item: (node, view, getPos) => {
+            const start = profileNodeViews ? performance.now() : 0;
+            const nodeView = taskListItemView(node, view, getPos, readOnlyRef, controls);
+            if (profileNodeViews) taskNodeViewDuration += performance.now() - start;
+            return nodeView;
+          },
           blockquote: (node, view, getPos) => calloutBlockquoteView(node, view, getPos),
           code_block: (node, view, getPos) => codeBlockEnhancedView(node, view, getPos),
           fence: (node, view, getPos) => codeBlockEnhancedView(node, view, getPos),
@@ -738,7 +739,17 @@ export function configureWritingEditor(editor: Editor, {
     .use(writingLinkClickHandlerPlugin())
     .use(writingPastePlugin(editability, parserRef ?? { current: undefined }))
     .use(slashMenuPlugin(editability, onRequestLinkRef, libraryRef, serializerRef, parserRef))
-    .use(writingKeyboardShortcutsPlugin(editability, onRequestLinkRef));
+    .use(writingKeyboardShortcutsPlugin(editability, onRequestLinkRef))
+    .use((ctx) => async () => {
+      if (!isPerfTraceEnabled()) return;
+      await ctx.wait(ParserReady);
+      markAndMeasurePerf(PERF_MARKS.milkdownParserReady, PERF_MEASURES.milkdownSetup, PERF_MARKS.milkdownCreateStart, {}, true);
+      await ctx.wait(EditorStateReady);
+      markAndMeasurePerf(PERF_MARKS.milkdownStateReady, PERF_MEASURES.milkdownInitialState, PERF_MARKS.milkdownParserReady, {}, true);
+      await ctx.wait(EditorViewReady);
+      markAndMeasurePerf(PERF_MARKS.milkdownViewReady, PERF_MEASURES.milkdownInitialView, PERF_MARKS.milkdownStateReady, {}, true);
+      recordPerfDuration(PERF_MEASURES.writingTaskNodeViews, taskNodeViewDuration, {}, true);
+    });
 }
 
 /** Keep the Milkdown document and capability proof aligned with canonical text. */
@@ -1024,6 +1035,7 @@ export function WritingEditor({
         {},
         true,
       );
+      measurePerf(PERF_MEASURES.milkdownTail, PERF_MARKS.milkdownViewReady, PERF_MARKS.milkdownCreateEnd, {}, true);
       if (cancelled) {
         void editor.destroy();
         return;

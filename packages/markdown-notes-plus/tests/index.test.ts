@@ -49,6 +49,7 @@ import { writingEnterBoundaryWhitespace } from "../src/editor/WritingSmartKeys.t
 import { createWritingFoldingPlugin, writingFoldingPluginKey } from "../src/editor/WritingFolding.ts";
 import { Schema } from "@milkdown/prose/model";
 import { EditorState } from "@milkdown/prose/state";
+import { DecorationSet } from "@milkdown/prose/view";
 import { WRITING_COMMANDS, writingCommandPlan } from "../src/editor/WritingCommandPlan.ts";
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
 import { scanWritingNormalization } from "../src/markdown/writingNormalization.ts";
@@ -72,6 +73,7 @@ Deno.test("Writing folding reuses decorations until the document or fold state c
   ]);
   let state = EditorState.create({ schema, doc, plugins: [plugin] });
   const initial = readDecorations(state);
+  assert(initial === DecorationSet.empty, "an expanded document needs no fold decorations");
   assert(initial === readDecorations(state), "unchanged view updates should keep the same decorations");
   state = state.apply(state.tr.setMeta("unrelated", true));
   assert(initial === readDecorations(state), "metadata-only transactions should reuse decorations");

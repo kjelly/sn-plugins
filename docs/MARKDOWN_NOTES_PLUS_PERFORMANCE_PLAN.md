@@ -6,6 +6,8 @@
 >
 > **歷史 Phase 0 baseline 候選（schema 2，未驗收）**：`7b4c31822409555888f14999b3b5ce826884aa67`。它修正 mock-host 初始內容載入順序，以及 Writing / mobile E2E 的 selection/caret 同步競態，不包含產品 optimization，並取代未通過 correctness gate 的 `9cd7d461a5cb879f16399d6196d520668cc3fef1`。這兩個 schema 2 候選及其報告只保留為歷史，不得作為目前的 optimization baseline。
 > **2026-10-03 量測語意更新**：browser/micro benchmark schema 已升為 3；`writing_interactive` 改在 ProseMirror 確實完成可編輯狀態切換後記錄，並新增 proof-to-enable、enable 與 focus 階段。舊 schema 2 報告不可與 schema 3 的 Writing TTI 比較。正式改善百分比須先以相同 schema 3 harness 重建且驗收 baseline；本次 smoke 數據只供找瓶頸及檢查回歸。
+> **2026-10-04 Milkdown 診斷**：browser/micro benchmark schema 升為 4；新增 create setup、initial state、initial view、tail、task NodeView 與折疊 decoration 量測。500 KB mixed fixture 的初步試測顯示 initial state 約 2.7–3.5 秒、initial view 約 3.4 秒；3,750 個 task NodeView 本身約 0.1 秒、初始 fold decoration 約 0.1 秒。把未折疊標題改為零 decoration 後，fold decoration 降至約 0.1 毫秒；共用主機的 Writing TTI 有數十秒離群值，尚不能宣稱正式 TTI 改善。schema 3 與 4 報告不得直接比較；正式 baseline 須用 schema 4 重建。
+> **2026-10-04 大綱重複掃描**：1 MB mixed fixture 有 7,642 個標題與任務；舊版逐列計算 section facts 約 5.5 秒，新版每份 analysis 預計算約 22 毫秒（同程序 Deno 診斷，所有 7,642 列與舊邏輯一致）。1 MB browser smoke 曾在 `writing_interactive` mark 後仍因 App busy 超時；改動後單次可完成，Writing TTI 約 33.9 秒，其中 Milkdown create 約 25.0 秒（state 8.5 秒、view 16.4 秒）。這些都不是正式 ABBA baseline；下一個主要瓶頸是 ProseMirror 大文件 initial view 建立。
 > **原則**：任何效能改動都必須以 benchmark 證明改善，且不得降低 Markdown lossless round-trip、Standard Notes bridge、Writing stability、CSP 或跨裝置安全邊界。
 
 ---
@@ -218,6 +220,7 @@ Instrumentation 不得 import React/Milkdown，也不得增加 bridge shell 的�
 - `writing_chunk_loaded`：WritingEditor dynamic import resolved。
 - `writing_preflight_start/end`：指定 revision 的 normalization/lexical preflight 邊界。
 - `milkdown_create_start/end`：呼叫 `editor.create()` 前至 promise resolved。
+- `milkdown_parser_ready`、`milkdown_state_ready`、`milkdown_view_ready`：分別代表 parser 建立、初始 Markdown 解析與 state 建立、初始 ProseMirror DOM view 建立完成；對應 `milkdown_setup_ms`、`milkdown_initial_state_ms`、`milkdown_initial_view_ms`，剩餘收尾為 `milkdown_tail_ms`。`writing_task_node_views_ms` 和 `writing_folding_decorations_ms` 是其中同步工作加總，不得與 create 各階段直接相加。
 - `roundtrip_proof_start/end`：initial live codec proof 邊界。
 - `writing_interactive`：Milkdown create 完成、initial proof 已發布、editor 的 `editable` 狀態已設定，且非 read-only 時已完成 focus request。每個 document/editor generation 最多記錄一次。
 

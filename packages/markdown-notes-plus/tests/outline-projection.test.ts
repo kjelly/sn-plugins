@@ -6,14 +6,41 @@ function assertEquals<T>(actual: T, expected: T, message = "values are not equal
 
 declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
-import { analyzeMarkdown } from "../src/markdown/analysis.ts";
+import { analyzeMarkdown, headingsInSection, nextSiblingSection, previousSiblingSection } from "../src/markdown/analysis.ts";
 import { createTextChangeSet } from "../src/document/PositionMap.ts";
 import {
   getVisibleOutlineHeadings,
   hasDescendantHeadings,
   getAllCollapsibleAnchors,
+  buildOutlineSectionFacts,
   reconcileOutlineAnchors,
 } from "../src/outline/OutlineProjection.ts";
+
+Deno.test("OutlineProjection - precomputed row facts match section scans", () => {
+  const documents = [
+    "# Root\n\n- [ ] root task\n\n## Child\n\n- [x] completed\n\n### Grandchild\n\n- [ ] nested\n\n## Sibling\n\n- [ ] sibling\n\n# Other\n",
+    "Setext root\n===========\n\n## ATX child\n\n- [x] task\n\n###### Deep\n\n- [ ] deeper\n\nSetext sibling\n--------------\n",
+    "- [ ] before headings\n\n# First\n\n- [ ] first\n\n# Second\n\n- [x] second\n",
+  ];
+  for (const document of documents) {
+    const analysis = analyzeMarkdown(document);
+    const facts = buildOutlineSectionFacts(analysis);
+    for (const heading of analysis.headings) {
+      const section = analysis.sectionByAnchor(heading.from)!;
+      const tasks = analysis.tasks.filter((task) => task.itemStart >= section.from && task.itemEnd <= section.to);
+      const descendants = headingsInSection(analysis, heading.from);
+      assertEquals(facts.get(heading.from), {
+        taskCount: tasks.length,
+        completedCount: tasks.filter((task) => task.checked).length,
+        openCount: tasks.filter((task) => !task.checked).length,
+        hasSetext: descendants.some((candidate) => candidate.syntax === "setext"),
+        hasLevelSix: descendants.some((candidate) => candidate.level >= 6),
+        hasPreviousSibling: previousSiblingSection(analysis, heading.from) !== undefined,
+        hasNextSibling: nextSiblingSection(analysis, heading.from) !== undefined,
+      });
+    }
+  }
+});
 
 Deno.test("OutlineProjection - collapsed heading hides descendants only", () => {
   const doc = `# Root 1

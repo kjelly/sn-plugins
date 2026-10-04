@@ -108,6 +108,25 @@ test.describe("Structural Editing & Outline Controls", () => {
     await expect(editor.outlinePanel.locator(".outline-row")).toHaveCount(4);
   });
 
+  test("Writing heading gutter folds without leaving the editor", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    await host.goto("# Parent\n\n## Child\n\nChild body\n\n# Sibling\n\nSibling body\n", "writing-gutter-fold");
+
+    const parent = editor.writingEditor.locator("h1").first();
+    await expect(parent).not.toHaveAttribute("data-folded", "true");
+    await parent.click({ position: { x: 45, y: 5 } });
+    await expect(parent).not.toHaveAttribute("data-folded", "true");
+    await parent.click({ position: { x: 5, y: 5 } });
+    await expect(parent).toHaveAttribute("data-folded", "true");
+    await expect(editor.writingEditor.locator(".writing-folded-hidden").first()).toBeHidden();
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+
+    await parent.click({ position: { x: 5, y: 5 } });
+    await expect(parent).not.toHaveAttribute("data-folded", "true");
+    await expect(editor.writingEditor.locator(".writing-folded-hidden")).toHaveCount(0);
+  });
+
   test("Outline panel - focus on section shows breadcrumb banner and can reset", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);

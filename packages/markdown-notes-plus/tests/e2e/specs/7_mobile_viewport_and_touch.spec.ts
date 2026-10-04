@@ -55,7 +55,6 @@ const mobileTargetInventory = {
   paletteItem: ".palette-item",
   mapSelect: ".map-pane select",
   importSelect: ".import-export-group select",
-  writingFoldGutter: ".writing-fold-gutter-btn",
   fileImportLabel: ".btn-file-import",
 };
 
@@ -160,7 +159,16 @@ test.describe("Mobile Viewport & Touch Ergonomics", () => {
     await editor.openSidebar();
 
     await expectTouchTargetBounds(editor, coarseControlSelector);
-    await expectTouchTargetBounds(editor, mobileTargetInventory.writingFoldGutter);
+    const foldGutters = await editor.writingEditor.locator(":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6")
+      .evaluateAll((headings) => headings.map((heading) => ({
+        width: parseFloat(getComputedStyle(heading).paddingLeft),
+        height: heading.getBoundingClientRect().height,
+      })));
+    expect(foldGutters.length).toBeGreaterThan(0);
+    for (const gutter of foldGutters) {
+      expect(gutter.width).toBeGreaterThanOrEqual(40);
+      expect(gutter.height).toBeGreaterThanOrEqual(40);
+    }
     await expect(editor.frame.locator(".outline-structural-actions").first()).toBeVisible();
 
     await editor.tasksTabBtn.click();

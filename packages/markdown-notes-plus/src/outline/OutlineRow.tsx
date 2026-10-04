@@ -1,14 +1,10 @@
-import React, { useMemo } from "react";
-import type { HeadingInfo, MarkdownAnalysis } from "../markdown/analysis.ts";
-import {
-  headingsInSection,
-  nextSiblingSection,
-  previousSiblingSection,
-} from "../markdown/analysis.ts";
+import React from "react";
+import type { HeadingInfo } from "../markdown/analysis.ts";
+import type { OutlineSectionFacts } from "./OutlineProjection.ts";
 
 export type OutlineRowProps = {
   heading: HeadingInfo;
-  analysis: MarkdownAnalysis;
+  facts: OutlineSectionFacts;
   isCollapsed: boolean;
   hasChildren: boolean;
   isActive: boolean;
@@ -32,7 +28,7 @@ export type OutlineRowProps = {
 
 export const OutlineRow: React.FC<OutlineRowProps> = ({
   heading,
-  analysis,
+  facts,
   isCollapsed,
   hasChildren,
   isActive,
@@ -53,23 +49,6 @@ export const OutlineRow: React.FC<OutlineRowProps> = ({
   onHandlePointerDown,
   isDragging,
 }) => {
-  const facts = useMemo(() => {
-    const section = analysis.sectionByAnchor(heading.from);
-    const secFrom = section?.from ?? heading.from;
-    const secTo = section?.to ?? heading.to;
-    const secTasks = analysis.tasks.filter((task) => task.itemStart >= secFrom && task.itemEnd <= secTo);
-    const subHeadings = headingsInSection(analysis, heading.from);
-    return {
-      taskCount: secTasks.length,
-      completedCount: secTasks.filter((task) => task.checked).length,
-      openCount: secTasks.filter((task) => !task.checked).length,
-      hasSetext: subHeadings.some((candidate) => candidate.syntax === "setext"),
-      hasLevelSix: subHeadings.some((candidate) => candidate.level >= 6),
-      hasPreviousSibling: previousSiblingSection(analysis, heading.from) !== undefined,
-      hasNextSibling: nextSiblingSection(analysis, heading.from) !== undefined,
-    };
-  }, [analysis, heading.from, heading.to]);
-
   const canMoveUp = !readOnly && facts.hasPreviousSibling;
   const canMoveDown = !readOnly && facts.hasNextSibling;
   const canPromote = !readOnly && heading.level > 1 && !facts.hasSetext && heading.syntax === "atx";

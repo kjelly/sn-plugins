@@ -46,6 +46,12 @@ const STARTUP_MEASURES = [
   "analysis_ms",
   "writing_preflight_ms",
   "milkdown_create_ms",
+  "milkdown_setup_ms",
+  "milkdown_initial_state_ms",
+  "milkdown_initial_view_ms",
+  "milkdown_tail_ms",
+  "writing_task_node_views_ms",
+  "writing_folding_decorations_ms",
   "roundtrip_proof_ms",
   "proof_to_enable_ms",
   "writing_enable_ms",
@@ -176,6 +182,11 @@ async function readTrace(page: Page): Promise<{ trace: BrowserPerfTrace; longTas
 
 async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: CacheMode, run: number): Promise<LoadSample> {
   const { context, page } = await openMeasuredPage(browser, fixture, cacheMode, `load-${fixture.id}-${cacheMode}-${run}`);
+  const profiler = process.env.PERF_CPU_PROFILE === "1" ? await context.newCDPSession(page) : undefined;
+  if (profiler) {
+    await profiler.send("Profiler.enable");
+    await profiler.send("Profiler.start");
+  }
   const flashcardRequests: string[] = [];
   page.on("request", (request) => {
     if (/Flashcard(?:View|Model|Markdown)/u.test(request.url())) flashcardRequests.push(request.url());
@@ -217,7 +228,18 @@ async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: Cach
     validateLoadSample(sample, `${fixture.id}/${cacheMode}/${run}`);
     return sample;
   } finally {
-    await context.close();
+    try {
+      if (profiler) {
+        const { profile } = await profiler.send("Profiler.stop");
+        const profilePath = `artifacts/performance/cpu-${fixture.id}-${cacheMode}-${run}.cpuprofile`;
+        await mkdir(dirname(profilePath), { recursive: true });
+        await writeFile(profilePath, JSON.stringify(profile));
+        await profiler.detach();
+        console.log(`[perf] wrote CPU profile ${profilePath}`);
+      }
+    } finally {
+      await context.close();
+    }
   }
 }
 
@@ -402,7 +424,7 @@ test.describe("editor performance contract", () => {
 
     if (process.env.PERF_RESUME === "1") {
       const previous = JSON.parse(await readFile(output, "utf8")) as Record<string, unknown>;
-      expect(previous.schemaVersion, "Resume schema must match").toBe(3);
+      expect(previous.schemaVersion, "Resume schema must match").toBe(4);
       expect(previous.commit, "Resume commit must match").toBe(commit);
       expect(previous.baselineSha, "Resume baseline SHA must match").toBe(baselineSha);
       expect(previous.formal, "Resume mode must match").toBe(!smoke);
@@ -426,7 +448,7 @@ test.describe("editor performance contract", () => {
       const metrics = buildMetrics(loadSamples, typingSamples);
       const fullProofCount = typingSamples.reduce((total, sample) => total + sample.phases.mutation_proof_ms.length, 0);
       const report = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
         kind: "browser-benchmark",
         formal: !smoke,
