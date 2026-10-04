@@ -47,6 +47,9 @@ const STARTUP_MEASURES = [
   "writing_preflight_ms",
   "milkdown_create_ms",
   "roundtrip_proof_ms",
+  "proof_to_enable_ms",
+  "writing_enable_ms",
+  "writing_focus_ms",
 ] as const;
 
 const TYPING_MEASURES = [
@@ -146,7 +149,7 @@ async function openMeasuredPage(browser: Browser, fixture: Fixture, cacheMode: C
   await context.addInitScript(perfInitScript);
   if (cacheMode === "warm") {
     const warmingPage = await context.newPage();
-    await new MockHost(warmingPage).goto(fixture.markdown, `${identity}-cache-prime`);
+    await new MockHost(warmingPage, 120_000).goto(fixture.markdown, `${identity}-cache-prime`);
     await warmingPage.close();
   }
   const page = await context.newPage();
@@ -178,7 +181,18 @@ async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: Cach
     if (/Flashcard(?:View|Model|Markdown)/u.test(request.url())) flashcardRequests.push(request.url());
   });
   try {
-    await new MockHost(page).goto(fixture.markdown, `load-${fixture.id}-${cacheMode}-${run}`);
+    try {
+      await new MockHost(page, Number(process.env.PERF_READY_TIMEOUT_MS ?? "120000"))
+        .goto(fixture.markdown, `load-${fixture.id}-${cacheMode}-${run}`);
+    } catch (error) {
+      try {
+        const { trace } = await readTrace(page);
+        console.log(`[perf] incomplete startup fixture=${fixture.id} marks=${trace.marks.map((mark) => mark.name).join(",")}`);
+      } catch {
+        // Preserve the original readiness failure if the frame is unavailable.
+      }
+      throw error;
+    }
     expect(flashcardRequests, "normal Writing startup must not load the Flashcards feature chunk").toEqual([]);
     const { trace, longTasks } = await readTrace(page);
     const phases: Record<string, number> = {};
@@ -190,7 +204,14 @@ async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: Cach
       phases[name] = value;
     }
     expect(trace.marks.some((mark) => mark.name === "context_received")).toBe(true);
-    expect(trace.marks.some((mark) => mark.name === "writing_interactive")).toBe(true);
+    const interactive = trace.marks.find((mark) => mark.name === "writing_interactive");
+    const enabled = trace.marks.find((mark) => mark.name === "writing_enable_end");
+    const focused = trace.marks.find((mark) => mark.name === "writing_focus_end");
+    expect(interactive).toBeDefined();
+    expect(enabled).toBeDefined();
+    expect(focused).toBeDefined();
+    expect(interactive!.startTime).toBeGreaterThanOrEqual(enabled!.startTime);
+    expect(interactive!.startTime).toBeGreaterThanOrEqual(focused!.startTime);
     expect(JSON.stringify(trace)).not.toContain(fixture.markdown.slice(0, 64));
     const sample = { fixture: fixture.id, cacheMode, run, phases, longTasks };
     validateLoadSample(sample, `${fixture.id}/${cacheMode}/${run}`);
@@ -219,7 +240,7 @@ async function runTypingSample(
     if (/Flashcard(?:View|Model|Markdown)/u.test(request.url())) flashcardRequests.push(request.url());
   });
   try {
-    const host = new MockHost(page);
+    const host = new MockHost(page, 120_000);
     const editor = new EditorPage(page);
     await host.goto(fixture.markdown, `typing-${fixture.id}-${inputKind}-${run}`);
     expect(flashcardRequests, "normal Writing typing must not load the Flashcards feature chunk").toEqual([]);
@@ -381,7 +402,7 @@ test.describe("editor performance contract", () => {
 
     if (process.env.PERF_RESUME === "1") {
       const previous = JSON.parse(await readFile(output, "utf8")) as Record<string, unknown>;
-      expect(previous.schemaVersion, "Resume schema must match").toBe(2);
+      expect(previous.schemaVersion, "Resume schema must match").toBe(3);
       expect(previous.commit, "Resume commit must match").toBe(commit);
       expect(previous.baselineSha, "Resume baseline SHA must match").toBe(baselineSha);
       expect(previous.formal, "Resume mode must match").toBe(!smoke);
@@ -405,7 +426,7 @@ test.describe("editor performance contract", () => {
       const metrics = buildMetrics(loadSamples, typingSamples);
       const fullProofCount = typingSamples.reduce((total, sample) => total + sample.phases.mutation_proof_ms.length, 0);
       const report = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
         kind: "browser-benchmark",
         formal: !smoke,

@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { MarkdownAnalysis } from "../markdown/analysis.ts";
 import {
   getAllCollapsibleAnchors,
   getVisibleOutlineHeadings,
-  hasDescendantHeadings,
 } from "./OutlineProjection.ts";
 import { OutlineRow } from "./OutlineRow.tsx";
 import type { OutlineDragState } from "./OutlineDragState.ts";
@@ -77,8 +76,9 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
   moveBeforeRef.current = onMoveSubtreeBefore;
   moveAfterRef.current = onMoveSubtreeAfter;
 
-  const visibleHeadings = getVisibleOutlineHeadings(analysis, collapsedAnchors);
-  const collapsibleAnchors = getAllCollapsibleAnchors(analysis);
+  const visibleHeadings = useMemo(() => getVisibleOutlineHeadings(analysis, collapsedAnchors), [analysis, collapsedAnchors]);
+  const collapsibleAnchors = useMemo(() => getAllCollapsibleAnchors(analysis), [analysis]);
+  const collapsibleAnchorSet = useMemo(() => new Set(collapsibleAnchors), [collapsibleAnchors]);
   const hasCollapsible = collapsibleAnchors.length > 0;
 
   const clearDrag = () => {
@@ -230,7 +230,7 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
         <ol className="outline-list" ref={listRef}>
           {visibleHeadings.map((heading) => {
             const isCollapsed = collapsedAnchors.has(heading.from);
-            const hasChildren = hasDescendantHeadings(analysis, heading.from);
+            const hasChildren = collapsibleAnchorSet.has(heading.from);
             const isActive = activeSectionAnchor === heading.from;
             const isFocused = focusedSectionAnchor === heading.from;
             const dropPlacement = dragState?.targetAnchor === heading.from ? dragState.placement : undefined;

@@ -50,6 +50,7 @@ export function computeHiddenBlockRanges(
   foldedPositions: Set<number>,
   focusedPosition?: number,
 ): { from: number; to: number }[] {
+  if (foldedPositions.size === 0 && focusedPosition === undefined) return [];
   const ranges: { from: number; to: number }[] = [];
 
   // 1. If focusedPosition is specified, hide everything before focused heading and after focused section
@@ -180,6 +181,12 @@ export function createWritingFoldingPlugin(
   onToggleFold?: (pos: number) => void,
   // deno-lint-ignore no-explicit-any
 ): Plugin<any> {
+  let cachedDecorations: {
+    doc: ProseNode;
+    foldedPositions: Set<number>;
+    focusedPosition?: number;
+    value: DecorationSet;
+  } | undefined;
   return new Plugin({
     // deno-lint-ignore no-explicit-any
     key: writingFoldingPluginKey as any,
@@ -238,12 +245,25 @@ export function createWritingFoldingPlugin(
       decorations(state: any): any {
         const pluginState = writingFoldingPluginKey.getState(state);
         if (!pluginState) return DecorationSet.empty;
-        return buildFoldingDecorations(
+        const cached = cachedDecorations;
+        if (cached && cached.doc === state.doc &&
+          cached.foldedPositions === pluginState.foldedHeadingPositions &&
+          cached.focusedPosition === pluginState.focusedHeadingPosition) {
+          return cached.value;
+        }
+        const value = buildFoldingDecorations(
           state.doc,
           pluginState.foldedHeadingPositions,
           pluginState.focusedHeadingPosition,
           onToggleFold,
         );
+        cachedDecorations = {
+          doc: state.doc,
+          foldedPositions: pluginState.foldedHeadingPositions,
+          focusedPosition: pluginState.focusedHeadingPosition,
+          value,
+        };
+        return value;
       },
     },
   });

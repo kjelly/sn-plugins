@@ -4,7 +4,8 @@
 > **目標套件**：`packages/markdown-notes-plus`
 > **起始程式碼版本**：`ba07fe3ca13aec98cf9d05ae17336b6985b48ba5`，已包含 `f2cd17d`、`43de10f`、`454d8e4` 與 `ba07fe3` 的 lazy-loading / bootstrap / deferred-work 改善。若正式執行不是從此 SHA 開始，必須在任何程式變更前更新本欄。
 >
-> **正式 Phase 0 baseline 測試 SHA（候選，尚未驗收）**：`7b4c31822409555888f14999b3b5ce826884aa67`。所有新的正式 baseline JSON 必須由此 immutable harness-only commit 產生；它修正 mock-host 初始內容載入順序，以及 Writing / mobile E2E 的 selection/caret 同步競態，不包含產品 optimization。它取代未通過 correctness gate 的 `9cd7d461a5cb879f16399d6196d520668cc3fef1`；舊 SHA 及其報告只保留為失敗歷史，不得 resume、合併或作為 optimization baseline。在相同 commit 的兩批正式報告通過 <=5% 穩定性門檻，且 10k / 100k / 500k / 1m 報告全部產生前，不得把候選 SHA 宣告為已驗收 baseline，也不得開始計算 optimization 百分比。
+> **歷史 Phase 0 baseline 候選（schema 2，未驗收）**：`7b4c31822409555888f14999b3b5ce826884aa67`。它修正 mock-host 初始內容載入順序，以及 Writing / mobile E2E 的 selection/caret 同步競態，不包含產品 optimization，並取代未通過 correctness gate 的 `9cd7d461a5cb879f16399d6196d520668cc3fef1`。這兩個 schema 2 候選及其報告只保留為歷史，不得作為目前的 optimization baseline。
+> **2026-10-03 量測語意更新**：browser/micro benchmark schema 已升為 3；`writing_interactive` 改在 ProseMirror 確實完成可編輯狀態切換後記錄，並新增 proof-to-enable、enable 與 focus 階段。舊 schema 2 報告不可與 schema 3 的 Writing TTI 比較。正式改善百分比須先以相同 schema 3 harness 重建且驗收 baseline；本次 smoke 數據只供找瓶頸及檢查回歸。
 > **原則**：任何效能改動都必須以 benchmark 證明改善，且不得降低 Markdown lossless round-trip、Standard Notes bridge、Writing stability、CSP 或跨裝置安全邊界。
 
 ---

@@ -57,6 +57,7 @@ test.describe("Host Protocol & Lifecycle", () => {
 
     // Status changes to Locked · read-only
     await expect(editor.status).toHaveText("Locked · read-only");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "false");
 
     // Toolbar buttons are disabled
     await expect(editor.writingH1Button).toBeDisabled();
@@ -67,6 +68,7 @@ test.describe("Host Protocol & Lifecycle", () => {
     // Unlock note restores Ready
     await host.setLocked(false);
     await expect(editor.status).toHaveText("Ready");
+    await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
     await expect(editor.writingH1Button).toBeEnabled();
   });
 
@@ -138,4 +140,3 @@ test.describe("Host Protocol & Lifecycle", () => {
     await expect(editor.outlineHeadings.nth(1)).toHaveText("Section 2 (Remote)");
   });
 });
-

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { HeadingInfo, MarkdownAnalysis } from "../markdown/analysis.ts";
 import {
   headingsInSection,
@@ -53,21 +53,27 @@ export const OutlineRow: React.FC<OutlineRowProps> = ({
   onHandlePointerDown,
   isDragging,
 }) => {
-  const section = analysis.sections.find((s) => s.anchor === heading.from);
-  const secFrom = section ? section.from : heading.from;
-  const secTo = section ? section.to : heading.to;
+  const facts = useMemo(() => {
+    const section = analysis.sectionByAnchor(heading.from);
+    const secFrom = section?.from ?? heading.from;
+    const secTo = section?.to ?? heading.to;
+    const secTasks = analysis.tasks.filter((task) => task.itemStart >= secFrom && task.itemEnd <= secTo);
+    const subHeadings = headingsInSection(analysis, heading.from);
+    return {
+      taskCount: secTasks.length,
+      completedCount: secTasks.filter((task) => task.checked).length,
+      openCount: secTasks.filter((task) => !task.checked).length,
+      hasSetext: subHeadings.some((candidate) => candidate.syntax === "setext"),
+      hasLevelSix: subHeadings.some((candidate) => candidate.level >= 6),
+      hasPreviousSibling: previousSiblingSection(analysis, heading.from) !== undefined,
+      hasNextSibling: nextSiblingSection(analysis, heading.from) !== undefined,
+    };
+  }, [analysis, heading.from, heading.to]);
 
-  const secTasks = analysis.tasks.filter((t) => t.itemStart >= secFrom && t.itemEnd <= secTo);
-  const secCompleted = secTasks.filter((t) => t.checked);
-  const secOpen = secTasks.filter((t) => !t.checked);
-
-  const subHeadings = headingsInSection(analysis, heading.from);
-  const hasSetext = subHeadings.some((h) => h.syntax === "setext");
-
-  const canMoveUp = !readOnly && previousSiblingSection(analysis, heading.from) !== undefined;
-  const canMoveDown = !readOnly && nextSiblingSection(analysis, heading.from) !== undefined;
-  const canPromote = !readOnly && heading.level > 1 && !hasSetext && heading.syntax === "atx";
-  const canDemote = !readOnly && !hasSetext && !subHeadings.some((h) => h.level >= 6) && heading.syntax === "atx";
+  const canMoveUp = !readOnly && facts.hasPreviousSibling;
+  const canMoveDown = !readOnly && facts.hasNextSibling;
+  const canPromote = !readOnly && heading.level > 1 && !facts.hasSetext && heading.syntax === "atx";
+  const canDemote = !readOnly && !facts.hasSetext && !facts.hasLevelSix && heading.syntax === "atx";
   const canDuplicate = !readOnly;
 
   return (
@@ -108,9 +114,9 @@ export const OutlineRow: React.FC<OutlineRowProps> = ({
           title={`Level ${heading.level}: ${heading.text}`}
         >
           <span className="outline-heading-text">{heading.text}</span>
-          {secTasks.length ? (
-            <span className="section-task-badge" title={`${secCompleted.length} of ${secTasks.length} tasks completed`}>
-              {secCompleted.length}/{secTasks.length}
+          {facts.taskCount ? (
+            <span className="section-task-badge" title={`${facts.completedCount} of ${facts.taskCount} tasks completed`}>
+              {facts.completedCount}/{facts.taskCount}
             </span>
           ) : null}
         </button>
@@ -191,9 +197,9 @@ export const OutlineRow: React.FC<OutlineRowProps> = ({
           ) : null}
         </div>
 
-        {secTasks.length ? (
+        {facts.taskCount ? (
           <div className="section-task-actions" role="group" aria-label={`Tasks in ${heading.text}`}>
-            {secOpen.length ? (
+            {facts.openCount ? (
               <button
                 type="button"
                 title="Check all in this section"
@@ -206,7 +212,7 @@ export const OutlineRow: React.FC<OutlineRowProps> = ({
                 ☑
               </button>
             ) : null}
-            {secCompleted.length ? (
+            {facts.completedCount ? (
               <>
                 <button
                   type="button"

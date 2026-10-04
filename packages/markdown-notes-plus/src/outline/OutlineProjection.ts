@@ -21,10 +21,9 @@ export function hasDescendantHeadings(analysis: MarkdownAnalysis, anchor: number
  */
 export function getAllCollapsibleAnchors(analysis: MarkdownAnalysis): number[] {
   const result: number[] = [];
-  for (const h of analysis.headings) {
-    if (hasDescendantHeadings(analysis, h.from)) {
-      result.push(h.from);
-    }
+  for (let index = 0; index + 1 < analysis.headings.length; index += 1) {
+    const heading = analysis.headings[index];
+    if (analysis.headings[index + 1].level > heading.level) result.push(heading.from);
   }
   return result;
 }

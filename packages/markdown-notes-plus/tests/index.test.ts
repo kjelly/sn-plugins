@@ -46,9 +46,41 @@ import { projectMindmapMarkdown } from "../src/markdown/analysis.ts";
 import { WritingControlRegistry, writingControlIsDisabled, writingTaskIsHidden } from "../src/editor/WritingTaskControls.ts";
 import { isWritingLinkShortcut } from "../src/editor/WritingShortcuts.ts";
 import { writingEnterBoundaryWhitespace } from "../src/editor/WritingSmartKeys.ts";
+import { createWritingFoldingPlugin, writingFoldingPluginKey } from "../src/editor/WritingFolding.ts";
+import { Schema } from "@milkdown/prose/model";
+import { EditorState } from "@milkdown/prose/state";
 import { WRITING_COMMANDS, writingCommandPlan } from "../src/editor/WritingCommandPlan.ts";
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
 import { scanWritingNormalization } from "../src/markdown/writingNormalization.ts";
+
+Deno.test("Writing folding reuses decorations until the document or fold state changes", () => {
+  const schema = new Schema({
+    nodes: {
+      doc: { content: "block+" },
+      paragraph: { content: "text*", group: "block" },
+      heading: { content: "text*", group: "block", attrs: { level: { default: 1 } } },
+      text: { group: "inline" },
+    },
+  });
+  const plugin = createWritingFoldingPlugin();
+  const decorations = plugin.props.decorations;
+  assert(typeof decorations === "function");
+  const readDecorations = (state: EditorState) => decorations.call(plugin, state);
+  const doc = schema.node("doc", null, [
+    schema.node("heading", { level: 1 }, schema.text("Title")),
+    schema.node("paragraph", null, schema.text("Body")),
+  ]);
+  let state = EditorState.create({ schema, doc, plugins: [plugin] });
+  const initial = readDecorations(state);
+  assert(initial === readDecorations(state), "unchanged view updates should keep the same decorations");
+  state = state.apply(state.tr.setMeta("unrelated", true));
+  assert(initial === readDecorations(state), "metadata-only transactions should reuse decorations");
+  state = state.apply(state.tr.setMeta(writingFoldingPluginKey, { togglePos: 0 }));
+  const folded = readDecorations(state);
+  assert(folded !== initial, "folding must rebuild the decorations");
+  state = state.apply(state.tr.insertText("!", 2));
+  assert(readDecorations(state) !== folded, "document edits must rebuild the decorations");
+});
 import {
   armWritingEnableAttempt,
   createWritingEnableAttemptState,

@@ -16,7 +16,7 @@ import { WritingControlRegistry, writingTaskIsHidden, type WritingControlState }
 import { applyWritingOriginTransaction, assessWritingMutation, assessWritingRoundTrip, WRITING_TRANSACTION_ORIGIN_META, WritingEditorChangeGate, type WritingCapabilityProof, type WritingMutationOrigin, type WritingOriginState, type WritingRoundTripResult } from "./WritingEditorLifecycle";
 import { scanWritingNormalization, WRITING_CODEC_OPTIONS, type WritingCodec } from "../markdown/writingNormalization.ts";
 import { PERF_MARKS, PERF_MEASURES } from "../performance/PerfNames.ts";
-import { markAndMeasurePerf, markPerf } from "../performance/PerfTrace.ts";
+import { markAndMeasurePerf, markPerf, measurePerf } from "../performance/PerfTrace.ts";
 import { writingEmptyTaskListItem } from "../markdown/writingTaskCodec.ts";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
@@ -700,6 +700,7 @@ export function configureWritingEditor(editor: Editor, {
       }));
       ctx.update(editorViewOptionsCtx, (options) => ({
         ...options,
+        editable: () => !readOnlyRef.current,
         nodeViews: {
           ...options.nodeViews,
           list_item: (node, view, getPos) => taskListItemView(
@@ -810,6 +811,17 @@ export function WritingEditor({
   const onLosslessFallbackRef = useRef(onLosslessFallback);
   onLosslessFallbackRef.current = onLosslessFallback;
   const writingProofRef = useRef(writingProof);
+
+  const markWritingInteractive = (view: ProseEditorView) => {
+    if (!view.editable || readOnlyRef.current || !capabilityRef.current) return;
+    markAndMeasurePerf(
+      PERF_MARKS.writingInteractive,
+      PERF_MEASURES.contextToWritingInteractive,
+      PERF_MARKS.contextReceived,
+      {},
+      true,
+    );
+  };
 
   useEffect(() => {
     const today = deadlineDay ? new Date(`${deadlineDay}T00:00:00`) : new Date();
@@ -1018,7 +1030,6 @@ export function WritingEditor({
       }
       editorRef.current = editor;
       gate.current.finish(generation, value);
-      editor.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current }));
       const result = synchronizeEditorValue(valueRef.current, true, writingProofRef.current);
       if (result?.kind === "unsupported" || editorRef.current !== editor) return;
       applyPendingCommand();
@@ -1027,13 +1038,7 @@ export function WritingEditor({
       // on the host document. Restore the pre-split behavior so immediate
       // keyboard input is delivered to the newly mounted ProseMirror view.
       if (!readOnlyRef.current) editor.action((ctx) => ctx.get(editorViewCtx).focus());
-      markAndMeasurePerf(
-        PERF_MARKS.writingInteractive,
-        PERF_MEASURES.contextToWritingInteractive,
-        PERF_MARKS.contextReceived,
-        {},
-        true,
-      );
+      markWritingInteractive(editor.action((ctx) => ctx.get(editorViewCtx)));
     }).catch(() => { /* isolate editor initialization failure in its ErrorBoundary */ });
     return () => {
       cancelled = true;
@@ -1086,12 +1091,18 @@ export function WritingEditor({
     previousReadOnlyRef.current = readOnly;
     editorRef.current?.action((ctx) => {
       const view = ctx.get(editorViewCtx);
+      markPerf(PERF_MARKS.writingEnableStart, {}, true);
+      measurePerf(PERF_MEASURES.proofToEnable, PERF_MARKS.roundtripProofEnd, PERF_MARKS.writingEnableStart, {}, true);
       view.setProps({ editable: () => !readOnlyRef.current });
+      markAndMeasurePerf(PERF_MARKS.writingEnableEnd, PERF_MEASURES.writingEnable, PERF_MARKS.writingEnableStart, {}, true);
       // Writing starts read-only until its lossless round-trip proof is
       // available. With a lazy mount, that transition happens after the fast
       // preview has already received focus, so restore focus when admission
       // makes the editor interactive.
+      markPerf(PERF_MARKS.writingFocusStart, {}, true);
       if (becameEditable) view.focus();
+      markAndMeasurePerf(PERF_MARKS.writingFocusEnd, PERF_MEASURES.writingFocus, PERF_MARKS.writingFocusStart, {}, true);
+      markWritingInteractive(view);
     });
     controlsRef.current.refresh();
   }, [readOnly]);

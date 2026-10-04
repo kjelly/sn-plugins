@@ -1,4 +1,4 @@
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const STARTUP_MEASURES = [
   "context_to_preview_ms",
   "context_to_app_ms",
@@ -7,6 +7,9 @@ const STARTUP_MEASURES = [
   "writing_preflight_ms",
   "milkdown_create_ms",
   "roundtrip_proof_ms",
+  "proof_to_enable_ms",
+  "writing_enable_ms",
+  "writing_focus_ms",
 ];
 const TYPING_MEASURES = [
   "input_to_canonical_ms",

@@ -15,7 +15,7 @@ export interface MockSaveItem {
 }
 
 export class MockHost {
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page, private readonly writingProofTimeoutMs = 5000) {}
 
   async goto(initialText?: string, uuid = "default-note-uuid", locked = false, mobile = false): Promise<void> {
     await this.page.goto(mobile ? "/test-host.html?mobile=1&deferEditorStart=1" : "/test-host.html?deferEditorStart=1");
@@ -36,7 +36,7 @@ export class MockHost {
     // bundle. Wait for its initial lossless/normalizable/unsupported proof so
     // test actions cannot race a normalization dialog that appears afterward.
     await expect(this.page.frameLocator("#editor-frame").locator(".app-shell"))
-      .toHaveAttribute("aria-busy", "false");
+      .toHaveAttribute("aria-busy", "false", { timeout: this.writingProofTimeoutMs });
   }
 
   async setNote(text: string, uuid = "note-" + Date.now(), locked = false): Promise<void> {
