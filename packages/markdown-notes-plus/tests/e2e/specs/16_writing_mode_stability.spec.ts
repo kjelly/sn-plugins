@@ -215,6 +215,8 @@ test.describe("Writing mode stability contract", () => {
     for (const [index, scenario] of marks.entries()) {
       if (index > 0) await host.setNote(`${scenario.name} text\n`, `writing-mark-${scenario.name}`, false);
       const paragraph = editor.writingEditor.locator("p").first();
+      await expect(paragraph).toHaveText(`${scenario.name} text`);
+      await expect(editor.writingEditor).toBeEditable();
       await selectContents(paragraph);
       await page.keyboard.press(scenario.shortcut);
       await expect(paragraph.locator(scenario.selector)).toBeVisible();

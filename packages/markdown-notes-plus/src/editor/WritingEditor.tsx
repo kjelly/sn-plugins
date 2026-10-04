@@ -38,6 +38,8 @@ import {
 import { calloutBlockquoteView } from "./WritingCallouts.ts";
 import { codeBlockEnhancedView } from "./WritingCodeBlock.ts";
 import { LinkDialogModal } from "./LinkDialogModal.tsx";
+import type { HeadingInfo } from "../markdown/analysis.ts";
+import { buildWritingWindows, replaceWritingWindow, type WritingWindow } from "./WritingWindows.ts";
 export type { WritingCommandName } from "./WritingCommands";
 
 export type WritingCommand = { id: number; name: WritingCommandName };
@@ -46,9 +48,10 @@ export type WritingHeadingNavigation = { id: number; index: number };
 
 export type WritingEditorProps = {
   value: string;
+  headings?: readonly HeadingInfo[];
   readOnly: boolean;
   writingProof: WritingCapabilityProof;
-  onChange: (value: string, proof: WritingCapabilityProof, performanceSequence?: number) => void;
+  onChange: (value: string, proof: WritingCapabilityProof, performanceSequence?: number) => boolean | void;
   command?: WritingCommand;
   insertPayload?: InsertPayload;
   headingNavigation?: WritingHeadingNavigation;
@@ -56,6 +59,10 @@ export type WritingEditorProps = {
   deadlineDay?: string;
   onCapabilityChange?: (result: WritingRoundTripResult, proofSource?: string, proof?: WritingCapabilityProof) => void;
   onLosslessFallback?: (value: string, result: WritingRoundTripResult, proof: WritingCapabilityProof) => void;
+  onSelectWholeNote?: () => void;
+  onSearchWholeNote?: () => void;
+  onUndoWholeNote?: () => void;
+  onRedoWholeNote?: () => void;
 };
 
 /** Writing must not enable CommonMark's synthetic empty-line HTML marker. */
@@ -702,7 +709,7 @@ export function configureWritingEditor(editor: Editor, {
       }));
       ctx.update(editorViewOptionsCtx, (options) => ({
         ...options,
-        editable: () => !readOnlyRef.current,
+        editable: () => !readOnlyRef.current && editability.capabilityRef.current,
         nodeViews: {
           ...options.nodeViews,
           list_item: (node, view, getPos) => {
@@ -778,6 +785,7 @@ export function synchronizeWritingEditorValue({ gate, generation, value, replace
 /** Milkdown CommonMark + GFM writing mode. Source remains the canonical owner. */
 export function WritingEditor({
   value,
+  headings,
   readOnly,
   writingProof,
   onChange,
@@ -788,13 +796,32 @@ export function WritingEditor({
   deadlineDay,
   onCapabilityChange,
   onLosslessFallback,
+  onSelectWholeNote,
+  onSearchWholeNote,
+  onUndoWholeNote,
+  onRedoWholeNote,
 }: WritingEditorProps) {
+  const windowPlanRef = useRef<{ source: string; windows: WritingWindow[] }>();
+  const windowPlanInitialized = useRef(false);
+  if (!windowPlanInitialized.current) {
+    const windows = headings ? buildWritingWindows(value, headings) : undefined;
+    if (windows) windowPlanRef.current = { source: value, windows };
+    windowPlanInitialized.current = true;
+  }
+  const [activeWindowIndex, setActiveWindowIndex] = useState(0);
+  const windowPlan = windowPlanRef.current;
+  const activeWindow = windowPlan?.windows[activeWindowIndex];
+  const editorValue = activeWindow ? value.slice(activeWindow.from, activeWindow.to) : value;
   const host = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor>();
   const gate = useRef(new WritingEditorChangeGate());
   const generationRef = useRef(0);
   const onChangeRef = useRef(onChange);
-  const valueRef = useRef(value);
+  const valueRef = useRef(editorValue);
+  const fullValueRef = useRef(value);
+  const fullProofCacheRef = useRef<{ source: string; result: WritingRoundTripResult }>();
+  const headingsRef = useRef(headings);
+  const headingNavigationRef = useRef(headingNavigation);
   const readOnlyRef = useRef(readOnly);
   const previousReadOnlyRef = useRef(readOnly);
   const controlsRef = useRef(new WritingControlRegistry());
@@ -814,7 +841,10 @@ export function WritingEditor({
   const appliedCommand = useRef<number>();
   const appliedInsert = useRef<number>();
   onChangeRef.current = onChange;
-  valueRef.current = value;
+  valueRef.current = editorValue;
+  fullValueRef.current = value;
+  headingsRef.current = headings;
+  headingNavigationRef.current = headingNavigation;
   readOnlyRef.current = readOnly;
   commandRef.current = command;
   const onCapabilityChangeRef = useRef(onCapabilityChange);
@@ -863,8 +893,32 @@ export function WritingEditor({
     proofSource = valueRef.current,
     proof = writingProofRef.current,
   ) => {
-    capabilityRef.current = result.editable;
-    onCapabilityChangeRef.current?.(result, proofSource, proof);
+    let documentResult = result;
+    const documentSource = windowPlanRef.current ? fullValueRef.current : proofSource;
+    // Both the rendered slice and the complete canonical note must be
+    // lossless. A full-note proof cannot legitimize a lossy slice view.
+    if (windowPlanRef.current && !result.editable) {
+      documentResult = { kind: "unsupported", editable: false, reason: "This section cannot be rendered losslessly; use Source mode." };
+    } else if (windowPlanRef.current) {
+      const cached = fullProofCacheRef.current;
+      if (cached?.source === documentSource) documentResult = cached.result;
+      else {
+        const editor = editorRef.current;
+        documentResult = editor?.action((ctx) => {
+          const codec: WritingCodec = {
+            parse: (source) => ctx.get(parserCtx)(source),
+            serialize: (document) => ctx.get(serializerCtx)(document),
+          };
+          const document = codec.parse(documentSource);
+          return document
+            ? assessWritingRoundTrip(documentSource, codec.serialize(document), codec)
+            : { kind: "unsupported", editable: false, reason: "Writing could not parse this note; use Source mode." };
+        }) ?? { kind: "unsupported", editable: false, reason: "Writing codec proof is unavailable; use Source mode." };
+        fullProofCacheRef.current = { source: documentSource, result: documentResult };
+      }
+    }
+    capabilityRef.current = documentResult.editable;
+    onCapabilityChangeRef.current?.(documentResult, documentSource, proof);
   };
 
   const synchronizeEditorValue = (
@@ -936,14 +990,41 @@ export function WritingEditor({
     });
   };
 
+  const applyHeadingNavigation = () => {
+    const navigation = headingNavigationRef.current;
+    if (!navigation) return;
+    const plan = windowPlanRef.current;
+    const allHeadings = headingsRef.current;
+    let localIndex = navigation.index;
+    if (plan && allHeadings) {
+      const target = allHeadings[navigation.index];
+      if (!target) return;
+      const targetWindowIndex = plan.windows.findIndex((window) => target.from >= window.from && target.from < window.to);
+      if (targetWindowIndex < 0) return;
+      if (targetWindowIndex !== activeWindowIndex) {
+        setActiveWindowIndex(targetWindowIndex);
+        return;
+      }
+      localIndex = allHeadings.slice(0, navigation.index).filter((heading) => heading.from >= plan.windows[targetWindowIndex].from).length;
+    }
+    editorRef.current?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const heading = view.dom.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")[localIndex];
+      if (!heading) return;
+      heading.scrollIntoView({ block: "center" });
+      view.focus();
+    });
+  };
+
   useEffect(() => {
     if (!host.current) return undefined;
     const hostElement = host.current;
     let cancelled = false;
-    const generation = gate.current.begin(value);
+    capabilityRef.current = false;
+    const generation = gate.current.begin(editorValue);
     generationRef.current = generation;
     markPerf(PERF_MARKS.writingPreflightStart, {}, true);
-    const preflight = scanWritingNormalization(value);
+    const preflight = scanWritingNormalization(editorValue);
     markAndMeasurePerf(
       PERF_MARKS.writingPreflightEnd,
       PERF_MEASURES.writingPreflight,
@@ -953,14 +1034,14 @@ export function WritingEditor({
     );
     if (preflight.unsupportedReason) {
       capabilityRef.current = false;
-      onCapabilityChangeRef.current?.({ kind: "unsupported", editable: false, reason: preflight.unsupportedReason }, value, writingProof);
+      onCapabilityChangeRef.current?.({ kind: "unsupported", editable: false, reason: preflight.unsupportedReason }, fullValueRef.current, writingProof);
       return () => {
         cancelled = true;
       };
     }
     const editor = configureWritingEditor(Editor.make(), {
       host: hostElement,
-      value,
+      value: editorValue,
       readOnlyRef,
       controls: controlsRef.current,
       serializerRef,
@@ -1014,16 +1095,34 @@ export function WritingEditor({
           PERF_MARKS.mutationProofStart,
           performanceMetadata,
         );
-        if (!proof.editable) {
+        const plan = windowPlanRef.current;
+        const currentWindow = plan?.windows[activeWindowIndex];
+        const replacement = plan && currentWindow && plan.source === fullValueRef.current &&
+            plan.source.slice(currentWindow.from, currentWindow.to) === valueRef.current
+          ? replaceWritingWindow(plan.source, plan.windows, activeWindowIndex, markdown)
+          : undefined;
+        if (!proof.editable || (plan && !replacement)) {
           capabilityRef.current = false;
           // Mutation rejection is not a new capability result for the
           // canonical document. Preserve the user's serializer output and let
           // the App ask what to do instead of forcing an automatic mode jump.
-          onLosslessFallbackRef.current?.(markdown, proof, writingProofRef.current);
+          const fallbackMarkdown = plan && currentWindow
+            ? plan.source.slice(0, currentWindow.from) + markdown + plan.source.slice(currentWindow.to)
+            : markdown;
+          onLosslessFallbackRef.current?.(fallbackMarkdown, proof.editable
+            ? { kind: "unsupported", editable: false, reason: "Writing changed a section boundary; use Source mode." }
+            : proof, writingProofRef.current);
           return;
         }
         if (markdown === valueRef.current) return;
-        onChangeRef.current(markdown, writingProofRef.current, performanceSequence);
+        const accepted = onChangeRef.current(replacement?.source ?? markdown, writingProofRef.current, performanceSequence);
+        if (accepted === false) return;
+        if (replacement && plan) {
+          windowPlanRef.current = replacement;
+          fullValueRef.current = replacement.source;
+          fullProofCacheRef.current = { source: replacement.source, result: { kind: "lossless", editable: true } };
+        }
+        valueRef.current = markdown;
       },
     });
     markPerf(PERF_MARKS.milkdownCreateStart, {}, true);
@@ -1041,11 +1140,13 @@ export function WritingEditor({
         return;
       }
       editorRef.current = editor;
-      gate.current.finish(generation, value);
+      gate.current.finish(generation, editorValue);
       const result = synchronizeEditorValue(valueRef.current, true, writingProofRef.current);
       if (result?.kind === "unsupported" || editorRef.current !== editor) return;
+      editor.action((ctx) => ctx.get(editorViewCtx).setProps({ editable: () => !readOnlyRef.current && capabilityRef.current }));
       applyPendingCommand();
       applyPendingInsert();
+      applyHeadingNavigation();
       // Replacing the fast preview with a lazy editor otherwise leaves focus
       // on the host document. Restore the pre-split behavior so immediate
       // keyboard input is delivered to the newly mounted ProseMirror view.
@@ -1060,12 +1161,12 @@ export function WritingEditor({
     // The editor owns its lifecycle. Content updates are handled below so a
     // canonical update cannot recreate Milkdown and lose selection/history.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeWindowIndex]);
 
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (gate.current.renderedMarkdown === value) {
+    if (gate.current.renderedMarkdown === editorValue) {
       // The canonical value already arrived through the current editor's
       // transaction and passed assessWritingMutation before it was committed.
       // Carry that proof to the new canonical identity instead of treating an
@@ -1074,29 +1175,20 @@ export function WritingEditor({
       if (!sameWritingCapabilityProof(writingProofRef.current, writingProof)) {
         if (capabilityRef.current) {
           writingProofRef.current = writingProof;
-          reportCapability({ kind: "lossless", editable: true }, true, value, writingProof);
+          reportCapability({ kind: "lossless", editable: true }, true, editorValue, writingProof);
         } else {
-          synchronizeEditorValue(value, true, writingProof);
+          synchronizeEditorValue(editorValue, true, writingProof);
         }
       }
       return;
     }
-    synchronizeEditorValue(value, false, writingProof);
-  }, [value, writingProof]);
+    synchronizeEditorValue(editorValue, false, writingProof);
+  }, [editorValue, writingProof]);
 
   useEffect(() => { applyPendingCommand(); }, [command?.id]);
   useEffect(() => { applyPendingInsert(); }, [insertPayload?.id]);
 
-  useEffect(() => {
-    if (headingNavigation === undefined) return;
-    editorRef.current?.action((ctx) => {
-      const view = ctx.get(editorViewCtx);
-      const heading = view.dom.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")[headingNavigation.index];
-      if (!heading) return;
-      heading.scrollIntoView({ block: "center" });
-      view.focus();
-    });
-  }, [headingNavigation]);
+  useEffect(() => { applyHeadingNavigation(); }, [headingNavigation?.id]);
 
   useEffect(() => {
     const becameEditable = previousReadOnlyRef.current && !readOnly;
@@ -1105,7 +1197,7 @@ export function WritingEditor({
       const view = ctx.get(editorViewCtx);
       markPerf(PERF_MARKS.writingEnableStart, {}, true);
       measurePerf(PERF_MEASURES.proofToEnable, PERF_MARKS.roundtripProofEnd, PERF_MARKS.writingEnableStart, {}, true);
-      view.setProps({ editable: () => !readOnlyRef.current });
+      view.setProps({ editable: () => !readOnlyRef.current && capabilityRef.current });
       markAndMeasurePerf(PERF_MARKS.writingEnableEnd, PERF_MEASURES.writingEnable, PERF_MARKS.writingEnableStart, {}, true);
       // Writing starts read-only until its lossless round-trip proof is
       // available. With a lazy mount, that transition happens after the fast
@@ -1138,8 +1230,39 @@ export function WritingEditor({
     });
   };
 
+  const handleWindowedKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!windowPlanRef.current || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key === "a" && !event.shiftKey && onSelectWholeNote) {
+      event.preventDefault();
+      onSelectWholeNote();
+    } else if (key === "f" && !event.shiftKey && onSearchWholeNote) {
+      event.preventDefault();
+      onSearchWholeNote();
+    } else if (key === "z" && event.shiftKey && onRedoWholeNote) {
+      event.preventDefault();
+      onRedoWholeNote();
+    } else if ((key === "y" || key === "z") && !event.shiftKey) {
+      const action = key === "y" ? onRedoWholeNote : onUndoWholeNote;
+      if (action) { event.preventDefault(); action(); }
+    }
+  };
+
   return <>
-    <div className={`milkdown-writing${readOnly ? " is-readonly" : ""}`} ref={host} onClick={handleClick} aria-label="Writing editor" />
+    {windowPlan ? <nav className="writing-window-nav" aria-label="Writing sections">
+      <span>Editing part {activeWindowIndex + 1} of {windowPlan.windows.length}</span>
+      <select
+        aria-label="Editing section"
+        value={activeWindowIndex}
+        onChange={(event) => { setLinkDialog(undefined); setActiveWindowIndex(Number(event.target.value)); }}
+      >
+        {windowPlan.windows.map((window, index) => <option key={index} value={index}>{index + 1}. {window.label}</option>)}
+      </select>
+      <button type="button" disabled={activeWindowIndex === 0} onClick={() => setActiveWindowIndex(activeWindowIndex - 1)}>Previous</button>
+      <button type="button" disabled={activeWindowIndex === windowPlan.windows.length - 1} onClick={() => setActiveWindowIndex(activeWindowIndex + 1)}>Next</button>
+      <span title="Whole-note selection and search open Source mode">Whole-note tools: Source</span>
+    </nav> : null}
+    <div className={`milkdown-writing${readOnly ? " is-readonly" : ""}`} ref={host} onClick={handleClick} onKeyDownCapture={handleWindowedKeyDown} aria-label="Writing editor" />
     <LinkDialogModal
       isOpen={linkDialog !== undefined}
       initialValue={linkDialog?.initialValue ?? ""}

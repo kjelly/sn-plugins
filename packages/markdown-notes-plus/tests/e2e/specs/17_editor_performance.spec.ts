@@ -25,6 +25,7 @@ type LoadSample = {
   cacheMode: CacheMode;
   run: number;
   phases: Record<string, number>;
+  marks: Array<{ name: string; startTime: number }>;
   longTasks: number[];
 };
 
@@ -224,7 +225,14 @@ async function runLoadSample(browser: Browser, fixture: Fixture, cacheMode: Cach
     expect(interactive!.startTime).toBeGreaterThanOrEqual(enabled!.startTime);
     expect(interactive!.startTime).toBeGreaterThanOrEqual(focused!.startTime);
     expect(JSON.stringify(trace)).not.toContain(fixture.markdown.slice(0, 64));
-    const sample = { fixture: fixture.id, cacheMode, run, phases, longTasks };
+    const sample = {
+      fixture: fixture.id,
+      cacheMode,
+      run,
+      phases,
+      marks: trace.marks.map(({ name, startTime }) => ({ name, startTime })),
+      longTasks,
+    };
     validateLoadSample(sample, `${fixture.id}/${cacheMode}/${run}`);
     return sample;
   } finally {
@@ -424,7 +432,7 @@ test.describe("editor performance contract", () => {
 
     if (process.env.PERF_RESUME === "1") {
       const previous = JSON.parse(await readFile(output, "utf8")) as Record<string, unknown>;
-      expect(previous.schemaVersion, "Resume schema must match").toBe(4);
+      expect(previous.schemaVersion, "Resume schema must match").toBe(5);
       expect(previous.commit, "Resume commit must match").toBe(commit);
       expect(previous.baselineSha, "Resume baseline SHA must match").toBe(baselineSha);
       expect(previous.formal, "Resume mode must match").toBe(!smoke);
@@ -448,7 +456,7 @@ test.describe("editor performance contract", () => {
       const metrics = buildMetrics(loadSamples, typingSamples);
       const fullProofCount = typingSamples.reduce((total, sample) => total + sample.phases.mutation_proof_ms.length, 0);
       const report = {
-        schemaVersion: 4,
+        schemaVersion: 5,
         generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
         kind: "browser-benchmark",
         formal: !smoke,

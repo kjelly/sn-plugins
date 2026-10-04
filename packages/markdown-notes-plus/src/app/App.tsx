@@ -637,7 +637,7 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
         measurePerf(PERF_MEASURES.transactionToCanonical, PERF_MARKS.transactionStart, PERF_MARKS.canonicalCommitEnd, performanceMetadata);
       }
       if (applied) markAndMeasurePerf(PERF_MARKS.projectionSchedule, PERF_MEASURES.projectionSchedule, PERF_MARKS.canonicalCommitEnd, performanceMetadata);
-      return;
+      return applied;
     }
     applied = appLifecycle.applyWritingLocalIfCurrent(proof, writingResetEpoch, next, changeSet);
     if (applied) bridge.notifyLocalChange(canonical.text);
@@ -647,6 +647,7 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
       measurePerf(PERF_MEASURES.transactionToCanonical, PERF_MARKS.transactionStart, PERF_MARKS.canonicalCommitEnd, performanceMetadata);
     }
     if (applied) markAndMeasurePerf(PERF_MARKS.projectionSchedule, PERF_MEASURES.projectionSchedule, PERF_MARKS.canonicalCommitEnd, performanceMetadata);
+    return applied;
   };
   const handleWritingCapabilityChange = useCallback((result: WritingRoundTripResult, proofSource?: string, proof?: WritingCapabilityProof) => {
     const current = canonical.snapshot();
@@ -1009,7 +1010,7 @@ export function App({ runtime }: { runtime: EditorRuntime }) {
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen(true)} title="Command & Navigation Palette (Ctrl+P)">Palette</button>
           <span className="slash-hint">Type / for commands</span>
           {writingVisible ? <StatusInfo currentSection={currentSection} snapshot={snapshot} sourceFallbackText={sourceFallbackText} writingCapability={writingCapability} writingVisible={writingVisible} bridgeState={bridgeState} /> : null}
-          </div><ErrorBoundary>{snapshot.resetGeneration > 0 ? <React.Suspense fallback={<pre className="writing-loading-preview" aria-label="Note preview while Writing editor loads">{snapshot.text}</pre>}><LazyWritingEditor key={writingResetEpoch} value={snapshot.text} readOnly={writingReadOnly} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof, performanceSequence) => edit(next, undefined, proof, performanceSequence)} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, result, proof) => {
+          </div><ErrorBoundary>{snapshot.resetGeneration > 0 ? <React.Suspense fallback={<pre className="writing-loading-preview" aria-label="Note preview while Writing editor loads">{snapshot.text}</pre>}><LazyWritingEditor key={writingResetEpoch} value={snapshot.text} headings={headings} readOnly={writingReadOnly || !writingVisible} writingProof={{ documentInstanceId: canonical.token.instanceId, documentRevision: canonical.token.revision, documentGeneration: snapshot.resetGeneration, editorGeneration: writingResetEpoch }} onChange={(next, proof, performanceSequence) => edit(next, undefined, proof, performanceSequence)} onSelectWholeNote={() => { pendingJump.current = { from: 0, to: canonical.text.length }; requestMode("source"); }} onSearchWholeNote={() => { requestSourceSearch(); requestMode("source"); }} onUndoWholeNote={() => localHistoryMutation(() => canonical.undo())} onRedoWholeNote={() => localHistoryMutation(() => canonical.redo())} command={writingCommand} insertPayload={insertPayload} headingNavigation={writingHeadingNavigation} library={library} deadlineDay={todayKey} onCapabilityChange={handleWritingCapabilityChange} onLosslessFallback={(markdown, result, proof) => {
           const currentProof = canonical.snapshot();
           if (proof.documentInstanceId !== canonical.token.instanceId ||
             proof.documentRevision !== canonical.token.revision ||

@@ -10,6 +10,8 @@ import type { OutlineDragState } from "./OutlineDragState.ts";
 import { siblingSections } from "../markdown/analysis.ts";
 import { captureOutlinePointer, createOutlineDragActivationGate, isOutlineDragPointer, outlineDropPlacement, outlineRowAnchorAtPoint } from "./OutlinePointerDrag.ts";
 
+const OUTLINE_PAGE_SIZE = 200;
+
 export type OutlinePanelProps = {
   analysis: MarkdownAnalysis;
   activeSectionAnchor?: number;
@@ -55,6 +57,8 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
 }) => {
   const [dragState, setDragState] = useState<OutlineDragState | undefined>();
   const [draggingAnchor, setDraggingAnchor] = useState<number>();
+  const [outlineQuery, setOutlineQuery] = useState("");
+  const [outlinePage, setOutlinePage] = useState(0);
   const dragStateRef = useRef<OutlineDragState | undefined>(dragState);
   const dragSessionRef = useRef<{
     anchor: number;
@@ -78,6 +82,13 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
   moveAfterRef.current = onMoveSubtreeAfter;
 
   const visibleHeadings = useMemo(() => getVisibleOutlineHeadings(analysis, collapsedAnchors), [analysis, collapsedAnchors]);
+  const filteredHeadings = useMemo(() => {
+    const query = outlineQuery.trim().toLocaleLowerCase();
+    return query ? visibleHeadings.filter((heading) => heading.text.toLocaleLowerCase().includes(query)) : visibleHeadings;
+  }, [visibleHeadings, outlineQuery]);
+  const pageCount = Math.max(1, Math.ceil(filteredHeadings.length / OUTLINE_PAGE_SIZE));
+  const currentPage = Math.min(outlinePage, pageCount - 1);
+  const renderedHeadings = filteredHeadings.slice(currentPage * OUTLINE_PAGE_SIZE, (currentPage + 1) * OUTLINE_PAGE_SIZE);
   const collapsibleAnchors = useMemo(() => getAllCollapsibleAnchors(analysis), [analysis]);
   const collapsibleAnchorSet = useMemo(() => new Set(collapsibleAnchors), [collapsibleAnchors]);
   const sectionFacts = useMemo(() => buildOutlineSectionFacts(analysis), [analysis]);
@@ -228,9 +239,22 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
         ) : null}
       </div>
 
-      {visibleHeadings.length ? (
+      {visibleHeadings.length > OUTLINE_PAGE_SIZE ? <div className="outline-page-controls">
+        <input
+          type="search"
+          aria-label="Find outline heading"
+          placeholder="Find heading…"
+          value={outlineQuery}
+          onChange={(event) => { setOutlineQuery(event.target.value); setOutlinePage(0); }}
+        />
+        <button type="button" disabled={currentPage === 0} onClick={() => setOutlinePage(currentPage - 1)}>Previous page</button>
+        <span>{currentPage + 1} / {pageCount}</span>
+        <button type="button" disabled={currentPage >= pageCount - 1} onClick={() => setOutlinePage(currentPage + 1)}>Next page</button>
+      </div> : null}
+
+      {renderedHeadings.length ? (
         <ol className="outline-list" ref={listRef}>
-          {visibleHeadings.map((heading) => {
+          {renderedHeadings.map((heading) => {
             const isCollapsed = collapsedAnchors.has(heading.from);
             const hasChildren = collapsibleAnchorSet.has(heading.from);
             const isActive = activeSectionAnchor === heading.from;
@@ -266,7 +290,7 @@ export const OutlinePanel: React.FC<OutlinePanelProps> = ({
           })}
         </ol>
       ) : (
-        <p className="empty-hint">No headings yet.</p>
+        <p className="empty-hint">{visibleHeadings.length ? "No matching headings." : "No headings yet."}</p>
       )}
     </section>
   );

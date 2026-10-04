@@ -164,6 +164,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .current-section:empty { display: none; }
 .status { font-size: .75rem; padding: 1px 6px; border-radius: 3px; background: color-mix(in srgb, var(--editor-fg) 6%, transparent); color: var(--editor-muted); white-space: nowrap; flex-shrink: 0; }
 .milkdown-writing { flex: 1 1 auto; min-height: 0; height: calc(100% - 32px); padding: 8px 14px; overflow: auto; cursor: text; line-height: 1.36; }
+.writing-window-nav { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 4px 12px; border-bottom: 1px solid var(--editor-border); color: var(--editor-muted); font-size: .82rem; }
+.writing-window-nav select { flex: 1 1 auto; min-width: 0; max-width: 420px; padding: 5px 7px; border: 1px solid var(--editor-border); border-radius: 4px; color: var(--editor-fg); background: var(--editor-bg); }
+.writing-window-nav button { min-height: 30px; border: 1px solid var(--editor-border); border-radius: 4px; color: var(--editor-fg); background: var(--editor-bg); cursor: pointer; }
+.writing-window-nav button:disabled { opacity: .5; cursor: default; }
 .milkdown-writing .milkdown { min-height: 100%; cursor: text; }
 .milkdown-writing .editor { outline: 0; min-height: 100%; cursor: text; }
 .milkdown-writing p { margin: 0.25em 0; line-height: 1.36; }
@@ -266,6 +270,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .outline-panel-controls { display: inline-flex; gap: 3px; }
 .outline-panel-controls button { min-height: 20px; padding: 0 5px; font-size: 0.72rem; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--editor-border) 80%, transparent); background: transparent; color: var(--editor-muted); cursor: pointer; }
 .outline-panel-controls button:hover { border-color: var(--editor-accent); color: var(--editor-accent); }
+.outline-page-controls { display: flex; align-items: center; gap: 4px; padding: 5px 0; }
+.outline-page-controls input { flex: 1 1 auto; min-width: 0; padding: 5px; border: 1px solid var(--editor-border); border-radius: 4px; color: var(--editor-fg); background: var(--editor-bg); }
+.outline-page-controls button { flex: 0 0 auto; min-height: 30px; border: 1px solid var(--editor-border); border-radius: 4px; color: var(--editor-fg); background: var(--editor-bg); cursor: pointer; }
+.outline-page-controls button:disabled { opacity: .5; cursor: default; }
+.outline-page-controls span { white-space: nowrap; font-size: .75rem; color: var(--editor-muted); }
+@media (pointer: coarse) { .outline-page-controls input, .outline-page-controls button { min-height: 40px; } }
+html.mobile .outline-page-controls input, html.mobile .outline-page-controls button { min-height: 40px; }
 .outline-panel ol { list-style: none; padding-left: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 2px; }
 .outline-panel li { display: flex; align-items: center; justify-content: space-between; border-radius: 4px; transition: background-color .15s ease; min-height: 26px; }
 .outline-panel li:hover { background: color-mix(in srgb, var(--editor-fg) 5%, transparent); }

@@ -1,4 +1,4 @@
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const STARTUP_MEASURES = [
   "context_to_preview_ms",
   "context_to_app_ms",
