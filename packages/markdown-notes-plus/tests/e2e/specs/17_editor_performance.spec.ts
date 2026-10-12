@@ -342,7 +342,7 @@ async function environment(browser: Browser): Promise<Record<string, string>> {
     arch: process.arch,
     cpu: cpus()[0]?.model ?? "unknown",
     cpuGovernor,
-    deno: "n/a",
+    bun: "n/a",
     v8: process.versions.v8,
     browser: "chromium",
     browserVersion: browser.version(),
@@ -452,7 +452,7 @@ test.describe("editor performance contract", () => {
 
     if (process.env.PERF_RESUME === "1") {
       const previous = JSON.parse(await readFile(output, "utf8")) as Record<string, unknown>;
-      expect(previous.schemaVersion, "Resume schema must match").toBe(6);
+      expect(previous.schemaVersion, "Resume schema must match").toBe(7);
       expect(previous.commit, "Resume commit must match").toBe(commit);
       expect(previous.baselineSha, "Resume baseline SHA must match").toBe(baselineSha);
       expect(previous.formal, "Resume mode must match").toBe(!smoke);
@@ -476,7 +476,7 @@ test.describe("editor performance contract", () => {
       const metrics = buildMetrics(loadSamples, typingSamples);
       const fullProofCount = typingSamples.reduce((total, sample) => total + sample.phases.mutation_proof_ms.length, 0);
       const report = {
-        schemaVersion: 6,
+        schemaVersion: 7,
         generatorVersion: PERF_FIXTURE_GENERATOR_VERSION,
         kind: "browser-benchmark",
         formal: !smoke,

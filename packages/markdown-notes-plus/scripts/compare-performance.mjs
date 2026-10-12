@@ -1,4 +1,9 @@
-const SCHEMA_VERSION = 6;
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const SCHEMA_VERSION = 7;
+const cliArgs = process.argv.slice(2);
 const STARTUP_MEASURES = [
   "context_to_preview_ms",
   "context_to_app_ms",
@@ -34,8 +39,8 @@ function argument(name) {
 
 function argumentsFor(name) {
   const values = [];
-  for (let index = 0; index < Deno.args.length; index += 1) {
-    if (Deno.args[index] === name && Deno.args[index + 1]) values.push(Deno.args[index + 1]);
+  for (let index = 0; index < cliArgs.length; index += 1) {
+    if (cliArgs[index] === name && cliArgs[index + 1]) values.push(cliArgs[index + 1]);
   }
   return values;
 }
@@ -125,7 +130,13 @@ function validateReport(report, path) {
   if (!Array.isArray(report.metrics) || report.metrics.length === 0) throw new Error(`Performance report has no metrics: ${path}`);
   for (const metric of report.metrics) validateMetric(metric, path);
   if (!report.environment || typeof report.environment !== "object") throw new Error(`Performance report is missing environment data: ${path}`);
-  for (const key of ["os", "arch", "cpu", "cpuGovernor", "v8"]) {
+  for (const key of ["os", "arch", "cpu", "cpuGovernor"]) {
+    if (typeof report.environment[key] !== "string" || report.environment[key].length === 0) {
+      throw new Error(`Performance report is missing environment.${key}: ${path}`);
+    }
+  }
+  const engineKeys = report.kind === "microbenchmark" ? ["bun", "javascriptCore"] : ["v8"];
+  for (const key of engineKeys) {
     if (typeof report.environment[key] !== "string" || report.environment[key].length === 0) {
       throw new Error(`Performance report is missing environment.${key}: ${path}`);
     }
@@ -138,19 +149,21 @@ function validateReport(report, path) {
 }
 
 async function run(command, args, cwd, stdout = "inherit") {
-  const child = new Deno.Command(command, { args, cwd, stdout, stderr: "inherit" });
-  if (stdout === "piped") {
-    const result = await child.output();
-    if (!result.success) throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.code}`);
-    return new TextDecoder().decode(result.stdout).trim();
-  }
-  const status = await child.spawn().status;
-  if (!status.success) throw new Error(`${command} ${args.join(" ")} failed with exit code ${status.code}`);
-  return "";
+  const child = Bun.spawn([command, ...args], {
+    cwd,
+    stdout: stdout === "piped" ? "pipe" : stdout === "null" ? "ignore" : "inherit",
+    stderr: "inherit",
+  });
+  const [code, output] = await Promise.all([
+    child.exited,
+    stdout === "piped" ? new Response(child.stdout).text() : Promise.resolve(""),
+  ]);
+  if (code !== 0) throw new Error(`${command} ${args.join(" ")} failed with exit code ${code}`);
+  return output.trim();
 }
 
 async function readReport(path) {
-  const report = JSON.parse(await Deno.readTextFile(path));
+  const report = JSON.parse(await Bun.file(path).text());
   if (report.schemaVersion !== SCHEMA_VERSION || report.generatorVersion !== 1) {
     throw new Error(`Incompatible performance report schema: ${path}`);
   }
@@ -162,7 +175,7 @@ async function readReport(path) {
 }
 
 function validateEnvironment(base, head) {
-  for (const key of ["os", "arch", "cpu", "cpuGovernor", "deno", "v8", "browser", "browserVersion"]) {
+  for (const key of ["os", "arch", "cpu", "cpuGovernor", "bun", "javascriptCore", "v8", "browser", "browserVersion"]) {
     if (base.environment[key] !== head.environment[key]) {
       throw new Error(`Environment mismatch for ${key}: ${base.environment[key]} != ${head.environment[key]}`);
     }
@@ -282,15 +295,15 @@ if (baseReportPaths.length > 0 || headReportPaths.length > 0) {
   const base = argument("--base");
   const head = argument("--head");
   if (!base || !head) throw new Error("Use --base <sha> --head <sha> or --base-report <file> --head-report <file>");
-  const repositoryRoot = await run("git", ["rev-parse", "--show-toplevel"], Deno.cwd(), "piped");
+  const repositoryRoot = await run("git", ["rev-parse", "--show-toplevel"], process.cwd(), "piped");
   const specPath = `${repositoryRoot}/docs/MARKDOWN_NOTES_PLUS_PERFORMANCE_PLAN.md`;
-  const spec = await Deno.readTextFile(specPath);
+  const spec = await Bun.file(specPath).text();
   if (spec.includes("PENDING_PHASE_0_HARNESS_SHA")) {
     throw new Error(
       "docs/MARKDOWN_NOTES_PLUS_PERFORMANCE_PLAN.md still contains PENDING_PHASE_0_HARNESS_SHA; create and record the harness-only baseline commit first",
     );
   }
-  const temporaryRoot = await Deno.makeTempDir({ prefix: "markdown-notes-perf-" });
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "markdown-notes-perf-"));
   cleanup = async () => {
     for (const label of ["base", "head"]) {
       try {
@@ -300,7 +313,7 @@ if (baseReportPaths.length > 0 || headReportPaths.length > 0) {
       }
     }
     try {
-      await Deno.remove(temporaryRoot, { recursive: true });
+      await rm(temporaryRoot, { recursive: true });
     } catch {
       // Reports are copied before cleanup; a failed temp cleanup is non-fatal.
     }
@@ -317,10 +330,10 @@ if (baseReportPaths.length > 0 || headReportPaths.length > 0) {
     baseReports = await Promise.all(paths.base.map(readReport));
     headReports = await Promise.all(paths.head.map(readReport));
     const artifactDirectory = argument("--artifact-dir") ?? `${repositoryRoot}/packages/markdown-notes-plus/artifacts/performance`;
-    await Deno.mkdir(artifactDirectory, { recursive: true });
+    await mkdir(artifactDirectory, { recursive: true });
     for (const label of ["base", "head"]) {
       for (let index = 0; index < paths[label].length; index += 1) {
-        await Deno.copyFile(paths[label][index], `${artifactDirectory}/${label}-${String(label === "base" ? base : head).slice(0, 12)}-batch-${index + 1}.json`);
+        await copyFile(paths[label][index], `${artifactDirectory}/${label}-${String(label === "base" ? base : head).slice(0, 12)}-batch-${index + 1}.json`);
       }
     }
     baseIdentity = base;
@@ -345,6 +358,6 @@ const report = {
   metrics,
 };
 const output = argument("--output") ?? `artifacts/performance/compare-${String(baseIdentity).slice(0, 12)}-${String(headIdentity).slice(0, 12)}.json`;
-await Deno.mkdir(output.slice(0, Math.max(0, output.lastIndexOf("/"))) || ".", { recursive: true });
-await Deno.writeTextFile(output, `${JSON.stringify(report, null, 2)}\n`);
+await mkdir(output.slice(0, Math.max(0, output.lastIndexOf("/"))) || ".", { recursive: true });
+await Bun.write(output, `${JSON.stringify(report, null, 2)}\n`);
 console.log(output);

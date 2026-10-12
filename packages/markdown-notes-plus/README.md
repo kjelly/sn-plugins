@@ -8,7 +8,7 @@ This package is a Vite-built React Standard Notes editor. The runtime entry is
 `src/main.tsx`; `EditorKitBridge` is the only package-owned host transport/save,
 lock, and theme notification owner and uses the pinned
 `@standardnotes/editor-kit` API. The old relay implementation remains in
-`src/index.ts` only for legacy Deno compatibility tests and is not mounted by
+`src/index.ts` only for legacy compatibility tests and is not mounted by
 the runtime entry point; the React runtime imports only the named analysis
 exports it needs.
 
@@ -97,7 +97,7 @@ mise exec -- node --check dist/assets/<generated-index>.js
 ```
 
 All documented test entry points are Mise tasks; use `mise tasks ls` to list
-them. `mise run test:unit` intentionally runs the existing Deno compatibility/projection
+them. `mise run test:unit` intentionally runs the existing Bun compatibility/projection
 regression suite. It does not claim full browser or Standard Notes host
 integration coverage.
 

@@ -1,4 +1,5 @@
-/// <reference lib="deno.ns" />
+import { test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -36,7 +37,7 @@ async function waitForManifest(url: string): Promise<Record<string, unknown>> {
   throw new Error(lastError);
 }
 
-async function stopVite(child: Deno.ChildProcess, status: Promise<Deno.CommandStatus>): Promise<void> {
+async function stopVite(child: ReturnType<typeof Bun.spawn>, status: Promise<number>): Promise<void> {
   try {
     child.kill("SIGTERM");
   } catch {
@@ -45,13 +46,14 @@ async function stopVite(child: Deno.ChildProcess, status: Promise<Deno.CommandSt
   await status;
 }
 
-Deno.test("Vite dev serves the package-root extension manifest", async () => {
-  const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 });
-  const port = (listener.addr as Deno.NetAddr).port;
-  listener.close();
+test("Vite dev serves the package-root extension manifest", async () => {
+  const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = listener.port;
+  listener.stop(true);
 
-  const child = new Deno.Command("node", {
-    args: [
+  const child = Bun.spawn(
+    [
+      "node",
       "node_modules/vite/bin/vite.js",
       "--config",
       "vite.config.ts",
@@ -61,11 +63,13 @@ Deno.test("Vite dev serves the package-root extension manifest", async () => {
       String(port),
       "--strictPort",
     ],
-    cwd: new URL("..", import.meta.url),
-    stdout: "null",
-    stderr: "inherit",
-  }).spawn();
-  const status = child.status;
+    {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      stdout: "ignore",
+      stderr: "inherit",
+    },
+  );
+  const status = child.exited;
 
   try {
     const manifest = await waitForManifest(`http://127.0.0.1:${port}/ext.json`);

@@ -31,7 +31,7 @@ The editor lives in its own package directory at
 `packages/markdown-notes-plus/`. It keeps the repository
 builder generic, so additional plugins can be added as sibling directories.
 The editor package currently builds a React/Vite runtime with EditorKit,
-Milkdown, CodeMirror 6, and Markmap. Its Deno test command remains a focused
+Milkdown, CodeMirror 6, and Markmap. Its Bun test command remains a focused
 projection/legacy-compatibility suite; Standard Notes Web/Desktop/mobile host
 integration and complete CommonMark/GFM behavior are not claimed.
 
@@ -156,8 +156,9 @@ mise run test:verify
 
 Individual checks are available through `mise tasks ls`, for example
 `mise run test:unit`, `mise run test:integration`, and
-`mise run test:e2e:release`. `mise.lock`, `package-lock.json`, and `deno.lock`
-pin the corresponding runtime and package dependency graphs.
+`mise run test:e2e:release`. `mise.lock` and `package-lock.json`
+pin the corresponding runtime and package dependency graphs. Bun runs the
+TypeScript tests and performance scripts; ESLint checks the source and tests.
 
 ```bash
 mise exec -- python3 scripts/build.py \
@@ -218,7 +219,7 @@ mise run test:e2e:release
 mise run build
 ```
 
-`mise run test:unit` is intentionally Deno-based for the existing projection and relay
+`mise run test:unit` is intentionally Bun-based for the existing projection and relay
 compatibility regressions; it is not full browser/host acceptance.
 
 ## Important security note

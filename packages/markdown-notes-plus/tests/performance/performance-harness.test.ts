@@ -1,3 +1,4 @@
+import { test } from "bun:test";
 import { PERF_MARKS, PERF_MEASURES } from "../../src/performance/PerfNames.ts";
 import {
   beginDocumentPerfTraceForText,
@@ -27,7 +28,7 @@ function assertNotEquals<T>(actual: T, expected: T): void {
   }
 }
 
-Deno.test("performance fixtures are deterministic and report exact core byte sizes", () => {
+test("performance fixtures are deterministic and report exact core byte sizes", () => {
   const first = allPerfFixtures();
   const second = allPerfFixtures();
   assertEquals(first, second);
@@ -42,7 +43,7 @@ Deno.test("performance fixtures are deterministic and report exact core byte siz
   }
 });
 
-Deno.test("complexity fixtures provide three monotonically growing scales", () => {
+test("complexity fixtures provide three monotonically growing scales", () => {
   const groups = new Map<string, number[]>();
   for (const fixture of complexityPerfFixtures()) {
     const family = fixture.id.replace(/(?:\d+x?|[\d_]+)$/, "");
@@ -56,7 +57,7 @@ Deno.test("complexity fixtures provide three monotonically growing scales", () =
   }
 });
 
-Deno.test("performance trace resets generations and measures matching marks without content", () => {
+test("performance trace resets generations and measures matching marks without content", () => {
   setPerfTraceEnabledForTests(true);
   try {
     markPerf(PERF_MARKS.mountAppStart, {}, true);
@@ -87,7 +88,7 @@ Deno.test("performance trace resets generations and measures matching marks with
   }
 });
 
-Deno.test("performance trace records only-once lifecycle marks once per generation", () => {
+test("performance trace records only-once lifecycle marks once per generation", () => {
   setPerfTraceEnabledForTests(true);
   try {
     beginDocumentPerfTraceForText("text");
@@ -100,7 +101,7 @@ Deno.test("performance trace records only-once lifecycle marks once per generati
   }
 });
 
-Deno.test("performance trace associates typing measurements with one explicit transaction sequence", () => {
+test("performance trace associates typing measurements with one explicit transaction sequence", () => {
   setPerfTraceEnabledForTests(true);
   try {
     beginDocumentPerfTraceForText("text");
@@ -129,7 +130,7 @@ Deno.test("performance trace associates typing measurements with one explicit tr
   }
 });
 
-Deno.test("performance trace records accumulated startup work once per document", () => {
+test("performance trace records accumulated startup work once per document", () => {
   setPerfTraceEnabledForTests(true);
   try {
     beginDocumentPerfTraceForText("first");

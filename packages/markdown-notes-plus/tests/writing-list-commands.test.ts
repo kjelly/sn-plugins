@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import { EditorState, Selection, type Transaction } from "@milkdown/prose/state";
 import { Schema, type Node as ProseNode } from "@milkdown/prose/model";
@@ -24,7 +24,7 @@ const schema = new Schema({
   },
 });
 
-Deno.test("WritingListCommands - detects first item move up is false", () => {
+test("WritingListCommands - detects first item move up is false", () => {
   const doc = schema.nodes.doc.create(null, [
     schema.nodes.bullet_list.create(null, [
       schema.nodes.list_item.create(null, schema.nodes.paragraph.create(null, schema.text("Item 1"))),
@@ -44,7 +44,7 @@ Deno.test("WritingListCommands - detects first item move up is false", () => {
   assertEquals(dispatched, false);
 });
 
-Deno.test("WritingListCommands - moves middle item up and down", () => {
+test("WritingListCommands - moves middle item up and down", () => {
   const doc = schema.nodes.doc.create(null, [
     schema.nodes.bullet_list.create(null, [
       schema.nodes.list_item.create(null, schema.nodes.paragraph.create(null, schema.text("Item 1"))),

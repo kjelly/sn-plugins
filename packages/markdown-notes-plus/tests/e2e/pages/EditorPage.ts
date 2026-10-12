@@ -224,15 +224,15 @@ export class EditorPage {
     await expect(dialog).toBeHidden();
   }
 
-  async closeSidebar(): Promise<void> {
+  async closeSidebar(options: { timeout?: number } = {}): Promise<void> {
     await this.dismissWritingNormalizationIfVisible();
     if (!(await this.frame.locator(".sidebar-pane.open").isVisible())) return;
 
     const closeButton = this.frame.locator(".sidebar-close-btn:visible").first();
     if (await closeButton.isVisible()) {
-      await closeButton.click();
+      await closeButton.click(options);
     } else {
-      await this.sidebarToggleBtn.click();
+      await this.sidebarToggleBtn.click(options);
     }
     await expect(this.frame.locator(".sidebar-pane.open")).not.toBeVisible();
   }
@@ -266,7 +266,9 @@ export class EditorPage {
       const dialog = this.frame.getByRole("dialog", { name: "Writing edit needs Source confirmation" });
       if (!(await dialog.isVisible().catch(() => false))) return false;
       await dialog.getByRole("button", { name: "前往 Source 並保留輸入" }).click();
+      await expect(dialog).not.toBeVisible();
       await expect(this.sourceEditor).toBeVisible();
+      await this.closeSidebar();
       return true;
     };
 
@@ -275,7 +277,9 @@ export class EditorPage {
     // Closing it models the real user interaction and avoids force-clicking
     // through an overlay that Standard Notes users cannot bypass.
     try {
-      await this.closeSidebar();
+      // A pending Writing mutation can open its confirmation dialog after
+      // the initial check. Leave time for the catch below to confirm Source.
+      await this.closeSidebar(mode === "Source" ? { timeout: 2000 } : {});
       const modeButton = this.frame.locator(".mode-buttons:visible").getByRole("button", { name: mode }).first();
       if (await modeButton.getAttribute("class") !== "active") {
         try {

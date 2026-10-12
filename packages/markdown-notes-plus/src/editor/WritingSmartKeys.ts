@@ -14,7 +14,7 @@ export function createWritingSmartKeysPlugin(): Plugin {
   return new Plugin({
     key: writingSmartKeysPluginKey,
     props: {
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handleKeyDown(view: any, event: KeyboardEvent) {
         if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
           const { state } = view;
@@ -71,7 +71,7 @@ export function createWritingSmartKeysPlugin(): Plugin {
               if (parent.type.name === "code_block" && parent.content.size === 0) {
                 const pType = state.schema.nodes.paragraph;
                 if (pType) {
-                  // deno-lint-ignore no-explicit-any
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   (setBlockType(pType) as any)(state, (tr: any) => {
                     tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "heading" });
                     dispatch(tr);

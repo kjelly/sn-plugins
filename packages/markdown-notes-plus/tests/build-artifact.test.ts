@@ -1,7 +1,4 @@
-declare const Deno: {
-  test(name: string, fn: () => void | Promise<void>): void;
-  readTextFile(path: string | URL): Promise<string>;
-};
+import { test } from "bun:test";
 
 import { EDITOR_CSP_POLICY, MERMAID_RENDERER_CSP_POLICY } from "../src/security/csp.ts";
 
@@ -15,11 +12,11 @@ const rendererArtifactPaths = [
   new URL("../../../dist-pages/static/markdown-notes-plus/dist/mermaid-renderer.html", import.meta.url),
 ];
 
-Deno.test("production editor artifacts carry the shared CSP meta policy", async () => {
+test("production editor artifacts carry the shared CSP meta policy", async () => {
   const metaPattern = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/;
   const policies = [] as string[];
   for (const path of artifactPaths) {
-    const html = await Deno.readTextFile(path);
+    const html = await Bun.file(path).text();
     const match = html.match(metaPattern);
     if (!match) throw new Error(`Missing CSP meta in ${path.pathname}`);
     policies.push(match[1]);
@@ -33,10 +30,10 @@ Deno.test("production editor artifacts carry the shared CSP meta policy", async 
   }
 });
 
-Deno.test("production Mermaid renderer artifacts have a network-denying isolated CSP", async () => {
+test("production Mermaid renderer artifacts have a network-denying isolated CSP", async () => {
   const metaPattern = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/;
   for (const path of rendererArtifactPaths) {
-    const html = await Deno.readTextFile(path);
+    const html = await Bun.file(path).text();
     const match = html.match(metaPattern);
     if (!match) throw new Error(`Missing renderer CSP meta in ${path.pathname}`);
     if (match[1] !== MERMAID_RENDERER_CSP_POLICY) {
@@ -48,13 +45,13 @@ Deno.test("production Mermaid renderer artifacts have a network-denying isolated
   }
 });
 
-Deno.test("production editor keeps a small bridge shell and defers editor UI chunks", async () => {
+test("production editor keeps a small bridge shell and defers editor UI chunks", async () => {
   const entryPattern = /<script type="module" crossorigin src="\.\/assets\/(index-[^"]+\.js)"><\/script>/;
   const mountChunkPattern = /import\("\.\/(mountApp-[^"]+\.js)"\)/;
   const deferredChunkPattern = /import\("\.\/(SourceEditor|MindMapView|WritingEditor|FlashcardView)-[^"]+\.js"\)/g;
 
   for (const path of artifactPaths) {
-    const html = await Deno.readTextFile(path);
+    const html = await Bun.file(path).text();
     const entryMatch = html.match(entryPattern);
     if (!entryMatch) throw new Error(`Missing production entry script in ${path.pathname}`);
     if (/modulepreload[^>]+(?:mountApp|SourceEditor|MindMapView|WritingEditor|FlashcardView)-/.test(html)) {
@@ -62,11 +59,11 @@ Deno.test("production editor keeps a small bridge shell and defers editor UI chu
     }
 
     const entryUrl = new URL(`./assets/${entryMatch[1]}`, path);
-    const entry = await Deno.readTextFile(entryUrl);
+    const entry = await Bun.file(entryUrl).text();
     const mountMatch = entry.match(mountChunkPattern);
     if (!mountMatch) throw new Error(`Bridge shell must dynamically import the React app in ${entryUrl.pathname}`);
     const mountUrl = new URL(`./assets/${mountMatch[1]}`, path);
-    const mountChunk = await Deno.readTextFile(mountUrl);
+    const mountChunk = await Bun.file(mountUrl).text();
     const deferredChunks = new Set([...mountChunk.matchAll(deferredChunkPattern)].map((match) => match[1]));
     for (const expected of ["SourceEditor", "MindMapView", "WritingEditor", "FlashcardView"]) {
       if (!deferredChunks.has(expected)) throw new Error(`${expected} must remain a dynamic import in ${mountUrl.pathname}`);

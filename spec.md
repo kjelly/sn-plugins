@@ -12,7 +12,7 @@
 - `FlashcardSession` owns in-memory study state such as reveal, current card, shuffle, Known, and Again. It does not persist scheduling or learning history.
 - No Milkdown schema changes and no Writing-mode source conversion are required.
 
-**Tech Stack:** TypeScript, React 18, remark 15, remark-gfm 4, existing Markdown analysis utilities, Standard Notes EditorKit bridge, Deno tests, Playwright E2E.
+**Tech Stack:** TypeScript, React 18, remark 15, remark-gfm 4, existing Markdown analysis utilities, Standard Notes EditorKit bridge, Bun tests, Playwright E2E.
 
 ## Scope
 

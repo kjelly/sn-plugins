@@ -159,7 +159,7 @@ export function buildFoldingDecorations(
  */
 export function createWritingFoldingPlugin(
   onToggleFold?: (pos: number) => void,
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Plugin<any> {
   const gutterHeading = (event: MouseEvent, view: EditorView): HTMLElement | undefined => {
     const target = event.target;
@@ -178,7 +178,7 @@ export function createWritingFoldingPlugin(
     value: DecorationSet;
   } | undefined;
   return new Plugin({
-    // deno-lint-ignore no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     key: writingFoldingPluginKey as any,
     state: {
       init() {
@@ -250,7 +250,7 @@ export function createWritingFoldingPlugin(
           return true;
         },
       },
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       decorations(state: any): any {
         const pluginState = writingFoldingPluginKey.getState(state);
         if (!pluginState) return DecorationSet.empty;

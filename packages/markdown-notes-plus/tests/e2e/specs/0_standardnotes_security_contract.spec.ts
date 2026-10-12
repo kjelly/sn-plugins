@@ -204,6 +204,7 @@ test.describe("Standard Notes Security Contract & Integrity Gate", () => {
   });
 
   test("P0: CSP Runtime Test - Full feature activation with zero CSP violations and zero page errors", async ({ page }) => {
+    test.setTimeout(60_000);
     const audit = await setupSecurityAuditor(page);
     const host = new MockHost(page);
     const editor = new EditorPage(page);

@@ -27,7 +27,7 @@ export function findMarkdownLinkAtOffset(lineText: string, offsetInLine: number)
   }
 
   // 3. Check bare URLs: https?://...
-  const bareUrlRegex = /https?:\/\/[^\s\)]+/g;
+  const bareUrlRegex = /https?:\/\/[^\s)]+/g;
   while ((match = bareUrlRegex.exec(lineText)) !== null) {
     const start = match.index;
     const end = start + match[0].length;

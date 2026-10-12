@@ -1,14 +1,16 @@
+import { mkdir, readdir } from "node:fs/promises";
 import { analyzeMarkdown } from "../src/markdown/analysis.ts";
 import { scanWritingNormalization } from "../src/markdown/writingNormalization.ts";
 import { analyzeKanban } from "../src/kanban/KanbanModel.ts";
 import { allPerfFixtures, PERF_FIXTURE_GENERATOR_VERSION } from "../tests/performance/perfFixtures.ts";
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const MIN_SAMPLE_DURATION_MS = 100;
+const cliArgs = process.argv.slice(2);
 
 function argument(name, fallback) {
-  const index = Deno.args.indexOf(name);
-  return index >= 0 && Deno.args[index + 1] ? Deno.args[index + 1] : fallback;
+  const index = cliArgs.indexOf(name);
+  return index >= 0 && cliArgs[index + 1] ? cliArgs[index + 1] : fallback;
 }
 
 function nearestRank(values, percentile) {
@@ -63,32 +65,33 @@ function benchmark(operation, warmups, runs) {
 }
 
 async function commandOutput(command, args) {
-  const output = await new Deno.Command(command, { args, stdout: "piped", stderr: "null" }).output();
-  return output.success ? new TextDecoder().decode(output.stdout).trim() : "unknown";
+  const child = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "ignore" });
+  const [code, output] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+  return code === 0 ? output.trim() : "unknown";
 }
 
 async function environment() {
   const warnings = [];
-  let cpu = Deno.env.get("PERF_CPU_MODEL") ?? "unknown";
+  let cpu = process.env.PERF_CPU_MODEL ?? "unknown";
   try {
-    const info = await Deno.readTextFile("/proc/cpuinfo");
+    const info = await Bun.file("/proc/cpuinfo").text();
     cpu = info.match(/^model name\s*:\s*(.+)$/m)?.[1] ?? cpu;
   } catch (error) {
     warnings.push(`cpu:${error instanceof Error ? error.message : String(error)}`);
   }
-  let governor = Deno.env.get("PERF_CPU_GOVERNOR") ?? "unknown";
+  let governor = process.env.PERF_CPU_GOVERNOR ?? "unknown";
   try {
-    governor = (await Deno.readTextFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")).trim();
+    governor = (await Bun.file("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").text()).trim();
   } catch (error) {
     warnings.push(`cpuGovernor:${error instanceof Error ? error.message : String(error)}`);
   }
   return {
-    os: Deno.build.os,
-    arch: Deno.build.arch,
+    os: process.platform,
+    arch: process.arch,
     cpu,
     cpuGovernor: governor,
-    deno: Deno.version.deno,
-    v8: Deno.version.v8,
+    bun: Bun.version,
+    javascriptCore: process.versions.webkit,
     warnings,
   };
 }
@@ -96,14 +99,14 @@ async function environment() {
 async function bundleSizes() {
   const sizes = [];
   try {
-    for await (const entry of Deno.readDir("dist/assets")) {
-      if (!entry.isFile) continue;
-      const stat = await Deno.stat(`dist/assets/${entry.name}`);
-      const bytes = await Deno.readFile(`dist/assets/${entry.name}`);
+    for (const entry of await readdir("dist/assets", { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const file = Bun.file(`dist/assets/${entry.name}`);
+      const bytes = await file.bytes();
       const compressed = await new Response(
         new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip")),
       ).arrayBuffer();
-      sizes.push({ file: entry.name, rawBytes: stat.size, gzipBytes: compressed.byteLength });
+      sizes.push({ file: entry.name, rawBytes: file.size, gzipBytes: compressed.byteLength });
     }
   } catch {
     return [];
@@ -111,7 +114,7 @@ async function bundleSizes() {
   return sizes.sort((left, right) => left.file.localeCompare(right.file));
 }
 
-const smoke = Deno.args.includes("--smoke");
+const smoke = cliArgs.includes("--smoke");
 const requestedRuns = Number(argument("--runs", smoke ? "3" : "30"));
 const runs = smoke ? Math.max(1, requestedRuns) : Math.max(30, requestedRuns);
 const warmups = smoke ? 1 : 5;
@@ -176,6 +179,6 @@ const report = {
 };
 
 const output = argument("--output", `artifacts/performance/micro-${commit.slice(0, 12)}.json`);
-await Deno.mkdir(output.slice(0, Math.max(0, output.lastIndexOf("/"))) || ".", { recursive: true });
-await Deno.writeTextFile(output, `${JSON.stringify(report, null, 2)}\n`);
+await mkdir(output.slice(0, Math.max(0, output.lastIndexOf("/"))) || ".", { recursive: true });
+await Bun.write(output, `${JSON.stringify(report, null, 2)}\n`);
 console.log(output);

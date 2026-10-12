@@ -210,7 +210,13 @@ test.describe("deterministic mobile protocol harness", () => {
     await editor.sourceEditor.press("Enter");
     await editor.sourceEditor.type("Saved through protocol harness.");
 
-    const save = await host.waitForSave(4000);
+    // Typing can outlast the save debounce, so the first save may be partial.
+    await expect.poll(async () => {
+      const saves = await host.getSaves();
+      return JSON.stringify(saves.at(-1)?.parsed.data);
+    }, { timeout: 4000 }).toContain("Saved through protocol harness.");
+    const saves = await host.getSaves();
+    const save = saves[saves.length - 1];
     expect(typeof save.raw).toBe("string");
     expect(JSON.parse(save.raw as string)).toMatchObject({
       action: "save-items",

@@ -38,7 +38,7 @@ export function isWritingInlineCodeShortcut(event: ShortcutEvent): boolean {
 
 export const writingShortcutsPluginKey = new PluginKey("writingShortcuts");
 
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function promoteHeadingInView(view: any): boolean {
   const { state, dispatch } = view;
   const { $from } = state.selection;
@@ -47,7 +47,7 @@ function promoteHeadingInView(view: any): boolean {
     if (node.type.name === "heading") {
       const level = node.attrs.level ?? 1;
       if (level > 1) {
-        // deno-lint-ignore no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return (setBlockType(node.type, { level: level - 1 }) as any)(state, (tr: any) => {
           tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "heading" });
           dispatch(tr);
@@ -59,7 +59,7 @@ function promoteHeadingInView(view: any): boolean {
   return false;
 }
 
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function demoteHeadingInView(view: any): boolean {
   const { state, dispatch } = view;
   const { $from } = state.selection;
@@ -68,7 +68,7 @@ function demoteHeadingInView(view: any): boolean {
     if (node.type.name === "heading") {
       const level = node.attrs.level ?? 1;
       if (level < 6) {
-        // deno-lint-ignore no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return (setBlockType(node.type, { level: level + 1 }) as any)(state, (tr: any) => {
           tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "heading" });
           dispatch(tr);
@@ -90,7 +90,7 @@ export function createWritingShortcutsPlugin(): Plugin {
   return new Plugin({
     key: writingShortcutsPluginKey,
     props: {
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handleKeyDown(view: any, event: KeyboardEvent) {
         const isAlt = event.altKey && !event.metaKey && !event.ctrlKey;
 

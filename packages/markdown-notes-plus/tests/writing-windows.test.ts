@@ -1,13 +1,12 @@
+import { test } from "bun:test";
 import { analyzeMarkdown } from "../src/markdown/analysis.ts";
 import { buildWritingWindows, replaceWritingWindow, WRITING_WINDOW_MAX_LENGTH } from "../src/editor/WritingWindows.ts";
-
-declare const Deno: { test(name: string, fn: () => void): void };
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("Writing windows preserve every source byte and bound each editable slice", () => {
+test("Writing windows preserve every source byte and bound each editable slice", () => {
   const source = Array.from({ length: 6_000 }, (_, index) => `## Section ${index}\n\nParagraph ${index}.\n\n`).join("");
   const windows = buildWritingWindows(source, analyzeMarkdown(source).headings);
   assert(windows && windows.length > 1, "expected a windowed large note");
@@ -26,12 +25,12 @@ Deno.test("Writing windows preserve every source byte and bound each editable sl
     source.slice(windows[2].from, windows[2].to), "later source changed");
 });
 
-Deno.test("Writing windows keep whole-document editing when no safe heading cut exists", () => {
+test("Writing windows keep whole-document editing when no safe heading cut exists", () => {
   const source = `# One section\n\n${"word ".repeat(30_000)}\n`;
   assert(buildWritingWindows(source, analyzeMarkdown(source).headings) === undefined, "unsplittable note must use full view");
 });
 
-Deno.test("Writing windows reject a changed terminal separator", () => {
+test("Writing windows reject a changed terminal separator", () => {
   const source = Array.from({ length: 6_000 }, (_, index) => `## Section ${index}\n\nParagraph ${index}.\n\n`).join("");
   const windows = buildWritingWindows(source, analyzeMarkdown(source).headings)!;
   const fragment = source.slice(windows[0].from, windows[0].to);

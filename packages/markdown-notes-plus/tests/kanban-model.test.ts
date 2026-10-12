@@ -1,6 +1,7 @@
+import { test } from "bun:test";
+
 function assert(condition: unknown, message = "assertion failed"): asserts condition { if (!condition) throw new Error(message); }
 function assertEquals<T>(actual: T, expected: T): void { if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`); }
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 import { analyzeMarkdown } from "../src/markdown/analysis.ts";
 import { analyzeKanban } from "../src/kanban/KanbanModel.ts";
 import { scanMarkdownStructure, splitMarkdownLines, splitPhysicalLines } from "../src/markdown/structureScanner.ts";
@@ -16,7 +17,7 @@ const boardMarkdown = `# Board
 ## Done
 `;
 
-Deno.test("Kanban model uses direct named headings and keeps nested tasks with their root card", () => {
+test("Kanban model uses direct named headings and keeps nested tasks with their root card", () => {
   const analysis = analyzeMarkdown(boardMarkdown);
   const model = analyzeKanban(boardMarkdown, analysis);
   assertEquals(model.candidates.length, 1);
@@ -25,7 +26,7 @@ Deno.test("Kanban model uses direct named headings and keeps nested tasks with t
   assertEquals(analysis.movableTaskSubtrees.find((fact) => fact.rootTaskFrom === boardMarkdown.indexOf("  - [x] Child"))?.movable, false);
 });
 
-Deno.test("Kanban rejects non-portable task candidates and stops legacy itemEnd at headings", () => {
+test("Kanban rejects non-portable task candidates and stops legacy itemEnd at headings", () => {
   const source = "- [ ] LF task\n## Heading\n- [ ] next\r- [ ] bare CR\n- [ ] unterminated";
   const analysis = analyzeMarkdown(source);
   assertEquals(analysis.tasks[0].itemEnd, source.indexOf("## Heading"));
@@ -35,7 +36,7 @@ Deno.test("Kanban rejects non-portable task candidates and stops legacy itemEnd 
   assert(!analysis.movableTaskSubtrees.some((fact) => fact.movable && fact.payload?.eolKind === "CR"));
 });
 
-Deno.test("Kanban requires exactly one direct heading for each destination", () => {
+test("Kanban requires exactly one direct heading for each destination", () => {
   const source = `# Board
 ## Backlog
 ### Doing
@@ -48,7 +49,7 @@ Deno.test("Kanban requires exactly one direct heading for each destination", () 
   assertEquals(model.boards[0].sourceOnly, true);
 });
 
-Deno.test("Any heading below a direct column makes the parent source-only, while a nested board remains independent", () => {
+test("Any heading below a direct column makes the parent source-only, while a nested board remains independent", () => {
   const source = `# Parent
 ## Backlog
 ### Detail
@@ -72,7 +73,7 @@ Deno.test("Any heading below a direct column makes the parent source-only, while
   assertEquals(model.candidates[0].columns[0].cards.map((card) => card.text), ["nested card"]);
 });
 
-Deno.test("Physical lines recognize bare CR without changing the legacy Markdown line contract", () => {
+test("Physical lines recognize bare CR without changing the legacy Markdown line contract", () => {
   const source = "alpha\rbeta\n";
   assertEquals(splitPhysicalLines(source).map((line) => ({ start: line.start, contentTo: line.contentTo, eolTo: line.eolTo, eolKind: line.eolKind, text: line.text })), [
     { start: 0, contentTo: 5, eolTo: 6, eolKind: "CR", text: "alpha" },
@@ -83,7 +84,7 @@ Deno.test("Physical lines recognize bare CR without changing the legacy Markdown
   assertEquals(analyzeMarkdown("- [ ] one\r- [ ] two\n").tasks.length, 0);
 });
 
-Deno.test("Kanban model accepts boards with arbitrary column names and column counts >= 2", () => {
+test("Kanban model accepts boards with arbitrary column names and column counts >= 2", () => {
   const source = `# 專案看板
 ## 待辦事項
 - [ ] 任務一
@@ -100,7 +101,7 @@ Deno.test("Kanban model accepts boards with arbitrary column names and column co
   assertEquals(model.candidates[0].columns[2].cards.map((card) => card.text), ["任務三"]);
 });
 
-Deno.test("Kanban model rejects boards with duplicate column names or fewer than 2 columns", () => {
+test("Kanban model rejects boards with duplicate column names or fewer than 2 columns", () => {
   const duplicateSource = `# Duplicate
 ## Doing
 ## Doing

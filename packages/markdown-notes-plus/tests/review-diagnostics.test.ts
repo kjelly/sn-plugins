@@ -1,3 +1,5 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
@@ -7,8 +9,6 @@ function assertEquals<T>(actual: T, expected: T, message = "values are not equal
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
   if (!condition) throw new Error(message);
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import {
   analyzeNoteHealth,
@@ -20,12 +20,12 @@ import {
 import { scanReviewSemantics } from "../src/review/ReviewSemanticScanner.ts";
 import { CanonicalDocument } from "../src/document/CanonicalDocument.ts";
 
-Deno.test("ReviewDiagnostics - slugifyAnchor normalizes title to anchor slug", () => {
+test("ReviewDiagnostics - slugifyAnchor normalizes title to anchor slug", () => {
   assertEquals(slugifyAnchor("1. Getting Started!"), "1-getting-started");
   assertEquals(slugifyAnchor("Architecture & Design"), "architecture-design");
 });
 
-Deno.test("ReviewDiagnostics - detects no-h1 and multiple-h1 issues", () => {
+test("ReviewDiagnostics - detects no-h1 and multiple-h1 issues", () => {
   // Case 1: No H1
   const mdNoH1 = `## Section 1\nSome text\n### Subsection`;
   const report1 = analyzeNoteHealth(mdNoH1);
@@ -41,7 +41,7 @@ Deno.test("ReviewDiagnostics - detects no-h1 and multiple-h1 issues", () => {
   assertEquals(report2.issues.some((i) => i.id === "multiple-h1"), true);
 });
 
-Deno.test("ReviewDiagnostics - detects heading level jump and auto fixes it", () => {
+test("ReviewDiagnostics - detects heading level jump and auto fixes it", () => {
   const mdJump = `# Project Title\n\n  #### Direct H4 Jump ###\nBody text`;
   const report = analyzeNoteHealth(mdJump);
   const jumpIssue = report.issues.find((i) => i.fixType === "fix-level-jump");
@@ -55,7 +55,7 @@ Deno.test("ReviewDiagnostics - detects heading level jump and auto fixes it", ()
   assertEquals(fixRes.markdown.slice(21), mdJump.slice(23));
 });
 
-Deno.test("ReviewDiagnostics - removes an empty heading with an exact LF source range", () => {
+test("ReviewDiagnostics - removes an empty heading with an exact LF source range", () => {
   const mdWithEmpty = `# Project Title\n\n## \n\n- [ ] Valid Task\n- [ ] \n- [x] Done Task`;
   const report = analyzeNoteHealth(mdWithEmpty);
   const emptyHeading = report.issues.find((i) => i.fixType === "remove-empty-heading");
@@ -67,7 +67,7 @@ Deno.test("ReviewDiagnostics - removes an empty heading with an exact LF source 
   assertEquals(fixRes.changeSet?.changes, [{ from: 17, to: 21, insertedLength: 0 }]);
 });
 
-Deno.test("ReviewDiagnostics - preserves CRLF while removing an empty heading", () => {
+test("ReviewDiagnostics - preserves CRLF while removing an empty heading", () => {
   const md = `# Title\r\n\r\n  ##   \r\nBody\r\n`;
   const report = analyzeNoteHealth(md);
   const issue = report.issues.find((entry) => entry.fixType === "remove-empty-heading");
@@ -80,7 +80,7 @@ Deno.test("ReviewDiagnostics - preserves CRLF while removing an empty heading", 
   assertEquals(result.markdown.includes("\r\n"), true);
 });
 
-Deno.test("ReviewDiagnostics - diagnoses empty tasks but never auto fixes them", () => {
+test("ReviewDiagnostics - diagnoses empty tasks but never auto fixes them", () => {
   const mdWithEmpty = `# Project Title\n\n## \n\n- [ ] Valid Task\n- [ ] \n- [x] Done Task`;
   const report = analyzeNoteHealth(mdWithEmpty);
   const emptyTask = report.issues.find((i) => i.id === "empty-task-5");
@@ -96,7 +96,7 @@ Deno.test("ReviewDiagnostics - diagnoses empty tasks but never auto fixes them",
   assertEquals(fixAllRes.markdown.includes("- [ ] Valid Task"), true);
 });
 
-Deno.test("ReviewDiagnostics - detects broken local links", () => {
+test("ReviewDiagnostics - detects broken local links", () => {
   const mdWithLinks = `# Project Title\n\n## Section Alpha\n\nSee [Alpha](#section-alpha) and [Broken](#non-existent-section)`;
   const report = analyzeNoteHealth(mdWithLinks);
   const brokenLinkIssue = report.issues.find((i) => i.category === "links");
@@ -104,7 +104,7 @@ Deno.test("ReviewDiagnostics - detects broken local links", () => {
   assertEquals(brokenLinkIssue?.message.includes("non-existent-section"), true);
 });
 
-Deno.test("ReviewDiagnostics - reports a broken link whose label contains inline code", () => {
+test("ReviewDiagnostics - reports a broken link whose label contains inline code", () => {
   const markdown = "# H\n[outer `code`](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
@@ -112,7 +112,7 @@ Deno.test("ReviewDiagnostics - reports a broken link whose label contains inline
   assertEquals(links[0].message, 'Broken local link: "#missing" does not match any heading in this note');
 });
 
-Deno.test("ReviewDiagnostics - reports a broken link whose label contains an HTML comment", () => {
+test("ReviewDiagnostics - reports a broken link whose label contains an HTML comment", () => {
   const markdown = "# H\n[outer <!-- c -->](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
@@ -120,7 +120,7 @@ Deno.test("ReviewDiagnostics - reports a broken link whose label contains an HTM
   assertEquals(links[0].message, 'Broken local link: "#missing" does not match any heading in this note');
 });
 
-Deno.test("ReviewDiagnostics - reports nested-label and angle-bracket AST local links", () => {
+test("ReviewDiagnostics - reports nested-label and angle-bracket AST local links", () => {
   const nested = "# H\n[outer [inner]](#missing)";
   const nestedLinks = analyzeNoteHealth(nested).issues.filter((issue) => issue.category === "links");
   assertEquals(nestedLinks.length, 1);
@@ -132,21 +132,21 @@ Deno.test("ReviewDiagnostics - reports nested-label and angle-bracket AST local 
   assertEquals(angleLinks[0].anchor, angle.indexOf("[label]"));
 });
 
-Deno.test("ReviewDiagnostics - ignores escaped literal links after inline and line-leading comments", () => {
+test("ReviewDiagnostics - ignores escaped literal links after inline and line-leading comments", () => {
   const inlineComment = "# H\n<!-- c --> \\[literal](#missing)";
   const lineLeadingComment = "# H\n<!-- c -->\n\\[literal](#missing)";
   assertEquals(analyzeNoteHealth(inlineComment).issues.some((issue) => issue.category === "links"), false);
   assertEquals(analyzeNoteHealth(lineLeadingComment).issues.some((issue) => issue.category === "links"), false);
 });
 
-Deno.test("ReviewDiagnostics - reports each enclosing AST link despite protected label descendants", () => {
+test("ReviewDiagnostics - reports each enclosing AST link despite protected label descendants", () => {
   const markdown = "# H\n[inline `code`](#first) and [comment <!-- c -->](#second)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 2);
   assertEquals(links.map((issue) => issue.anchor), [markdown.indexOf("[inline"), markdown.indexOf("[comment")]);
 });
 
-Deno.test("ReviewDiagnostics - masks inline HTML comments by range and keeps outside links visible", () => {
+test("ReviewDiagnostics - masks inline HTML comments by range and keeps outside links visible", () => {
   const markdown = "# Real\nprefix <!-- [inside](#missing) --> and [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
@@ -154,28 +154,28 @@ Deno.test("ReviewDiagnostics - masks inline HTML comments by range and keeps out
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - ignores HTML comment markers inside inline code", () => {
+test("ReviewDiagnostics - ignores HTML comment markers inside inline code", () => {
   const markdown = "# Real\n`<!--` [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - protects multiline inline code while keeping an outside link visible", () => {
+test("ReviewDiagnostics - protects multiline inline code while keeping an outside link visible", () => {
   const markdown = "# Real\n`code\n[inside](#missing)\n` and [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - does not let a multiline inline-code comment marker swallow an outside link", () => {
+test("ReviewDiagnostics - does not let a multiline inline-code comment marker swallow an outside link", () => {
   const markdown = "# Real\n`code\ncomment text <!-- marker\n` and [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - HTML comment owns an earlier backtick and leaves the visible heading exposed", () => {
+test("ReviewDiagnostics - HTML comment owns an earlier backtick and leaves the visible heading exposed", () => {
   const markdown = "# A\n<!-- ` -->\n### Visible\n`";
   const semantic = scanReviewSemantics(markdown);
   assertEquals(semantic.protectedRanges, [{ from: 4, to: 14 }]);
@@ -187,7 +187,7 @@ Deno.test("ReviewDiagnostics - HTML comment owns an earlier backtick and leaves 
   assertEquals(report.issues.find((issue) => issue.fixType === "fix-level-jump")?.id, "level-jump-1");
 });
 
-Deno.test("ReviewDiagnostics - escaped HTML comment markers stay literal before a multiline inline-code span", () => {
+test("ReviewDiagnostics - escaped HTML comment markers stay literal before a multiline inline-code span", () => {
   const markdown = "# A\n\\<!-- ` -->\n### Visible\n`";
   const semantic = scanReviewSemantics(markdown);
   assertEquals(semantic.commentRanges, []);
@@ -205,7 +205,7 @@ Deno.test("ReviewDiagnostics - escaped HTML comment markers stay literal before 
   assertEquals(fixAll.fixedCount, 0);
 });
 
-Deno.test("ReviewDiagnostics - HTML block owns an earlier backtick and leaves the visible heading exposed", () => {
+test("ReviewDiagnostics - HTML block owns an earlier backtick and leaves the visible heading exposed", () => {
   const markdown = "# A\n<div> ` </div>\n### Visible\n`";
   const semantic = scanReviewSemantics(markdown);
   assertEquals(semantic.protectedRanges, [{ from: 4, to: 19 }]);
@@ -217,7 +217,7 @@ Deno.test("ReviewDiagnostics - HTML block owns an earlier backtick and leaves th
   assertEquals(report.issues.find((issue) => issue.fixType === "fix-level-jump")?.id, "level-jump-1");
 });
 
-Deno.test("ReviewDiagnostics - multiline inline code owns comment markers", () => {
+test("ReviewDiagnostics - multiline inline code owns comment markers", () => {
   const markdown = "# H\n`code\n<!-- ... -->\n### hidden\n`\n## Visible";
   const codeEnd = markdown.indexOf("`\n## Visible") + 1;
   const semantic = scanReviewSemantics(markdown);
@@ -231,7 +231,7 @@ Deno.test("ReviewDiagnostics - multiline inline code owns comment markers", () =
   assertEquals(report.issues.some((issue) => issue.id === "level-jump-1"), false);
 });
 
-Deno.test("ReviewDiagnostics - multiline inline code owns HTML block markers", () => {
+test("ReviewDiagnostics - multiline inline code owns HTML block markers", () => {
   const markdown = "# H\n`code\n<div> ... </div>\n### hidden\n`\n## Visible";
   const codeEnd = markdown.indexOf("`\n## Visible") + 1;
   const semantic = scanReviewSemantics(markdown);
@@ -245,40 +245,40 @@ Deno.test("ReviewDiagnostics - multiline inline code owns HTML block markers", (
   assertEquals(report.issues.some((issue) => issue.id === "level-jump-1"), false);
 });
 
-Deno.test("ReviewDiagnostics - treats unmatched inline-code delimiters as ordinary text", () => {
+test("ReviewDiagnostics - treats unmatched inline-code delimiters as ordinary text", () => {
   const markdown = "# Real\n`unmatched [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - keeps a valid single span after an unmatched double delimiter protected", () => {
+test("ReviewDiagnostics - keeps a valid single span after an unmatched double delimiter protected", () => {
   const markdown = "# Real\n``unmatched ` [inside](#missing) ` and [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - treats escaped backticks as ordinary text", () => {
+test("ReviewDiagnostics - treats escaped backticks as ordinary text", () => {
   const markdown = "# Real\n\\`literal\\` [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - only matching inline-code delimiters close a code span", () => {
+test("ReviewDiagnostics - only matching inline-code delimiters close a code span", () => {
   const markdown = "# Real\n``[inside](#missing) `[also-inside](#missing)``";
   assertEquals(analyzeNoteHealth(markdown).issues.some((issue) => issue.category === "links"), false);
 });
 
-Deno.test("ReviewDiagnostics - matching outer double delimiters protect inner single ticks across lines", () => {
+test("ReviewDiagnostics - matching outer double delimiters protect inner single ticks across lines", () => {
   const markdown = "# Real\n``[inside](#missing) `\n[also-inside](#missing)`` and [outside](#missing)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - accepts a closing-hash empty ATX heading and preserves CRLF on fix", () => {
+test("ReviewDiagnostics - accepts a closing-hash empty ATX heading and preserves CRLF on fix", () => {
   const markdown = "# Title\r\n\r\n## ###\r\nBody\r\n";
   const headingStart = markdown.indexOf("## ###");
   const report = analyzeNoteHealth(markdown);
@@ -291,7 +291,7 @@ Deno.test("ReviewDiagnostics - accepts a closing-hash empty ATX heading and pres
   assertEquals(result.markdown, "# Title\r\n\r\nBody\r\n");
 });
 
-Deno.test("ReviewDiagnostics - computes metrics and largest sections accurately", () => {
+test("ReviewDiagnostics - computes metrics and largest sections accurately", () => {
   const mdComplex = `# Title\ni\n## Big Section\n${"Long text line.\n".repeat(50)}\n## Small Section\nShort text.`;
   const report = analyzeNoteHealth(mdComplex);
   assertEquals(report.metrics.headingsCount, 3);
@@ -309,14 +309,14 @@ Deno.test("ReviewDiagnostics - computes metrics and largest sections accurately"
   assertEquals(big.sourceRange.to <= small.sourceRange.from, true);
 });
 
-Deno.test("ReviewDiagnostics - ignores opaque fenced code for raw fixes", () => {
+test("ReviewDiagnostics - ignores opaque fenced code for raw fixes", () => {
   const md = "# Title\n\n```md\n## \n- [ ] \n```\n";
   const report = analyzeNoteHealth(md);
   assertEquals(report.issues.some((issue) => issue.fixType === "remove-empty-heading"), false);
   assertEquals(report.issues.some((issue) => issue.id.startsWith("empty-task-")), false);
 });
 
-Deno.test("ReviewDiagnostics - keeps HTML comments/blocks and inline code opaque", () => {
+test("ReviewDiagnostics - keeps HTML comments/blocks and inline code opaque", () => {
   const markdown = [
     "<!--",
     "## ",
@@ -340,12 +340,12 @@ Deno.test("ReviewDiagnostics - keeps HTML comments/blocks and inline code opaque
   assertEquals(report.metrics.tasksCount, 1);
 });
 
-Deno.test("ReviewDiagnostics - suppresses links inside fenced code and HTML comments", () => {
+test("ReviewDiagnostics - suppresses links inside fenced code and HTML comments", () => {
   const markdown = "# H\n```md\n[code](#missing)\n```\n<!-- [comment](#missing) -->";
   assertEquals(analyzeNoteHealth(markdown).issues.some((issue) => issue.category === "links"), false);
 });
 
-Deno.test("ReviewDiagnostics - Fix All cascades normalized heading levels in one change set", () => {
+test("ReviewDiagnostics - Fix All cascades normalized heading levels in one change set", () => {
   const source = "# A\n#### B\n###### C\n";
   const result = applyAllSafeAutoFixes(source);
   assertEquals(result.markdown, "# A\n## B\n### C\n");
@@ -357,7 +357,7 @@ Deno.test("ReviewDiagnostics - Fix All cascades normalized heading levels in one
   assertEquals(analyzeNoteHealth(result.markdown).issues.some((issue) => issue.fixType === "fix-level-jump"), false);
 });
 
-Deno.test("ReviewDiagnostics - Fix All follows the prior normalized level through arbitrary jumps", () => {
+test("ReviewDiagnostics - Fix All follows the prior normalized level through arbitrary jumps", () => {
   const source = "# A\n# B\n### C\n#### D\n";
   const result = applyAllSafeAutoFixes(source);
   assertEquals(result.markdown, "# A\n# B\n## C\n### D\n");
@@ -369,7 +369,7 @@ Deno.test("ReviewDiagnostics - Fix All follows the prior normalized level throug
   assertEquals(analyzeNoteHealth(result.markdown).issues.some((issue) => issue.fixType === "fix-level-jump"), false);
 });
 
-Deno.test("ReviewDiagnostics - Fix All prioritizes empty-heading removal over an overlapping level fix", () => {
+test("ReviewDiagnostics - Fix All prioritizes empty-heading removal over an overlapping level fix", () => {
   const overlappingOnly = "# H\n#### ###\n";
   const removed = applyAllSafeAutoFixes(overlappingOnly);
   assertEquals(removed.markdown, "# H\n");
@@ -397,7 +397,7 @@ Deno.test("ReviewDiagnostics - Fix All prioritizes empty-heading removal over an
   assertEquals(document.text, source);
 });
 
-Deno.test("ReviewDiagnostics - reports empty and overlong sections by exclusive ownership", () => {
+test("ReviewDiagnostics - reports empty and overlong sections by exclusive ownership", () => {
   const empty = analyzeNoteHealth("# Parent\n\n## Child\n");
   const emptySection = empty.issues.find((issue) => issue.id === "empty-section-1");
   assertEquals(emptySection?.anchor, 10);
@@ -413,7 +413,7 @@ Deno.test("ReviewDiagnostics - reports empty and overlong sections by exclusive 
   assertEquals(overlong.issues.some((entry) => entry.id === "note-size-warning"), false);
 });
 
-Deno.test("ReviewDiagnostics - counts fence variants and tables structurally", () => {
+test("ReviewDiagnostics - counts fence variants and tables structurally", () => {
   const markdown = [
     "```ts",
     "``` not a heading",
@@ -440,7 +440,7 @@ Deno.test("ReviewDiagnostics - counts fence variants and tables structurally", (
   assertEquals(metrics.headingsCount, 0);
 });
 
-Deno.test("ReviewDiagnostics - counts a wide list continuation fence from canonical opaque ranges", () => {
+test("ReviewDiagnostics - counts a wide list continuation fence from canonical opaque ranges", () => {
   const markdown = [
     "- item",
     "      ```md",
@@ -454,7 +454,7 @@ Deno.test("ReviewDiagnostics - counts a wide list continuation fence from canoni
   assertEquals(report.metrics.tasksCount, 1);
 });
 
-Deno.test("ReviewDiagnostics - ignores raw empty child headings as section content", () => {
+test("ReviewDiagnostics - ignores raw empty child headings as section content", () => {
   const emptyChild = analyzeNoteHealth("# Parent\n## \n");
   assertEquals(emptyChild.issues.some((issue) => issue.id === "empty-section-0"), true);
 
@@ -462,7 +462,7 @@ Deno.test("ReviewDiagnostics - ignores raw empty child headings as section conte
   assertEquals(contentAfterEmptyChild.issues.some((issue) => issue.id === "empty-section-0"), false);
 });
 
-Deno.test("ReviewDiagnostics - counts visible inline content without counting comments", () => {
+test("ReviewDiagnostics - counts visible inline content without counting comments", () => {
   const visibleContent = [
     "# H\n[visible `code`](#h)",
     "# H\n`visible`",
@@ -481,14 +481,14 @@ Deno.test("ReviewDiagnostics - counts visible inline content without counting co
   }
 });
 
-Deno.test("ReviewDiagnostics - keeps fenced and HTML-only sections empty", () => {
+test("ReviewDiagnostics - keeps fenced and HTML-only sections empty", () => {
   const fenced = "# H\n```md\nvisible\n```";
   const html = "# H\n<div>opaque</div>";
   assertEquals(analyzeNoteHealth(fenced).issues.some((issue) => issue.id === "empty-section-0"), true);
   assertEquals(analyzeNoteHealth(html).issues.some((issue) => issue.id === "empty-section-0"), true);
 });
 
-Deno.test("ReviewDiagnostics - preserves astral UTF-16 offsets and terminal empty headings", () => {
+test("ReviewDiagnostics - preserves astral UTF-16 offsets and terminal empty headings", () => {
   const source = "# Title\n😀\n## ";
   const report = analyzeNoteHealth(source);
   const issue = report.issues.find((entry) => entry.fixType === "remove-empty-heading");
@@ -498,7 +498,7 @@ Deno.test("ReviewDiagnostics - preserves astral UTF-16 offsets and terminal empt
   assertEquals(result.changeSet?.changes, [{ from: 11, to: 14, insertedLength: 0 }]);
 });
 
-Deno.test("ReviewDiagnostics - one CanonicalDocument apply and undo restores Fix All", () => {
+test("ReviewDiagnostics - one CanonicalDocument apply and undo restores Fix All", () => {
   const source = "# A\n#### B\n###### C\n## \n";
   const result = applyAllSafeAutoFixes(source);
   assert(result.changeSet);
@@ -512,7 +512,7 @@ Deno.test("ReviewDiagnostics - one CanonicalDocument apply and undo restores Fix
   assertEquals(document.text, source);
 });
 
-Deno.test("ReviewDiagnostics - multiline inline code hides structural-looking headings from Review", () => {
+test("ReviewDiagnostics - multiline inline code hides structural-looking headings from Review", () => {
   const markdown = "# H\n`code\n### hidden\n`";
   const report = analyzeNoteHealth(markdown);
   assertEquals(report.metrics.headingsCount, 1);
@@ -525,7 +525,7 @@ Deno.test("ReviewDiagnostics - multiline inline code hides structural-looking he
   assertEquals(result.fixedCount, 0);
 });
 
-Deno.test("ReviewDiagnostics - inline code owns a fence-looking line before a visible heading", () => {
+test("ReviewDiagnostics - inline code owns a fence-looking line before a visible heading", () => {
   const markdown = ["# A", "`code", "```", "### hidden", "`", "### Visible", "```"].join("\n");
   const semantic = scanReviewSemantics(markdown);
   const codeFrom = markdown.indexOf("`code");
@@ -555,7 +555,7 @@ Deno.test("ReviewDiagnostics - inline code owns a fence-looking line before a vi
   assertEquals(applyAllSafeAutoFixes(crlf).markdown, ["# A", "😀", "`code", "```", "### hidden", "`", "## Visible", "```"].join("\r\n"));
 });
 
-Deno.test("ReviewDiagnostics - masks only an inline-owned orphan fence line and keeps later facts visible", () => {
+test("ReviewDiagnostics - masks only an inline-owned orphan fence line and keeps later facts visible", () => {
   const cases = [
     { newline: "\n", marker: "```", astral: "" },
     { newline: "\r\n", marker: "~~~", astral: "😀" },
@@ -627,7 +627,7 @@ Deno.test("ReviewDiagnostics - masks only an inline-owned orphan fence line and 
   }
 });
 
-Deno.test("ReviewDiagnostics - accepts an inline-owned fence in a nested list container", () => {
+test("ReviewDiagnostics - accepts an inline-owned fence in a nested list container", () => {
   const markdown = [
     "# A",
     "- outer",
@@ -663,7 +663,7 @@ Deno.test("ReviewDiagnostics - accepts an inline-owned fence in a nested list co
   assertEquals(report.metrics.headingsCount, 2);
 });
 
-Deno.test("ReviewDiagnostics - multiline inline code does not count a protected table", () => {
+test("ReviewDiagnostics - multiline inline code does not count a protected table", () => {
   const markdown = "# H\n`code\na | b\n--- | ---\n1 | 2\n`";
   const semantic = scanReviewSemantics(markdown);
   assertEquals(semantic.protectedRanges, [{ from: 4, to: markdown.length }]);
@@ -671,12 +671,12 @@ Deno.test("ReviewDiagnostics - multiline inline code does not count a protected 
   assertEquals(applyAllSafeAutoFixes(markdown).markdown, markdown);
 });
 
-Deno.test("ReviewDiagnostics - counts a real table with an inline-code cell", () => {
+test("ReviewDiagnostics - counts a real table with an inline-code cell", () => {
   const markdown = "a | `code` | c\n--- | --- | ---\n1 | 2 | 3";
   assertEquals(analyzeNoteHealth(markdown).metrics.tablesCount, 1);
 });
 
-Deno.test("ReviewDiagnostics - multiline inline code preserves CRLF and astral UTF-16 boundaries", () => {
+test("ReviewDiagnostics - multiline inline code preserves CRLF and astral UTF-16 boundaries", () => {
   const crlf = "# H\r\n`code\r\n### hidden\r\n`";
   const crlfReport = analyzeNoteHealth(crlf);
   assertEquals(crlfReport.metrics.headingsCount, 1);
@@ -691,7 +691,7 @@ Deno.test("ReviewDiagnostics - multiline inline code preserves CRLF and astral U
   assertEquals(applyAllSafeAutoFixes(astral).markdown, astral);
 });
 
-Deno.test("ReviewDiagnostics - projects multiline inline-code headings, tasks, and links while retaining visible facts", () => {
+test("ReviewDiagnostics - projects multiline inline-code headings, tasks, and links while retaining visible facts", () => {
   const markdown = [
     "# Real",
     "`code",
@@ -711,14 +711,14 @@ Deno.test("ReviewDiagnostics - projects multiline inline-code headings, tasks, a
   assertEquals(report.metrics.largestSections.map((section) => section.title), ["Real", "Visible"]);
 });
 
-Deno.test("ReviewDiagnostics - hidden headings never satisfy outside local links", () => {
+test("ReviewDiagnostics - hidden headings never satisfy outside local links", () => {
   const markdown = "# Real\n`code\n# ghost\n`\n[outside](#ghost)";
   const links = analyzeNoteHealth(markdown).issues.filter((issue) => issue.category === "links");
   assertEquals(links.length, 1);
   assertEquals(links[0].anchor, markdown.lastIndexOf("[outside]"));
 });
 
-Deno.test("ReviewDiagnostics - visible heading diagnostics retain original shared-analysis indexes", () => {
+test("ReviewDiagnostics - visible heading diagnostics retain original shared-analysis indexes", () => {
   const markdown = "# A\n`code\n### hidden\n`\n#### Real";
   const report = analyzeNoteHealth(markdown);
   const jump = report.issues.find((issue) => issue.fixType === "fix-level-jump");
@@ -730,7 +730,7 @@ Deno.test("ReviewDiagnostics - visible heading diagnostics retain original share
   assertEquals(applyAllSafeAutoFixes(markdown).markdown, fixed.markdown);
 });
 
-Deno.test("ReviewDiagnostics - real heading, task, and link remain visible when inline-code text overlaps", () => {
+test("ReviewDiagnostics - real heading, task, and link remain visible when inline-code text overlaps", () => {
   const markdown = "# Real `code`\n- [ ] keep `code`\n[real `code`](#missing)";
   const report = analyzeNoteHealth(markdown);
   assertEquals(report.metrics.headingsCount, 1);
@@ -739,7 +739,7 @@ Deno.test("ReviewDiagnostics - real heading, task, and link remain visible when 
   assertEquals(report.issues.find((issue) => issue.category === "links")?.anchor, markdown.indexOf("[real"));
 });
 
-Deno.test("ReviewDiagnostics - HTML comment ownership recomputes later effective fences and headings", () => {
+test("ReviewDiagnostics - HTML comment ownership recomputes later effective fences and headings", () => {
   const markdown = ["# A", "<!-- x", "```", "-->", "```", "inside", "```", "### Visible", "```"].join("\n");
   const semantic = scanReviewSemantics(markdown);
   const lineEnd = (from: number): number => {
@@ -771,7 +771,7 @@ Deno.test("ReviewDiagnostics - HTML comment ownership recomputes later effective
   assertEquals(report.metrics.largestSections[0].sourceRange.to <= report.metrics.largestSections[1].sourceRange.from, true);
 });
 
-Deno.test("ReviewDiagnostics - HTML block, raw tags, PI, and CDATA close before later fences", () => {
+test("ReviewDiagnostics - HTML block, raw tags, PI, and CDATA close before later fences", () => {
   const cases = [
     ["<div>", "</div>"],
     ["<script>", "</script>"],
@@ -800,7 +800,7 @@ Deno.test("ReviewDiagnostics - HTML block, raw tags, PI, and CDATA close before 
   }
 });
 
-Deno.test("ReviewDiagnostics - ordinary HTML parents retain ownership across raw child closers", () => {
+test("ReviewDiagnostics - ordinary HTML parents retain ownership across raw child closers", () => {
   const cases = ["script", "style", "textarea", "title"];
   for (const rawTag of cases) {
     const markdown = [
@@ -825,7 +825,7 @@ Deno.test("ReviewDiagnostics - ordinary HTML parents retain ownership across raw
   }
 });
 
-Deno.test("ReviewDiagnostics - code-first fence owns HTML markers without creating HTML opacity", () => {
+test("ReviewDiagnostics - code-first fence owns HTML markers without creating HTML opacity", () => {
   const markdown = ["# A", "```html", "<!--", "<div>", "-->", "### hidden", "```", "### Visible"].join("\n");
   const semantic = scanReviewSemantics(markdown);
   assertEquals(semantic.htmlRanges, []);
@@ -837,7 +837,7 @@ Deno.test("ReviewDiagnostics - code-first fence owns HTML markers without creati
   assertEquals(report.issues.find((issue) => issue.fixType === "fix-level-jump")?.anchor, markdown.indexOf("### Visible"));
 });
 
-Deno.test("ReviewDiagnostics - multiline inline code owns comment and HTML markers", () => {
+test("ReviewDiagnostics - multiline inline code owns comment and HTML markers", () => {
   const markdown = ["# A", "`code", "<!--", "<div>", "### hidden", "`", "### Visible"].join("\n");
   const semantic = scanReviewSemantics(markdown);
   const codeFrom = markdown.indexOf("`code");
@@ -851,7 +851,7 @@ Deno.test("ReviewDiagnostics - multiline inline code owns comment and HTML marke
   assertEquals(report.issues.find((issue) => issue.fixType === "fix-level-jump")?.anchor, markdown.indexOf("### Visible"));
 });
 
-Deno.test("ReviewDiagnostics - escaped comment markers use odd/even backslash parity", () => {
+test("ReviewDiagnostics - escaped comment markers use odd/even backslash parity", () => {
   const odd = "# A\n\\<!-- literal -->\n### Visible";
   const oddSemantic = scanReviewSemantics(odd);
   assertEquals(oddSemantic.commentRanges, []);
@@ -863,7 +863,7 @@ Deno.test("ReviewDiagnostics - escaped comment markers use odd/even backslash pa
   assertEquals(analyzeNoteHealth(even).metrics.headingsCount, 2);
 });
 
-Deno.test("ReviewDiagnostics - HTML ownership preserves CRLF and astral UTF-16 offsets", () => {
+test("ReviewDiagnostics - HTML ownership preserves CRLF and astral UTF-16 offsets", () => {
   const markdown = ["# A", "😀", "<!-- x", "```", "-->", "```", "inside", "```", "### Visible", "```"].join("\r\n");
   const semantic = scanReviewSemantics(markdown);
   const firstFence = markdown.indexOf("```", markdown.indexOf("-->") + 3);

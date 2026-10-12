@@ -1,11 +1,11 @@
 import type { Node as ProseNode } from "@milkdown/prose/model";
 import { WRITING_STRUCTURAL_CONTEXT_META, WRITING_TRANSACTION_ORIGIN_META } from "./WritingEditorLifecycle.ts";
 
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WritingView = { state: any; dispatch: (tr: any) => void; [key: string]: any };
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WritingState = any;
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WritingTransaction = any;
 
 export type TableLocation = {
@@ -321,7 +321,7 @@ export function handleTableTabNavigation(view: WritingView, reverse: boolean): b
       for (let i = 0; i < loc.colIndex - 1; i += 1) {
         targetPos += loc.rowNode.child(i).nodeSize;
       }
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tr = state.tr.setSelection((state.selection.constructor as any).near(state.doc.resolve(targetPos + 1)));
       dispatch(tr);
       return true;
@@ -336,7 +336,7 @@ export function handleTableTabNavigation(view: WritingView, reverse: boolean): b
       for (let c = 0; c < prevRow.childCount - 1; c += 1) {
         targetPos += prevRow.child(c).nodeSize;
       }
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tr = state.tr.setSelection((state.selection.constructor as any).near(state.doc.resolve(targetPos + 1)));
       dispatch(tr);
       return true;
@@ -350,14 +350,14 @@ export function handleTableTabNavigation(view: WritingView, reverse: boolean): b
       for (let i = 0; i <= loc.colIndex; i += 1) {
         targetPos += loc.rowNode.child(i).nodeSize;
       }
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tr = state.tr.setSelection((state.selection.constructor as any).near(state.doc.resolve(targetPos + 1)));
       dispatch(tr);
       return true;
     } else if (loc.rowIndex < loc.rowCount - 1) {
       // First cell in next row
       const nextRowPos = loc.rowPos + loc.rowNode.nodeSize;
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tr = state.tr.setSelection((state.selection.constructor as any).near(state.doc.resolve(nextRowPos + 2)));
       dispatch(tr);
       return true;
@@ -368,7 +368,7 @@ export function handleTableTabNavigation(view: WritingView, reverse: boolean): b
       const tr = state.tr;
       tr.insert(insertPos, newRow);
       markTableTransaction(tr);
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tr.setSelection((state.selection.constructor as any).near(tr.doc.resolve(insertPos + 2)));
       dispatch(tr.scrollIntoView());
       return true;

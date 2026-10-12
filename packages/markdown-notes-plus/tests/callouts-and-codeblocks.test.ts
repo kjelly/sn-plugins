@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import {
   extractCalloutType,
@@ -13,7 +13,7 @@ import {
   type CalloutType,
 } from "../src/editor/WritingCallouts.ts";
 
-Deno.test("WritingCallouts - CALLOUT_REGEX matches all standard callout tags case-insensitively", () => {
+test("WritingCallouts - CALLOUT_REGEX matches all standard callout tags case-insensitively", () => {
   const noteMatch = "[!NOTE]".match(CALLOUT_REGEX);
   assertEquals(noteMatch?.[1].toLowerCase(), "note");
 
@@ -33,7 +33,7 @@ Deno.test("WritingCallouts - CALLOUT_REGEX matches all standard callout tags cas
   assertEquals(invalidMatch, null);
 });
 
-Deno.test("WritingCallouts - CALLOUT_META defines properties for each callout type", () => {
+test("WritingCallouts - CALLOUT_META defines properties for each callout type", () => {
   const types: CalloutType[] = ["note", "tip", "important", "warning", "caution"];
   for (const t of types) {
     const meta = CALLOUT_META[t];
@@ -46,7 +46,7 @@ Deno.test("WritingCallouts - CALLOUT_META defines properties for each callout ty
 
 import type { Node as ProseNode } from "@milkdown/prose/model";
 
-Deno.test("WritingCallouts - extractCalloutType inspects blockquote nodes accurately", () => {
+test("WritingCallouts - extractCalloutType inspects blockquote nodes accurately", () => {
   const fakeBlockquoteNode = (text: string) => ({
     type: { name: "blockquote" },
     childCount: 1,

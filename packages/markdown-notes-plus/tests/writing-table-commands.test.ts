@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import { EditorState, Selection, type Transaction } from "@milkdown/prose/state";
 import { Schema, type Node as ProseNode } from "@milkdown/prose/model";
@@ -53,7 +53,7 @@ function makeTableDoc() {
   ]);
 }
 
-Deno.test("WritingTableCommands - findTableLocation resolves row/col indices and dimensions", () => {
+test("WritingTableCommands - findTableLocation resolves row/col indices and dimensions", () => {
   const doc = makeTableDoc();
   let state = EditorState.create({ doc, schema: tableSchema });
   state = state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(4))));
@@ -68,7 +68,7 @@ Deno.test("WritingTableCommands - findTableLocation resolves row/col indices and
   }
 });
 
-Deno.test("WritingTableCommands - insert and delete rows", () => {
+test("WritingTableCommands - insert and delete rows", () => {
   const doc = makeTableDoc();
   let state = EditorState.create({ doc, schema: tableSchema });
   state = state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(4))));
@@ -95,7 +95,7 @@ Deno.test("WritingTableCommands - insert and delete rows", () => {
   assertEquals(state.doc.firstChild!.childCount, 3);
 });
 
-Deno.test("WritingTableCommands - insert and delete columns", () => {
+test("WritingTableCommands - insert and delete columns", () => {
   const doc = makeTableDoc();
   let state = EditorState.create({ doc, schema: tableSchema });
   state = state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(4))));
@@ -121,7 +121,7 @@ Deno.test("WritingTableCommands - insert and delete columns", () => {
   assertEquals(state.doc.firstChild!.child(0).childCount, 3);
 });
 
-Deno.test("WritingTableCommands - move rows and columns", () => {
+test("WritingTableCommands - move rows and columns", () => {
   const doc = makeTableDoc();
   let state = EditorState.create({ doc, schema: tableSchema });
   // Focus R1C1
@@ -171,7 +171,7 @@ Deno.test("WritingTableCommands - move rows and columns", () => {
   assertEquals(state.doc.firstChild!.child(0).child(0).textContent, "R1C1");
 });
 
-Deno.test("WritingTableCommands - setTableColumnAlign modifies column alignment", () => {
+test("WritingTableCommands - setTableColumnAlign modifies column alignment", () => {
   const doc = makeTableDoc();
   let state = EditorState.create({ doc, schema: tableSchema });
   state = state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(4))));
@@ -189,7 +189,7 @@ Deno.test("WritingTableCommands - setTableColumnAlign modifies column alignment"
   assertEquals(cell1.attrs.align, "center");
 });
 
-Deno.test("WritingTableCommands - handleTableTabNavigation advances and creates rows at end", () => {
+test("WritingTableCommands - handleTableTabNavigation advances and creates rows at end", () => {
   const doc = makeTableDoc();
   let state = EditorState.create({ doc, schema: tableSchema });
 

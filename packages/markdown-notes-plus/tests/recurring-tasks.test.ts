@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import {
   parseRepeatInterval,
@@ -15,7 +15,7 @@ import {
   deadlineStatus,
 } from "../src/tasks/RecurringTasks.ts";
 
-Deno.test("RecurringTasks - parseRepeatInterval parses units and aliases", () => {
+test("RecurringTasks - parseRepeatInterval parses units and aliases", () => {
   assertEquals(parseRepeatInterval("3d"), { amount: 3, unit: "d" });
   assertEquals(parseRepeatInterval("5 days"), { amount: 5, unit: "d" });
   assertEquals(parseRepeatInterval("daily"), { amount: 1, unit: "d" });
@@ -28,14 +28,14 @@ Deno.test("RecurringTasks - parseRepeatInterval parses units and aliases", () =>
   assertEquals(parseRepeatInterval("invalid"), undefined);
 });
 
-Deno.test("RecurringTasks - calculateNextDueDate computes future dates", () => {
+test("RecurringTasks - calculateNextDueDate computes future dates", () => {
   const due = calculateNextDueDate("2026-08-20", "5d");
   assertEquals(due?.getFullYear(), 2026);
   assertEquals(due?.getMonth(), 7); // Aug
   assertEquals(due?.getDate(), 25);
 });
 
-Deno.test("RecurringTasks - weekday repeats calculate the next fixed weekday", () => {
+test("RecurringTasks - weekday repeats calculate the next fixed weekday", () => {
   // 2026-09-01 is Tuesday; the next Monday is 2026-09-07.
   const due = calculateNextDueDate("2026-09-01", "monday");
   assertEquals(due?.getFullYear(), 2026);
@@ -47,7 +47,7 @@ Deno.test("RecurringTasks - weekday repeats calculate the next fixed weekday", (
   assertEquals(following?.getDate(), 14);
 });
 
-Deno.test("RecurringTasks - isRecurringTaskOverdue compares dates correctly", () => {
+test("RecurringTasks - isRecurringTaskOverdue compares dates correctly", () => {
   // Done on 2026-08-20 with repeat(5d) -> due on 2026-08-25
   const todayEarly = new Date(2026, 7, 24); // Aug 24
   const todayDue = new Date(2026, 7, 25); // Aug 25
@@ -58,7 +58,7 @@ Deno.test("RecurringTasks - isRecurringTaskOverdue compares dates correctly", ()
   assertEquals(isRecurringTaskOverdue("2026-08-20", "5d", todayLate), true);
 });
 
-Deno.test("RecurringTasks - updateTaskTextForToggle appends @done on complete and removes on incomplete", () => {
+test("RecurringTasks - updateTaskTextForToggle appends @done on complete and removes on incomplete", () => {
   const fixedToday = new Date(2026, 7, 29); // 2026-08-29
 
   // Task with @repeat: complete adds @done
@@ -84,7 +84,7 @@ Deno.test("RecurringTasks - updateTaskTextForToggle appends @done on complete an
   );
 });
 
-Deno.test("RecurringTasks - deadlineStatus marks due dates by urgency", () => {
+test("RecurringTasks - deadlineStatus marks due dates by urgency", () => {
   const today = new Date(2026, 8, 1); // Sep 1
   assertEquals(deadlineStatus("Submit report @deadline(2026-08-31)", today), "red");
   assertEquals(deadlineStatus("Submit report @deadline(2026-09-01)", today), "red");
@@ -95,7 +95,7 @@ Deno.test("RecurringTasks - deadlineStatus marks due dates by urgency", () => {
   assertEquals(deadlineStatus("Submit report", today), undefined);
 });
 
-Deno.test("RecurringTasks - evaluateRecurringTasks resets overdue tasks only", () => {
+test("RecurringTasks - evaluateRecurringTasks resets overdue tasks only", () => {
   const input = `# Routine
 - [x] Water plants @repeat(3d) @done(2026-08-20)
 - [x] Weekly backup @repeat(1w) @done(2026-08-28)
@@ -119,7 +119,7 @@ Deno.test("RecurringTasks - evaluateRecurringTasks resets overdue tasks only", (
   );
 });
 
-Deno.test("RecurringTasks - fenced task-looking examples remain byte-for-byte unchanged", () => {
+test("RecurringTasks - fenced task-looking examples remain byte-for-byte unchanged", () => {
   const input = [
     "# Notes",
     "",
@@ -141,7 +141,7 @@ Deno.test("RecurringTasks - fenced task-looking examples remain byte-for-byte un
   assertEquals(result.changed, false);
 });
 
-Deno.test("RecurringTasks - nested-list indented code examples remain byte-for-byte unchanged", () => {
+test("RecurringTasks - nested-list indented code examples remain byte-for-byte unchanged", () => {
   const input = [
     "- Parent\r\n",
     "  - Child\r\n",

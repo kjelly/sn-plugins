@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import { analyzeMarkdown, headingsInSection, nextSiblingSection, previousSiblingSection } from "../src/markdown/analysis.ts";
 import { createTextChangeSet } from "../src/document/PositionMap.ts";
@@ -16,7 +16,7 @@ import {
   reconcileOutlineAnchors,
 } from "../src/outline/OutlineProjection.ts";
 
-Deno.test("OutlineProjection - precomputed row facts match section scans", () => {
+test("OutlineProjection - precomputed row facts match section scans", () => {
   const documents = [
     "# Root\n\n- [ ] root task\n\n## Child\n\n- [x] completed\n\n### Grandchild\n\n- [ ] nested\n\n## Sibling\n\n- [ ] sibling\n\n# Other\n",
     "Setext root\n===========\n\n## ATX child\n\n- [x] task\n\n###### Deep\n\n- [ ] deeper\n\nSetext sibling\n--------------\n",
@@ -42,7 +42,7 @@ Deno.test("OutlineProjection - precomputed row facts match section scans", () =>
   }
 });
 
-Deno.test("OutlineProjection - collapsed heading hides descendants only", () => {
+test("OutlineProjection - collapsed heading hides descendants only", () => {
   const doc = `# Root 1
 ## Child 1.1
 ### Grandchild 1.1.1
@@ -69,7 +69,7 @@ Deno.test("OutlineProjection - collapsed heading hides descendants only", () => 
   assertEquals(visible2.map((h) => h.text), ["Root 1", "Root 2"]);
 });
 
-Deno.test("OutlineProjection - nested collapse state survives parent expand", () => {
+test("OutlineProjection - nested collapse state survives parent expand", () => {
   const doc = `# Root 1
 ## Child 1.1
 ### Grandchild 1.1.1
@@ -91,7 +91,7 @@ Deno.test("OutlineProjection - nested collapse state survives parent expand", ()
   assertEquals(visibleAfterRootExpand.map((h) => h.text), ["Root 1", "Child 1.1", "Child 1.2", "Root 2"]);
 });
 
-Deno.test("OutlineProjection - collapse all and expand all", () => {
+test("OutlineProjection - collapse all and expand all", () => {
   const doc = `# Root 1
 ## Child 1.1
 ### Grandchild 1.1.1
@@ -113,7 +113,7 @@ Deno.test("OutlineProjection - collapse all and expand all", () => {
   assertEquals(visibleExpanded.map((h) => h.text), ["Root 1", "Child 1.1", "Grandchild 1.1.1", "Root 2"]);
 });
 
-Deno.test("OutlineProjection - reconcileOutlineAnchors maps across text changes", () => {
+test("OutlineProjection - reconcileOutlineAnchors maps across text changes", () => {
   const doc1 = `# Alpha
 ## Beta
 `;

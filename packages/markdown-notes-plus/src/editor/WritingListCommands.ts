@@ -2,11 +2,11 @@ import type { Node as ProseNode } from "@milkdown/prose/model";
 import { liftListItem as pmLiftListItem, sinkListItem as pmSinkListItem } from "@milkdown/prose/schema-list";
 import { WRITING_TRANSACTION_ORIGIN_META } from "./WritingEditorLifecycle.ts";
 
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WritingView = { state: any; dispatch: (tr: any) => void; [key: string]: any };
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WritingState = any;
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WritingTransaction = any;
 
 function findParentListItem(state: WritingState): {
@@ -62,7 +62,7 @@ export function moveListItemUp(view: WritingView): boolean {
   for (let i = 0; i < found.indexInList - 1; i += 1) {
     targetPos += items[i].nodeSize;
   }
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tr.setSelection((state.selection.constructor as any).near(tr.doc.resolve(targetPos + 2)));
   tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "bullet" });
   dispatch(tr.scrollIntoView());
@@ -94,7 +94,7 @@ export function moveListItemDown(view: WritingView): boolean {
   for (let i = 0; i <= found.indexInList; i += 1) {
     targetPos += items[i].nodeSize;
   }
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tr.setSelection((state.selection.constructor as any).near(tr.doc.resolve(targetPos + 2)));
   tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "bullet" });
   dispatch(tr.scrollIntoView());
@@ -109,7 +109,7 @@ export function indentListItem(view: WritingView): boolean {
   const itemType = state.schema.nodes.list_item;
   if (!itemType) return false;
 
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (pmSinkListItem(itemType) as any)(state, (tr: any) => {
     tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "bullet" });
     dispatch(tr);
@@ -124,7 +124,7 @@ export function outdentListItem(view: WritingView): boolean {
   const itemType = state.schema.nodes.list_item;
   if (!itemType) return false;
 
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (pmLiftListItem(itemType) as any)(state, (tr: any) => {
     tr.setMeta(WRITING_TRANSACTION_ORIGIN_META, { kind: "command", command: "bullet" });
     dispatch(tr);

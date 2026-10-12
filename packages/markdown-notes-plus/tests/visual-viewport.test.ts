@@ -1,8 +1,4 @@
-/// <reference lib="deno.ns" />
-
-declare const Deno: {
-  test(name: string, fn: () => void | Promise<void>): void;
-};
+import { test } from "bun:test";
 
 import { computeViewportHeightCss } from "../src/app/viewportHeight.ts";
 
@@ -14,13 +10,13 @@ function assertUndefined(value: unknown): void {
   if (value !== undefined) throw new Error(`expected undefined, got ${String(value)}`);
 }
 
-Deno.test("computeViewportHeightCss returns no declaration for non-positive heights", () => {
+test("computeViewportHeightCss returns no declaration for non-positive heights", () => {
   assertUndefined(computeViewportHeightCss(0));
   assertUndefined(computeViewportHeightCss(-1));
   assertUndefined(computeViewportHeightCss(Number.NaN));
 });
 
-Deno.test("computeViewportHeightCss preserves positive integer and fractional heights", () => {
+test("computeViewportHeightCss preserves positive integer and fractional heights", () => {
   assertEquals(computeViewportHeightCss(844), "844px");
   assertEquals(computeViewportHeightCss(390.5), "390.5px");
 });

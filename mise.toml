@@ -5,11 +5,11 @@ CDPATH = ""
 
 [tools]
 node = "20.19.1"
-deno = "2.9.6"
+bun = "1.4.3"
 python = "3.13.7"
 
 # Runtime installation is intentionally separate from dependency installation:
-# `mise install` provisions Node, Deno, and Python, then `mise run deps`
+# `mise install` provisions Node, Bun, and Python, then `mise run deps`
 # restores the exact npm dependency graph from package-lock.json.
 [tasks.deps]
 description = "Install the locked Markdown Notes+ npm dependencies"
@@ -42,7 +42,7 @@ dir = "packages/markdown-notes-plus"
 run = "npm run typecheck"
 
 [tasks."test:unit"]
-description = "Run the Deno unit and projection regression suite"
+description = "Run the Bun unit and projection regression suite"
 depends = ["deps"]
 dir = "packages/markdown-notes-plus"
 run = "npm run test:unit"

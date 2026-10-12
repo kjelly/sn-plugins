@@ -1,17 +1,17 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
 
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
-
 import { analyzeMarkdown } from "../src/markdown/analysis.ts";
 import {
   computeSectionBreadcrumbs,
 } from "../src/editor/WritingFolding.ts";
 
-Deno.test("WritingFolding - computeSectionBreadcrumbs calculates root-to-target path", () => {
+test("WritingFolding - computeSectionBreadcrumbs calculates root-to-target path", () => {
   const doc = `# Root A
 ## Child A1
 ### Grandchild A1.1
@@ -43,7 +43,7 @@ Deno.test("WritingFolding - computeSectionBreadcrumbs calculates root-to-target 
   assertEquals(computeSectionBreadcrumbs(analysis, 99999), []);
 });
 
-Deno.test("WritingFolding - computeSectionBreadcrumbs handles deep hierarchy and multiple roots", () => {
+test("WritingFolding - computeSectionBreadcrumbs handles deep hierarchy and multiple roots", () => {
   const doc = `# Chapter 1
 ## Section 1.1
 ### Subsection 1.1.1

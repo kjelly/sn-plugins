@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import {
   createEmptyLibrary,
@@ -21,7 +21,7 @@ import {
 } from "../src/templates/TemplateEngine.ts";
 import { BUILTIN_TEMPLATES, BUILTIN_SNIPPETS } from "../src/templates/BuiltinTemplates.ts";
 
-Deno.test("TemplateEngine - built-ins are defined correctly", () => {
+test("TemplateEngine - built-ins are defined correctly", () => {
   assertEquals(BUILTIN_TEMPLATES.length, 5);
   const templateIds = BUILTIN_TEMPLATES.map((t) => t.id);
   assertEquals(templateIds, [
@@ -37,7 +37,7 @@ Deno.test("TemplateEngine - built-ins are defined correctly", () => {
   assertEquals(snippetTriggers, ["decision", "reference", "command"]);
 });
 
-Deno.test("TemplateEngine - expandTemplateVariables replaces date, time, title, selection and cursor", () => {
+test("TemplateEngine - expandTemplateVariables replaces date, time, title, selection and cursor", () => {
   const fixedDate = new Date(2026, 7, 30, 14, 25); // 2026-08-30 14:25
   const template = `# {{noteTitle}}
 Date: {{date}} Time: {{time}} Full: {{datetime}}
@@ -59,13 +59,13 @@ Start writing here: End.`;
   assertEquals(result.cursorOffset, expectedText.indexOf("Start writing here: ") + "Start writing here: ".length);
 });
 
-Deno.test("TemplateEngine - extractNoteTitle extracts first H1 or defaults to Untitled", () => {
+test("TemplateEngine - extractNoteTitle extracts first H1 or defaults to Untitled", () => {
   assertEquals(extractNoteTitle("# Project Alpha\nSome body text"), "Project Alpha");
   assertEquals(extractNoteTitle("## Subsection\n# Later Title"), "Later Title");
   assertEquals(extractNoteTitle("No headings here\nJust text"), "Untitled");
 });
 
-Deno.test("TemplateEngine - resolveAllTemplates and resolveAllSnippets respect hiddenBuiltins", () => {
+test("TemplateEngine - resolveAllTemplates and resolveAllSnippets respect hiddenBuiltins", () => {
   const lib: InsertLibrary = {
     schemaVersion: 1,
     templates: [
@@ -91,7 +91,7 @@ Deno.test("TemplateEngine - resolveAllTemplates and resolveAllSnippets respect h
   assertEquals(allS.some((s) => s.trigger === "decision"), false);
 });
 
-Deno.test("TemplateEngine - validateLibraryQuota flags oversized templates or library", () => {
+test("TemplateEngine - validateLibraryQuota flags oversized templates or library", () => {
   const lib = createEmptyLibrary();
   assertEquals(validateLibraryQuota(lib).valid, true);
 
@@ -110,7 +110,7 @@ Deno.test("TemplateEngine - validateLibraryQuota flags oversized templates or li
   assertEquals(check.message?.includes("exceeds 64 KB limit"), true);
 });
 
-Deno.test("TemplateEngine - export and import JSON with conflict policies", () => {
+test("TemplateEngine - export and import JSON with conflict policies", () => {
   const customT1: TemplateDefinition = {
     id: "custom-t1",
     name: "Custom T1",

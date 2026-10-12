@@ -1,8 +1,9 @@
+import { test } from "bun:test";
+
 function assert(condition: unknown, message = "assertion failed"): asserts condition { if (!condition) throw new Error(message); }
 function assertEquals<T>(actual: T, expected: T): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
 }
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import { analyzeMarkdown } from "../src/markdown/analysis.ts";
 import { analyzeFlashcards } from "../src/flashcards/FlashcardModel.ts";
@@ -40,7 +41,7 @@ q： duplicate
 a： lower case
 `;
 
-Deno.test("flashcard model parses sections, categories, Markdown answers, and exact ranges", () => {
+test("flashcard model parses sections, categories, Markdown answers, and exact ranges", () => {
   const analysis = analyzeMarkdown(fixture);
   const model = analyzeFlashcards(fixture, analysis);
   assertEquals(model.markdown, fixture);
@@ -59,7 +60,7 @@ Deno.test("flashcard model parses sections, categories, Markdown answers, and ex
   }
 });
 
-Deno.test("flashcard model supports CRLF, duplicate questions, and heading levels", () => {
+test("flashcard model supports CRLF, duplicate questions, and heading levels", () => {
   const source = "# Q&A\r\nQ: Same\r\nA: One\r\nQ: Same\r\nA: Two\r\n## QA\r\nQ： Three\r\nA： Answer\r\n### Q & A\r\nQ: Four\r\nA: Last";
   const model = analyzeFlashcards(source);
   assertEquals(model.markdown, source);
@@ -68,7 +69,7 @@ Deno.test("flashcard model supports CRLF, duplicate questions, and heading level
   assertEquals(new Set(model.cards.map((card) => card.id)).size, 4);
 });
 
-Deno.test("flashcard model ignores malformed pairs and protected markers", () => {
+test("flashcard model ignores malformed pairs and protected markers", () => {
   const source = `## Q&A
 A: orphan
 Q: unanswered
@@ -94,7 +95,7 @@ A: hidden
   assertEquals(model.cards.map((card) => card.question), ["valid"]);
 });
 
-Deno.test("flashcard model returns sections with zero cards without changing source", () => {
+test("flashcard model returns sections with zero cards without changing source", () => {
   const source = "### Questions & Answers\n\nQ: incomplete\n";
   const model = analyzeFlashcards(source);
   assertEquals(model.markdown, source);
@@ -102,7 +103,7 @@ Deno.test("flashcard model returns sections with zero cards without changing sou
   assertEquals(model.cards, []);
 });
 
-Deno.test("nested Q&A sections end parent answers and do not pair across the child", () => {
+test("nested Q&A sections end parent answers and do not pair across the child", () => {
   const source = "# Q&A\nQ: parent\nA: parent answer\n## Q&A\nQ: child\nA: child answer\n## Other\nQ: after child\nA: later answer\n";
   const model = analyzeFlashcards(source);
   assertEquals(model.markdown, source);
@@ -115,7 +116,7 @@ Deno.test("nested Q&A sections end parent answers and do not pair across the chi
   assertEquals(incomplete.cards, []);
 });
 
-Deno.test("repeated category headings retain distinct source identities", () => {
+test("repeated category headings retain distinct source identities", () => {
   const source = "## Q&A\n### Basics\nQ: first\nA: one\n### Basics\nQ: second\nA: two\n";
   const model = analyzeFlashcards(source);
   assertEquals(model.cards.map((card) => card.headingPath), [["Basics"], ["Basics"]]);

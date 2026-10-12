@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import { filterSparseOutline } from "../src/outline/SparseOutline.ts";
 
@@ -17,7 +17,7 @@ const sampleHeadings = [
   { text: "Summary", level: 2 },
 ];
 
-Deno.test("SparseOutline - filters by maxLevel", () => {
+test("SparseOutline - filters by maxLevel", () => {
   const max1 = filterSparseOutline(sampleHeadings, { maxLevel: 1 });
   assertEquals(max1.map((h) => h.text), ["Intro", "Architecture"]);
 
@@ -25,7 +25,7 @@ Deno.test("SparseOutline - filters by maxLevel", () => {
   assertEquals(max2.map((h) => h.text), ["Intro", "Overview", "Architecture", "Components", "Summary"]);
 });
 
-Deno.test("SparseOutline - filters by search query", () => {
+test("SparseOutline - filters by search query", () => {
   const queryResult = filterSparseOutline(sampleHeadings, { query: "arch" });
   assertEquals(queryResult.map((h) => h.text), ["Architecture"]);
 
@@ -33,7 +33,7 @@ Deno.test("SparseOutline - filters by search query", () => {
   assertEquals(emptyQuery.length, sampleHeadings.length);
 });
 
-Deno.test("SparseOutline - combines maxLevel and query", () => {
+test("SparseOutline - combines maxLevel and query", () => {
   const combined = filterSparseOutline(sampleHeadings, { maxLevel: 2, query: "summary" });
   assertEquals(combined.map((h) => h.text), ["Summary"]);
 

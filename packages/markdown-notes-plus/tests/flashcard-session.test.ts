@@ -1,8 +1,9 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T): void {
   const normalize = (value: unknown): unknown => value instanceof Set ? [...value] : value instanceof Map ? [...value] : value;
   if (JSON.stringify(normalize(actual)) !== JSON.stringify(normalize(expected))) throw new Error(`${JSON.stringify(normalize(actual))} !== ${JSON.stringify(normalize(expected))}`);
 }
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import type { Flashcard } from "../src/flashcards/FlashcardTypes.ts";
 import {
@@ -27,7 +28,7 @@ const cards = ["a", "b", "c"].map((id): Flashcard => ({
   sourceRange: { from: 0, to: 3 },
 }));
 
-Deno.test("flashcard session navigates and hides revealed answers", () => {
+test("flashcard session navigates and hides revealed answers", () => {
   let state = revealCurrentCard(createFlashcardSession(cards));
   assertEquals(state.revealed, true);
   state = nextCard(state);
@@ -36,7 +37,7 @@ Deno.test("flashcard session navigates and hides revealed answers", () => {
   assertEquals(state.cardIds[state.currentIndex], "a");
 });
 
-Deno.test("flashcard Known removes cards and completes the session", () => {
+test("flashcard Known removes cards and completes the session", () => {
   let state = createFlashcardSession(cards.slice(0, 2));
   state = markKnown(state);
   assertEquals(state.cardIds, ["b"]);
@@ -46,14 +47,14 @@ Deno.test("flashcard Known removes cards and completes the session", () => {
   assertEquals([...state.knownCardIds], ["a", "b"]);
 });
 
-Deno.test("flashcard Again moves the current card to the tail and counts it", () => {
+test("flashcard Again moves the current card to the tail and counts it", () => {
   const state = markAgain(createFlashcardSession(cards));
   assertEquals(state.cardIds, ["b", "c", "a"]);
   assertEquals(state.againCountByCardId.get("a"), 1);
   assertEquals(state.revealed, false);
 });
 
-Deno.test("flashcard shuffle accepts deterministic RNG and empty sessions", () => {
+test("flashcard shuffle accepts deterministic RNG and empty sessions", () => {
   const values = [0, 0];
   const shuffled = shuffleSession(createFlashcardSession(cards), () => values.shift() ?? 0);
   assertEquals(shuffled.cardIds, ["b", "c", "a"]);

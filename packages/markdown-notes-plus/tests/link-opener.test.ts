@@ -1,14 +1,14 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
 
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
-
 import { isSafeExternalUrl, openExternalLink, resetLinkOpenerStateForTesting } from "../src/utils/linkOpener.ts";
 
-Deno.test("linkOpener - isSafeExternalUrl validates safe and unsafe protocols", () => {
+test("linkOpener - isSafeExternalUrl validates safe and unsafe protocols", () => {
   assertEquals(isSafeExternalUrl("https://example.com"), true);
   assertEquals(isSafeExternalUrl("http://example.com"), true);
   assertEquals(isSafeExternalUrl("mailto:test@example.com"), true);
@@ -30,7 +30,7 @@ Deno.test("linkOpener - isSafeExternalUrl validates safe and unsafe protocols", 
   assertEquals(isSafeExternalUrl("   "), false);
 });
 
-Deno.test("linkOpener - openExternalLink opens safe urls with _blank and noopener,noreferrer", () => {
+test("linkOpener - openExternalLink opens safe urls with _blank and noopener,noreferrer", () => {
   resetLinkOpenerStateForTesting();
   let openedUrl = "";
   let openedTarget = "";
@@ -56,7 +56,7 @@ Deno.test("linkOpener - openExternalLink opens safe urls with _blank and noopene
   assertEquals(openedUrl, "https://standardnotes.com");
 });
 
-Deno.test("linkOpener - deduplicates rapid link opening to prevent duplicate tabs", () => {
+test("linkOpener - deduplicates rapid link opening to prevent duplicate tabs", () => {
   resetLinkOpenerStateForTesting();
   const openedCalls: string[] = [];
   const mockOpener = (url: string) => {

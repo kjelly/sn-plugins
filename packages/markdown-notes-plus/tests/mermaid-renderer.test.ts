@@ -1,3 +1,4 @@
+import { test } from "bun:test";
 import {
   allowedMermaidDiagramLabel,
   isMermaidLanguage,
@@ -5,11 +6,6 @@ import {
   MermaidRenderError,
   validateMermaidSource,
 } from "../src/editor/MermaidRenderer.ts";
-
-declare const Deno: {
-  test(name: string, fn: () => void | Promise<void>): void;
-  readTextFile(path: string | URL): Promise<string>;
-};
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -26,7 +22,7 @@ function assertThrowsCode(source: string, code: MermaidRenderError["code"]): voi
   throw new Error(`expected Mermaid validation to reject ${code}`);
 }
 
-Deno.test("Mermaid preview recognizes only the fenced mermaid language", () => {
+test("Mermaid preview recognizes only the fenced mermaid language", () => {
   assert(isMermaidLanguage("mermaid"), "lowercase language must be recognized");
   assert(isMermaidLanguage(" Mermaid "), "language matching must be case-insensitive and trimmed");
   assert(isMermaidLanguage("MERMAID"), "uppercase language must be recognized");
@@ -34,7 +30,7 @@ Deno.test("Mermaid preview recognizes only the fenced mermaid language", () => {
   assert(!isMermaidLanguage(undefined), "missing language must remain a code block");
 });
 
-Deno.test("Mermaid preview rejects empty, oversized, and diagram-configured sources before loading Mermaid", () => {
+test("Mermaid preview rejects empty, oversized, and diagram-configured sources before loading Mermaid", () => {
   assertThrowsCode("   \n", "empty");
   assertThrowsCode(`flowchart LR\n${"A".repeat(MAX_MERMAID_SOURCE_LENGTH)}`, "too-large");
   assertThrowsCode("%%{init: { 'theme': 'forest' }}%%\nflowchart LR\nA-->B", "config");
@@ -47,7 +43,7 @@ Deno.test("Mermaid preview rejects empty, oversized, and diagram-configured sour
   validateMermaidSource("flowchart LR\nA-->B");
 });
 
-Deno.test("Mermaid preview has a fixed diagram allowlist", () => {
+test("Mermaid preview has a fixed diagram allowlist", () => {
   for (const type of ["flowchart", "flowchart-v2", "sequence", "class", "classDiagram", "state", "stateDiagram", "er"]) {
     assert(allowedMermaidDiagramLabel(type), `${type} must be allowed`);
   }
@@ -56,7 +52,7 @@ Deno.test("Mermaid preview has a fixed diagram allowlist", () => {
   }
 });
 
-Deno.test("Mermaid dependency is pinned to the reviewed release", async () => {
-  const packageJson = JSON.parse(await Deno.readTextFile(new URL("../package.json", import.meta.url)));
+test("Mermaid dependency is pinned to the reviewed release", async () => {
+  const packageJson = JSON.parse(await Bun.file(new URL("../package.json", import.meta.url)).text());
   assert(packageJson.dependencies?.mermaid === "11.17.2", "Mermaid must remain pinned exactly to 11.17.2");
 });

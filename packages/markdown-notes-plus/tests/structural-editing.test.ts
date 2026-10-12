@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import { analyzeMarkdown } from "../src/markdown/analysis.ts";
 import {
@@ -18,7 +18,7 @@ import {
   duplicateSubtree,
 } from "../src/markdown/structuralEditing.ts";
 
-Deno.test("StructuralEditing - moveSubtree moves middle sibling up and down", () => {
+test("StructuralEditing - moveSubtree moves middle sibling up and down", () => {
   const doc = `# Section 1
 Content 1
 
@@ -68,7 +68,7 @@ Content 2
   );
 });
 
-Deno.test("StructuralEditing - moveSubtree first up or last down is no-op", () => {
+test("StructuralEditing - moveSubtree first up or last down is no-op", () => {
   const doc = `# First
 Content 1
 
@@ -88,7 +88,7 @@ Content 2
   assertEquals(downRes.markdown, doc);
 });
 
-Deno.test("StructuralEditing - moveSubtree carries nested descendants and preserves code/HTML/tables/CRLF", () => {
+test("StructuralEditing - moveSubtree carries nested descendants and preserves code/HTML/tables/CRLF", () => {
   const doc = "# Parent A\r\nIntro A\r\n\r\n## Child A1\r\n- [x] Task 1\r\n```js\r\nconsole.log('hi');\r\n```\r\n\r\n# Parent B\r\n<table><tr><td>Table</td></tr></table>\r\n\r\n## Child B1\r\nChild B1 text\r\n";
   const analysis = analyzeMarkdown(doc);
   const parentBAnchor = analysis.sections[2].anchor;
@@ -101,7 +101,7 @@ Deno.test("StructuralEditing - moveSubtree carries nested descendants and preser
   );
 });
 
-Deno.test("StructuralEditing - moveSubtreeBefore and moveSubtreeAfter reorder siblings", () => {
+test("StructuralEditing - moveSubtreeBefore and moveSubtreeAfter reorder siblings", () => {
   const doc = `# S1
 Text 1
 
@@ -172,7 +172,7 @@ Text 2
   assertEquals(moveSubtreeBefore(doc, s1Anchor, s1Anchor).changed, false);
 });
 
-Deno.test("StructuralEditing - promoteHeading and demoteHeading modify single ATX heading", () => {
+test("StructuralEditing - promoteHeading and demoteHeading modify single ATX heading", () => {
   const doc = `### Section Title ###
 Content
 #### Child Title
@@ -206,7 +206,7 @@ Child content
   );
 });
 
-Deno.test("StructuralEditing - promoteSubtree and demoteSubtree modify all descendant ATX headings", () => {
+test("StructuralEditing - promoteSubtree and demoteSubtree modify all descendant ATX headings", () => {
   const doc = `## Parent
 Intro
 
@@ -261,7 +261,7 @@ Text 2
   );
 });
 
-Deno.test("StructuralEditing - promote/demote atomic rejection for Setext or boundary levels", () => {
+test("StructuralEditing - promote/demote atomic rejection for Setext or boundary levels", () => {
   // Level 1 promote -> rejected
   const docLevel1 = `# Level 1
 Content
@@ -298,7 +298,7 @@ Setext Child
   assertEquals(demoteSubtree(docMixed, aMixed.sections[0].anchor).changed, false);
 });
 
-Deno.test("StructuralEditing - duplicateSubtree duplicates section byte-for-byte", () => {
+test("StructuralEditing - duplicateSubtree duplicates section byte-for-byte", () => {
   const doc = `# Section Alpha
 Some text
 - [ ] Task

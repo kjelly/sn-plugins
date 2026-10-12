@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["bun", "@wdio/globals/types"]
+  },
+  "include": ["tests/**/*.test.ts", "tests/helpers/**/*.ts"],
+  "exclude": ["tests/milkdown-boundary.test.ts", "tests/source-history-boundary.test.ts"]
+}

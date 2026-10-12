@@ -1,10 +1,10 @@
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 import { EditorState, Selection, type Transaction } from "@milkdown/prose/state";
 import { Schema } from "@milkdown/prose/model";
@@ -29,7 +29,7 @@ const fullSchema = new Schema({
   },
 });
 
-Deno.test("WritingShortcuts - Alt+Left / Alt+Right promotes and demotes headings", () => {
+test("WritingShortcuts - Alt+Left / Alt+Right promotes and demotes headings", () => {
   const doc = fullSchema.nodes.doc.create(null, [
     fullSchema.nodes.heading.create({ level: 2 }, fullSchema.text("My Heading")),
   ]);
@@ -57,7 +57,7 @@ Deno.test("WritingShortcuts - Alt+Left / Alt+Right promotes and demotes headings
     preventDefault: () => { prevented = true; },
   } as unknown as KeyboardEvent;
 
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handler = plugin.props.handleKeyDown as any;
   const handledPromote = handler ? handler.call(plugin, view, eventPromote) : false;
   assertEquals(handledPromote, true);
@@ -79,7 +79,7 @@ Deno.test("WritingShortcuts - Alt+Left / Alt+Right promotes and demotes headings
   assertEquals(state.doc.firstChild!.attrs.level, 2);
 });
 
-Deno.test("WritingSmartKeys - Smart Enter on empty list item lifts out to paragraph", () => {
+test("WritingSmartKeys - Smart Enter on empty list item lifts out to paragraph", () => {
   const doc = fullSchema.nodes.doc.create(null, [
     fullSchema.nodes.bullet_list.create(null, [
       fullSchema.nodes.list_item.create(null, fullSchema.nodes.paragraph.create(null, fullSchema.text("First"))),
@@ -109,7 +109,7 @@ Deno.test("WritingSmartKeys - Smart Enter on empty list item lifts out to paragr
     preventDefault: () => { prevented = true; },
   } as unknown as KeyboardEvent;
 
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handler = plugin.props.handleKeyDown as any;
   const handled = handler ? handler.call(plugin, view, eventEnter) : false;
   assertEquals(handled, true);

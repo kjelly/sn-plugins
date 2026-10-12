@@ -1,6 +1,4 @@
-/// <reference lib="deno.ns" />
-
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
+import { test } from "bun:test";
 
 import { captureOutlinePointer, createOutlineDragActivationGate, isOutlineDragPointer, outlineDropPlacement } from "../src/outline/OutlinePointerDrag.ts";
 
@@ -29,7 +27,7 @@ function fakeTimers() {
   };
 }
 
-Deno.test("OutlinePointerDrag activates at the 250ms hold boundary", () => {
+test("OutlinePointerDrag activates at the 250ms hold boundary", () => {
   const timers = fakeTimers();
   const gate = createOutlineDragActivationGate(timers.setTimeout, timers.clearTimeout);
   const events: string[] = [];
@@ -44,7 +42,7 @@ Deno.test("OutlinePointerDrag activates at the 250ms hold boundary", () => {
   if (events.join(",") !== "activated") throw new Error("small movement within tolerance must still activate");
 });
 
-Deno.test("OutlinePointerDrag cancels pending activation beyond 10px", () => {
+test("OutlinePointerDrag cancels pending activation beyond 10px", () => {
   const timers = fakeTimers();
   const gate = createOutlineDragActivationGate(timers.setTimeout, timers.clearTimeout);
   const events: string[] = [];
@@ -57,7 +55,7 @@ Deno.test("OutlinePointerDrag cancels pending activation beyond 10px", () => {
   if (events.join(",") !== "cancelled") throw new Error("cancelled timer must not activate");
 });
 
-Deno.test("OutlinePointerDrag cancels when released before activation", () => {
+test("OutlinePointerDrag cancels when released before activation", () => {
   const timers = fakeTimers();
   const gate = createOutlineDragActivationGate(timers.setTimeout, timers.clearTimeout);
   const events: string[] = [];
@@ -69,7 +67,7 @@ Deno.test("OutlinePointerDrag cancels when released before activation", () => {
   if (events.join(",") !== "cancelled") throw new Error("early release must cancel");
 });
 
-Deno.test("OutlinePointerDrag does not retrigger after activation", () => {
+test("OutlinePointerDrag does not retrigger after activation", () => {
   const timers = fakeTimers();
   const gate = createOutlineDragActivationGate(timers.setTimeout, timers.clearTimeout);
   const events: string[] = [];
@@ -82,17 +80,17 @@ Deno.test("OutlinePointerDrag does not retrigger after activation", () => {
   if (events.join(",") !== "activated") throw new Error("post-activation movement must not retrigger");
 });
 
-Deno.test("OutlinePointerDrag rejects events from a different pointer", () => {
+test("OutlinePointerDrag rejects events from a different pointer", () => {
   if (!isOutlineDragPointer(7, 7)) throw new Error("same pointer must be accepted");
   if (isOutlineDragPointer(7, 8)) throw new Error("different pointer must be rejected");
 });
 
-Deno.test("OutlinePointerDrag computes placement from the final pointer coordinate", () => {
+test("OutlinePointerDrag computes placement from the final pointer coordinate", () => {
   if (outlineDropPlacement(101, { top: 100, height: 20 }) !== "before") throw new Error("upper half must place before");
   if (outlineDropPlacement(119, { top: 100, height: 20 }) !== "after") throw new Error("lower half must place after");
 });
 
-Deno.test("OutlinePointerDrag cancellation does not activate the gate", () => {
+test("OutlinePointerDrag cancellation does not activate the gate", () => {
   const timers = fakeTimers();
   const gate = createOutlineDragActivationGate(timers.setTimeout, timers.clearTimeout);
   let activated = false;
@@ -104,7 +102,7 @@ Deno.test("OutlinePointerDrag cancellation does not activate the gate", () => {
   if (activated) throw new Error("cancelled pointer must not activate");
 });
 
-Deno.test("OutlinePointerDrag reports pointer-capture failure without claiming success", () => {
+test("OutlinePointerDrag reports pointer-capture failure without claiming success", () => {
   const failed = captureOutlinePointer({ setPointerCapture: () => { throw new Error("unsupported"); } }, 3);
   if (failed) throw new Error("capture failure must report false");
 });

@@ -1193,7 +1193,6 @@ export function WritingEditor({
     };
     // The editor owns its lifecycle. Content updates are handled below so a
     // canonical update cannot recreate Milkdown and lose selection/history.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWindowIndex]);
 
   useEffect(() => {

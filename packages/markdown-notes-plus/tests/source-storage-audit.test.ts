@@ -1,8 +1,5 @@
-declare const Deno: {
-  test(name: string, fn: () => void | Promise<void>): void;
-  readDir(path: string | URL): AsyncIterable<{ name: string; isDirectory: boolean; isFile: boolean }>;
-  readTextFile(path: string | URL): Promise<string>;
-};
+import { readdir } from "node:fs/promises";
+import { test } from "bun:test";
 
 const forbiddenProductReferences = [
   "localStorage",
@@ -21,20 +18,20 @@ const forbiddenProductReferences = [
 
 async function collectSourceFiles(directory: URL): Promise<URL[]> {
   const files: URL[] = [];
-  for await (const entry of Deno.readDir(directory)) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = new URL(entry.name, directory);
-    if (entry.isDirectory) files.push(...await collectSourceFiles(new URL(`${entry.name}/`, directory)));
-    else if (entry.isFile) files.push(path);
+    if (entry.isDirectory()) files.push(...await collectSourceFiles(new URL(`${entry.name}/`, directory)));
+    else if (entry.isFile()) files.push(path);
   }
   return files.sort((left, right) => left.href.localeCompare(right.href));
 }
 
-Deno.test("product source contains no removed browser storage references", async () => {
+test("product source contains no removed browser storage references", async () => {
   const sourceDirectory = new URL("../src/", import.meta.url);
   const violations: string[] = [];
 
   for (const file of await collectSourceFiles(sourceDirectory)) {
-    const source = await Deno.readTextFile(file);
+    const source = await Bun.file(file).text();
     for (const reference of forbiddenProductReferences) {
       if (source.includes(reference)) violations.push(`${file.pathname}: ${reference}`);
     }

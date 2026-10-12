@@ -1,10 +1,10 @@
+import { test } from "bun:test";
 import { CanonicalDocument } from "../src/document/CanonicalDocument.ts";
 import { analyzeKanban } from "../src/kanban/KanbanModel.ts";
 import { moveKanbanCard } from "../src/kanban/KanbanMove.ts";
 
 function assert(condition: unknown, message = "assertion failed"): asserts condition { if (!condition) throw new Error(message); }
 function assertEquals<T>(actual: T, expected: T): void { if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`); }
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void };
 
 const source = `# Board
 ## Backlog\r
@@ -16,7 +16,7 @@ const source = `# Board
 ## Done\r
 `;
 
-Deno.test("Kanban move preserves CRLF payload bytes and checkbox state", () => {
+test("Kanban move preserves CRLF payload bytes and checkbox state", () => {
   const model = analyzeKanban(source);
   const board = model.candidates[0];
   const backlog = board.columns[0];
@@ -35,7 +35,7 @@ Deno.test("Kanban move preserves CRLF payload bytes and checkbox state", () => {
   assertEquals(result.changeSet?.changes.length, 2);
 });
 
-Deno.test("Kanban move rejects cross-board and blocked destinations", () => {
+test("Kanban move rejects cross-board and blocked destinations", () => {
   const first = "# A\n## Backlog\n- [ ] task\n## Doing\n## Review\n## Done\n";
   const second = "# B\n## Backlog\n## Doing\n## Review\n## Done\n";
   const combined = `${first}${second}`;
@@ -48,7 +48,7 @@ Deno.test("Kanban move rejects cross-board and blocked destinations", () => {
   assertEquals(moveKanbanCard({ markdown: combined, fallback: true }, card, { boardAnchor: a.anchor, columnAnchor: a.columns[1].anchor }).changed, false);
 });
 
-Deno.test("Kanban moves into an empty EOF destination without a final newline", () => {
+test("Kanban moves into an empty EOF destination without a final newline", () => {
   const source = "# Board\n## Backlog\n- [ ] A\n## Doing\n## Review\n## Done";
   const model = analyzeKanban(source);
   const board = model.candidates[0];
@@ -62,7 +62,7 @@ Deno.test("Kanban moves into an empty EOF destination without a final newline", 
   assertEquals(result.changeSet?.changes[1].insertedLength, board.columns[0].cards[0].payload!.to - board.columns[0].cards[0].payload!.from + 1);
 });
 
-Deno.test("Kanban moves into an empty CRLF EOF destination without a final newline", () => {
+test("Kanban moves into an empty CRLF EOF destination without a final newline", () => {
   const source = "# Board\r\n## Backlog\r\n- [ ] A\r\n## Doing\r\n## Review\r\n## Done";
   const model = analyzeKanban(source);
   const board = model.candidates[0];
@@ -75,7 +75,7 @@ Deno.test("Kanban moves into an empty CRLF EOF destination without a final newli
   assertEquals(result.changeSet?.changes[1].insertedLength, board.columns[0].cards[0].payload!.to - board.columns[0].cards[0].payload!.from + 2);
 });
 
-Deno.test("Kanban moves into a final empty Setext destination without a final LF newline", () => {
+test("Kanban moves into a final empty Setext destination without a final LF newline", () => {
   const source = `# Board
 ## Backlog
 - [ ] A
@@ -101,7 +101,7 @@ Done
   assertEquals(result.changeSet?.changes[1].insertedLength, board.columns[0].cards[0].payload!.to - board.columns[0].cards[0].payload!.from + 1);
 });
 
-Deno.test("Kanban moves into a final empty Setext destination without a final CRLF newline", () => {
+test("Kanban moves into a final empty Setext destination without a final CRLF newline", () => {
   const source = "# Board\r\n## Backlog\r\n- [ ] A\r\n## Doing\r\n## Review\r\nDone\r\n----";
   const model = analyzeKanban(source);
   const board = model.candidates[0];
@@ -114,7 +114,7 @@ Deno.test("Kanban moves into a final empty Setext destination without a final CR
   assertEquals(result.changeSet?.changes[1].insertedLength, board.columns[0].cards[0].payload!.to - board.columns[0].cards[0].payload!.from + 2);
 });
 
-Deno.test("Kanban move preserves a post-task blank separator and destination newline style", () => {
+test("Kanban move preserves a post-task blank separator and destination newline style", () => {
   for (const newline of ["\n", "\r\n"]) {
     const source = ["# Board", "## Backlog", "- [ ] A", "", "## Doing", "## Review", "## Done"].join(newline);
     const model = analyzeKanban(source);
@@ -129,7 +129,7 @@ Deno.test("Kanban move preserves a post-task blank separator and destination new
   }
 });
 
-Deno.test("Kanban rejects a root task whose final continuation has no EOL", () => {
+test("Kanban rejects a root task whose final continuation has no EOL", () => {
   const source = `# Board
 ## Backlog
 ## Doing
@@ -149,7 +149,7 @@ Deno.test("Kanban rejects a root task whose final continuation has no EOL", () =
   assertEquals(result.markdown.includes("continuation## Review"), false);
 });
 
-Deno.test("Canonical admission rejects a fresh token while a remote conflict is pending", () => {
+test("Canonical admission rejects a fresh token while a remote conflict is pending", () => {
   const document = new CanonicalDocument("base");
   assert(document.applyLocal("local"));
   assertEquals(document.receiveRemote("remote"), "conflicted");
@@ -160,7 +160,7 @@ Deno.test("Canonical admission rejects a fresh token while a remote conflict is 
   assertEquals(document.pendingRemote, "remote");
 });
 
-Deno.test("A stale Kanban move is unchanged after a remote merge", () => {
+test("A stale Kanban move is unchanged after a remote merge", () => {
   const mergeSource = `# Board
 ## Backlog
 - [ ] A
@@ -188,7 +188,7 @@ Deno.test("A stale Kanban move is unchanged after a remote merge", () => {
   assertEquals(document.pendingRemote, undefined);
 });
 
-Deno.test("A stale Kanban move is unchanged after a remote conflict", () => {
+test("A stale Kanban move is unchanged after a remote conflict", () => {
   const document = new CanonicalDocument(source);
   const renderToken = document.token;
   const renderedModel = analyzeKanban(document.text);
@@ -208,7 +208,7 @@ Deno.test("A stale Kanban move is unchanged after a remote conflict", () => {
   assertEquals(document.pendingRemote, remote);
 });
 
-Deno.test("A same-revision Kanban move still applies through canonical admission", () => {
+test("A same-revision Kanban move still applies through canonical admission", () => {
   const document = new CanonicalDocument(source);
   const model = analyzeKanban(document.text);
   const board = model.candidates[0];
@@ -223,7 +223,7 @@ Deno.test("A same-revision Kanban move still applies through canonical admission
   assertEquals(document.text, result.markdown);
 });
 
-Deno.test("Kanban move works with arbitrary column names and custom board", () => {
+test("Kanban move works with arbitrary column names and custom board", () => {
   const customSource = `# 專案進度
 ## 待辦
 - [ ] 任務甲

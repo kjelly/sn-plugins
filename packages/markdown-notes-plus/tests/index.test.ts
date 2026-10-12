@@ -1,3 +1,5 @@
+import { test } from "bun:test";
+
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -7,14 +9,6 @@ function assertEquals<T>(actual: T, expected: T, message = "values are not equal
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-/// <reference lib="deno.ns" />
-
-declare const Deno: {
-  test(name: string, fn: () => void | Promise<void>): void;
-  readDir(path: string | URL): AsyncIterable<{ isFile: boolean; isDirectory: boolean; name: string }>;
-  readTextFile(path: string | URL): Promise<string>;
-};
 
 import {
   analyzeMarkdown,
@@ -54,7 +48,7 @@ import { WRITING_COMMANDS, writingCommandPlan } from "../src/editor/WritingComma
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
 import { scanWritingNormalization } from "../src/markdown/writingNormalization.ts";
 
-Deno.test("Writing folding reuses decorations until the document or fold state changes", () => {
+test("Writing folding reuses decorations until the document or fold state changes", () => {
   const schema = new Schema({
     nodes: {
       doc: { content: "block+" },
@@ -90,7 +84,7 @@ import {
   observeWritingCapability,
 } from "../src/app/AppModeTransition.ts";
 
-Deno.test("preserves empty, trailing-newline, blank-line, and CRLF source exactly", () => {
+test("preserves empty, trailing-newline, blank-line, and CRLF source exactly", () => {
   assertEquals(splitMarkdownLines(""), []);
   assertEquals(analyzeMarkdown("").tasks, []);
 
@@ -112,7 +106,7 @@ Deno.test("preserves empty, trailing-newline, blank-line, and CRLF source exactl
   assertEquals(deleteCompleted(""), { markdown: "", changed: false });
 });
 
-Deno.test("recognizes normal, lowercase-X, and uppercase-X tasks", () => {
+test("recognizes normal, lowercase-X, and uppercase-X tasks", () => {
   const source = "- [ ] normal\n- [x] lowercase\n- [X] uppercase";
   const tasks = analyzeMarkdown(source).tasks;
 
@@ -121,7 +115,7 @@ Deno.test("recognizes normal, lowercase-X, and uppercase-X tasks", () => {
   assertEquals(tasks.map((task) => task.text), ["normal", "lowercase", "uppercase"]);
 });
 
-Deno.test("toggles only the checkbox character", () => {
+test("toggles only the checkbox character", () => {
   for (const source of ["- [ ] open", "- [x] checked", "- [X] checked"]) {
     const task = analyzeMarkdown(source).tasks[0];
     assert(task);
@@ -132,7 +126,7 @@ Deno.test("toggles only the checkbox character", () => {
   }
 });
 
-Deno.test("recognizes nested tasks and deletes a task subtree", () => {
+test("recognizes nested tasks and deletes a task subtree", () => {
   const source = "# Plan\n- [ ] parent\n  - [ ] child\n- [ ] sibling\n";
   const analysis = analyzeMarkdown(source);
 
@@ -143,7 +137,7 @@ Deno.test("recognizes nested tasks and deletes a task subtree", () => {
   assertEquals(result.markdown, "# Plan\n- [ ] sibling\n");
 });
 
-Deno.test("Writing hides completed tasks as a local projection without changing canonical projections", () => {
+test("Writing hides completed tasks as a local projection without changing canonical projections", () => {
   const source = "# Work\n- [x] done\n- [ ] next\n";
   const before = analyzeMarkdown(source);
   assert(writingTaskIsHidden(before.tasks[0].checked), "completed task must be hidden in Writing projection");
@@ -159,14 +153,14 @@ Deno.test("Writing hides completed tasks as a local projection without changing 
   assert(!writingControlIsDisabled(false, true), "editable controls must remain enabled");
 });
 
-Deno.test("Writing hides only a completed parent task row and keeps an open child actionable", () => {
+test("Writing hides only a completed parent task row and keeps an open child actionable", () => {
   const tasks = analyzeMarkdown("- [x] parent\n  - [ ] child\n").tasks;
   assertEquals(tasks.map((task) => task.checked), [true, false]);
   assert(writingTaskIsHidden(tasks[0].checked), "completed parent row must be hidden");
   assert(!writingTaskIsHidden(tasks[1].checked), "open nested child row must remain visible");
 });
 
-Deno.test("Writing control registry refreshes transitions and safely unregisters node views", () => {
+test("Writing control registry refreshes transitions and safely unregisters node views", () => {
   const registry = new WritingControlRegistry();
   let readOnly = false;
   const editable = true;
@@ -193,7 +187,7 @@ Deno.test("Writing control registry refreshes transitions and safely unregisters
   assertEquals([checkboxDisabled, deleteDisabled], [true, true]);
 });
 
-Deno.test("deleteTask validates a fresh exact task reference and preserves CRLF subtree ranges", () => {
+test("deleteTask validates a fresh exact task reference and preserves CRLF subtree ranges", () => {
   const source = "- [ ] duplicate\r\n  - [ ] nested\r\n- [ ] duplicate\r\n- [ ] tail\r\n";
   const initial = analyzeMarkdown(source);
   const selected = initial.tasks[1];
@@ -214,7 +208,7 @@ Deno.test("deleteTask validates a fresh exact task reference and preserves CRLF 
   assertEquals(deleteTask(shifted, selected), { markdown: shifted, changed: false });
 });
 
-Deno.test("Writing task deletion is one canonical mutation with one undo and redo", () => {
+test("Writing task deletion is one canonical mutation with one undo and redo", () => {
   const source = "# Work\n- [ ] parent\n  - [ ] child\n- [ ] sibling\n";
   const document = new CanonicalDocument(source);
   let applyTransitions = 0;
@@ -232,7 +226,7 @@ Deno.test("Writing task deletion is one canonical mutation with one undo and red
   assertEquals(document.text, "# Work\n- [ ] sibling\n");
 });
 
-Deno.test("recognizes quoted and tab-indented GFM tasks", () => {
+test("recognizes quoted and tab-indented GFM tasks", () => {
   const source = [
     "> - [ ] quoted parent",
     ">   - [x] quoted child",
@@ -246,7 +240,7 @@ Deno.test("recognizes quoted and tab-indented GFM tasks", () => {
   assertEquals(tasks.map((task) => task.depth), [0, 2, 0, 4]);
 });
 
-Deno.test("does not carry a list task container across a blockquote boundary", () => {
+test("does not carry a list task container across a blockquote boundary", () => {
   for (const newline of ["\n", "\r\n"]) {
     const source = [`> - parent`, `      - [x] top-level tab-indented code`, `- [x] real`].join(newline);
     const tasks = analyzeMarkdown(source).tasks;
@@ -255,7 +249,7 @@ Deno.test("does not carry a list task container across a blockquote boundary", (
   }
 });
 
-Deno.test("CanonicalDocument keeps exact source and makes remote conflicts explicit", () => {
+test("CanonicalDocument keeps exact source and makes remote conflicts explicit", () => {
   const source = "  note\r\n\r\n";
   const document = new CanonicalDocument(source);
   assertEquals(document.text, source);
@@ -268,7 +262,7 @@ Deno.test("CanonicalDocument keeps exact source and makes remote conflicts expli
   assertEquals(document.dirty, false);
 });
 
-Deno.test("recognizes Setext headings without changing task projections", () => {
+test("recognizes Setext headings without changing task projections", () => {
   const source = ["Title", "=====", "Subtitle", "-----", "- [ ] task"].join("\n");
   const analysis = analyzeMarkdown(source);
 
@@ -279,7 +273,7 @@ Deno.test("recognizes Setext headings without changing task projections", () => 
   assertEquals(analysis.tasks.map((task) => task.text), ["task"]);
 });
 
-Deno.test("excludes fenced code, inline code, tables, and HTML blocks", () => {
+test("excludes fenced code, inline code, tables, and HTML blocks", () => {
   const source = [
     "```markdown",
     "- [ ] fenced",
@@ -300,7 +294,7 @@ Deno.test("excludes fenced code, inline code, tables, and HTML blocks", () => {
   assertEquals(tasks[0].text, "real");
 });
 
-Deno.test("keeps nested-list fenced code opaque for LF and CRLF", () => {
+test("keeps nested-list fenced code opaque for LF and CRLF", () => {
   for (const newline of ["\n", "\r\n"]) {
     const source = [
       "- parent",
@@ -316,7 +310,7 @@ Deno.test("keeps nested-list fenced code opaque for LF and CRLF", () => {
   }
 });
 
-Deno.test("recognizes and operates on tasks after a nested-list fence closes", () => {
+test("recognizes and operates on tasks after a nested-list fence closes", () => {
   const source = [
     "- parent",
     "    ```markdown",
@@ -330,7 +324,7 @@ Deno.test("recognizes and operates on tasks after a nested-list fence closes", (
   assertEquals(deleteCompleted(source).markdown, ["- parent", "    ```markdown", "    - [x] must stay code", "    ```", ""].join("\n"));
 });
 
-Deno.test("keeps list-relative indented code opaque across line endings and containers", () => {
+test("keeps list-relative indented code opaque across line endings and containers", () => {
   for (const newline of ["\n", "\r\n"]) {
     const fixtures = [
       { parent: "- parent", codeIndent: "      ", real: "- [x] real" },
@@ -362,14 +356,14 @@ Deno.test("keeps list-relative indented code opaque across line endings and cont
   }
 });
 
-Deno.test("does not reject a nested list task before the indented-code threshold", () => {
+test("does not reject a nested list task before the indented-code threshold", () => {
   const source = "- parent\n    - [ ] nested task";
   const analysis = analyzeMarkdown(source);
   assertEquals(analysis.opaqueFencedRanges, []);
   assertEquals(analysis.tasks.map((task) => task.text), ["nested task"]);
 });
 
-Deno.test("keeps tab-indented list fences opaque for LF and CRLF", () => {
+test("keeps tab-indented list fences opaque for LF and CRLF", () => {
   for (const newline of ["\n", "\r\n"]) {
     const fixtures = [
       [
@@ -408,7 +402,7 @@ Deno.test("keeps tab-indented list fences opaque for LF and CRLF", () => {
   }
 });
 
-Deno.test("keeps marker-padding-tab list fences opaque for LF and CRLF", () => {
+test("keeps marker-padding-tab list fences opaque for LF and CRLF", () => {
   for (const newline of ["\n", "\r\n"]) {
     const fixtures = [
       [
@@ -447,7 +441,7 @@ Deno.test("keeps marker-padding-tab list fences opaque for LF and CRLF", () => {
   }
 });
 
-Deno.test("tracks nested, ordered, blockquote-list, and tilde fence containers", () => {
+test("tracks nested, ordered, blockquote-list, and tilde fence containers", () => {
   const source = [
     "- parent",
     "  - child",
@@ -468,7 +462,7 @@ Deno.test("tracks nested, ordered, blockquote-list, and tilde fence containers",
   assert(analysis.opaqueFencedRanges.length === 3);
 });
 
-Deno.test("ends a quoted fence at the quote-container boundary", () => {
+test("ends a quoted fence at the quote-container boundary", () => {
   const source = [
     "> - parent",
     ">     ```markdown",
@@ -484,7 +478,7 @@ Deno.test("ends a quoted fence at the quote-container boundary", () => {
   assertEquals(uncheckAll(source).markdown, source);
 });
 
-Deno.test("accepts a dedented closing fence inside a quoted list container", () => {
+test("accepts a dedented closing fence inside a quoted list container", () => {
   const source = [
     "> - parent",
     ">     ```markdown",
@@ -498,7 +492,7 @@ Deno.test("accepts a dedented closing fence inside a quoted list container", () 
   assertEquals(uncheckAll(source).markdown, source);
 });
 
-Deno.test("requires matching fence character, length, and closing tail", () => {
+test("requires matching fence character, length, and closing tail", () => {
   const source = [
     "- parent",
     "    ```javascript",
@@ -517,7 +511,7 @@ Deno.test("requires matching fence character, length, and closing tail", () => {
   assertEquals(uncheckAll(source), { markdown: source, changed: false });
 });
 
-Deno.test("does not turn top-level indented code into a list-contained fence", () => {
+test("does not turn top-level indented code into a list-contained fence", () => {
   const source = [
     "    ```markdown",
     "    - [x] indented code",
@@ -529,7 +523,7 @@ Deno.test("does not turn top-level indented code into a list-contained fence", (
   assertEquals(analysis.tasks.map((task) => task.text), ["real"]);
 });
 
-Deno.test("analysis exposes the same scanner result consumed by projections", () => {
+test("analysis exposes the same scanner result consumed by projections", () => {
   const source = "- parent\n    ```\n    - [x] opaque\n    ```\n- [ ] visible";
   const structure = scanMarkdownStructure(source);
   const analysis = analyzeMarkdown(source);
@@ -537,11 +531,11 @@ Deno.test("analysis exposes the same scanner result consumed by projections", ()
   assertEquals(analysis.tasks.map((task) => task.text), ["visible"]);
 });
 
-Deno.test("does not reject a task whose text contains a pipe", () => {
+test("does not reject a task whose text contains a pipe", () => {
   assertEquals(analyzeMarkdown("- [ ] keep | this text").tasks.length, 1);
 });
 
-Deno.test("does not parse tasks inside multiline HTML or a table body", () => {
+test("does not parse tasks inside multiline HTML or a table body", () => {
   const source = [
     "<div>",
     "<p>text</p>",
@@ -556,7 +550,7 @@ Deno.test("does not parse tasks inside multiline HTML or a table body", () => {
   assertEquals(analyzeMarkdown(source).tasks.map((task) => task.text), ["real"]);
 });
 
-Deno.test("handles nested four-space tasks and resumes after HTML block forms", () => {
+test("handles nested four-space tasks and resumes after HTML block forms", () => {
   const source = [
     "# Code",
     "    - [ ] indented code fake",
@@ -575,12 +569,12 @@ Deno.test("handles nested four-space tasks and resumes after HTML block forms", 
   assertEquals(analyzeMarkdown(source).tasks.map((task) => task.text), ["parent", "nested", "real"]);
 });
 
-Deno.test("accepts four-space tasks only below a list parent", () => {
+test("accepts four-space tasks only below a list parent", () => {
   const source = ["    - [ ] code", "- [ ] parent", "    - [ ] child", "    - [ ] sibling"].join("\n");
   assertEquals(analyzeMarkdown(source).tasks.map((task) => task.text), ["parent", "child", "sibling"]);
 });
 
-Deno.test("uncheckAll changes checked tasks and preserves source line endings", () => {
+test("uncheckAll changes checked tasks and preserves source line endings", () => {
   const source = "- [X] first\r\n\r\n- [x] second\r\n- [ ] open\r\n";
   const result = uncheckAll(source);
 
@@ -588,7 +582,7 @@ Deno.test("uncheckAll changes checked tasks and preserves source line endings", 
   assertEquals(result.markdown, "- [ ] first\r\n\r\n- [ ] second\r\n- [ ] open\r\n");
 });
 
-Deno.test("deleteCompleted removes checked task subtrees", () => {
+test("deleteCompleted removes checked task subtrees", () => {
   const source = "- [x] completed\n  - [x] child\n- [ ] open\n- [X] also completed\n";
   const result = deleteCompleted(source);
 
@@ -596,7 +590,7 @@ Deno.test("deleteCompleted removes checked task subtrees", () => {
   assertEquals(result.markdown, "- [ ] open\n");
 });
 
-Deno.test("Writing editor gate ignores initialization but emits the first real edit", () => {
+test("Writing editor gate ignores initialization but emits the first real edit", () => {
   const gate = new WritingEditorChangeGate();
   const generation = gate.begin("initial");
   assertEquals(gate.markdownUpdated(generation, "initial"), false);
@@ -610,7 +604,7 @@ Deno.test("Writing editor gate ignores initialization but emits the first real e
   assertEquals(gate.markdownUpdated(generation, "from source + edit"), true);
 });
 
-Deno.test("Writing gate never swallows a user transaction ordered after a source update", () => {
+test("Writing gate never swallows a user transaction ordered after a source update", () => {
   const gate = new WritingEditorChangeGate();
   const generation = gate.begin("initial");
   gate.finish(generation, "initial");
@@ -620,7 +614,7 @@ Deno.test("Writing gate never swallows a user transaction ordered after a source
   assertEquals(gate.hasPendingExternalUpdate, false);
 });
 
-Deno.test("EditorKit lifecycle treats same-text context as remote because hosts do not echo saves", () => {
+test("EditorKit lifecycle treats same-text context as remote because hosts do not echo saves", () => {
   const lifecycle = new EditorKitLifecycle();
   const document = new CanonicalDocument();
   let classifiedKind: string | undefined;
@@ -640,7 +634,7 @@ Deno.test("EditorKit lifecycle treats same-text context as remote because hosts 
   assertEquals(document.pendingRemote, undefined);
 });
 
-Deno.test("EditorKit fake host does not echo the requested save", () => {
+test("EditorKit fake host does not echo the requested save", () => {
   const document = new CanonicalDocument();
   const lifecycle = new EditorKitLifecycle();
   const requested: string[] = [];
@@ -663,7 +657,7 @@ Deno.test("EditorKit fake host does not echo the requested save", () => {
   assertEquals(document.pendingRemote, undefined);
 });
 
-Deno.test("EditorKit lifecycle initializes a different note and preserves unknown-uuid semantics", () => {
+test("EditorKit lifecycle initializes a different note and preserves unknown-uuid semantics", () => {
   const lifecycle = new EditorKitLifecycle();
   assertEquals(lifecycle.classifyContext(undefined), "initial-context");
   assertEquals(lifecycle.classifyContext(undefined), "remote-update");
@@ -673,7 +667,7 @@ Deno.test("EditorKit lifecycle initializes a different note and preserves unknow
   assertEquals(lifecycle.classifyContext("note-b", true), "metadata");
 });
 
-Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove lossless", () => {
+test("Writing round-trip gate rejects lexical forms Milkdown cannot prove lossless", () => {
   assertEquals(assessWritingRoundTrip("- task", "- task").editable, false);
   assertEquals(assessWritingRoundTrip("# Title\n\nParagraph\n\n\n\n\n\n", "# Title\n\nParagraph\n").editable, false);
   for (const source of [
@@ -691,7 +685,7 @@ Deno.test("Writing round-trip gate rejects lexical forms Milkdown cannot prove l
   assertEquals(assessWritingMutation("plain", "plain\r\nedit").editable, false);
 });
 
-Deno.test("Writing lifecycle distinguishes initial and mutation losslessness reasons", () => {
+test("Writing lifecycle distinguishes initial and mutation losslessness reasons", () => {
   assertEquals(assessWritingRoundTrip("+ unsafe bullet", "+ unsafe bullet"), {
     kind: "unsupported",
     editable: false,
@@ -704,7 +698,7 @@ Deno.test("Writing lifecycle distinguishes initial and mutation losslessness rea
   });
 });
 
-Deno.test("Writing normalization rejects unsupported extensions outside fenced code", () => {
+test("Writing normalization rejects unsupported extensions outside fenced code", () => {
   for (const [source, reason] of [
     [":::note\ncontent\n:::\n", "unsupported Markdown extension are not supported in Writing mode; use Source mode."],
     ["::::custom\ncontent\n::::\n", "unsupported Markdown extension are not supported in Writing mode; use Source mode."],
@@ -716,7 +710,7 @@ Deno.test("Writing normalization rejects unsupported extensions outside fenced c
   assertEquals(scanWritingNormalization("```text\n:::literal\n```\n").unsupportedReason, undefined);
 });
 
-Deno.test("Writing normalization leaves inline code and escaped syntax literal", () => {
+test("Writing normalization leaves inline code and escaped syntax literal", () => {
   for (const source of [
     "Use `<div>` in code.\n",
     "Use ``code with ` and <div>`` here.\n",
@@ -731,7 +725,7 @@ Deno.test("Writing normalization leaves inline code and escaped syntax literal",
     "reference links are not supported in Writing mode; use Source mode.");
 });
 
-Deno.test("normalizes only GFM-confirmed bare HTTP(S) URLs with exact UTF-16 changes", () => {
+test("normalizes only GFM-confirmed bare HTTP(S) URLs with exact UTF-16 changes", () => {
   const source = "😀 https://one.test/a, [two](https://two.test) <https://three.test> https://四.test/路.";
   const result = normalizeBareUrls(source);
   const first = source.indexOf("https://one.test/a");
@@ -745,7 +739,7 @@ Deno.test("normalizes only GFM-confirmed bare HTTP(S) URLs with exact UTF-16 cha
   assertEquals(result.changeSet?.newLength, result.markdown.length);
 });
 
-Deno.test("normalizer leaves code, HTML, existing links, and autolinks untouched", () => {
+test("normalizer leaves code, HTML, existing links, and autolinks untouched", () => {
   const source = [
     "`https://inline.test`",
     "    https://indented.test",
@@ -762,7 +756,7 @@ Deno.test("normalizer leaves code, HTML, existing links, and autolinks untouched
   assertEquals(result.changeSet?.changes.length, 1);
 });
 
-Deno.test("normalizer escapes URL Markdown punctuation without changing the source URL", () => {
+test("normalizer escapes URL Markdown punctuation without changing the source URL", () => {
   const source = "https://x.test/a]b https://x.test/a(b)";
   const result = normalizeBareUrls(source);
   assertEquals(result.markdown, "[https://x.test/a\\]b](https://x.test/a]b) [https://x.test/a(b)](https://x.test/a\\(b\\))");
@@ -772,7 +766,7 @@ Deno.test("normalizer escapes URL Markdown punctuation without changing the sour
   ]);
 });
 
-Deno.test("normalizer preserves every terminal line-ending suffix", () => {
+test("normalizer preserves every terminal line-ending suffix", () => {
   for (const suffix of ["", "\n", "\n\n", "\r\n", "\r\n\r\n"]) {
     const source = `https://suffix.test${suffix}`;
     const result = normalizeBareUrls(source);
@@ -781,7 +775,7 @@ Deno.test("normalizer preserves every terminal line-ending suffix", () => {
   }
 });
 
-Deno.test("Writing enable attempts require the exact proof target and one document generation", () => {
+test("Writing enable attempts require the exact proof target and one document generation", () => {
   let state = createWritingEnableAttemptState();
   state = armWritingEnableAttempt(state, "target", 4, true);
   assertEquals(state.pending, { id: 1, expectedCanonicalText: "target", documentGeneration: 4 });
@@ -853,7 +847,7 @@ Deno.test("Writing enable attempts require the exact proof target and one docume
   assertEquals(state.pending, undefined);
 });
 
-Deno.test("empty Writing notes allow only LF-safe initial materialization", () => {
+test("empty Writing notes allow only LF-safe initial materialization", () => {
   assertEquals(assessWritingMutation("", "x\n", "user").editable, true);
   assertEquals(assessWritingMutation("", "a\nb\n", "user").editable, true);
   assertEquals(assessWritingMutation("", "+ item\n", "user").editable, false);
@@ -861,7 +855,7 @@ Deno.test("empty Writing notes allow only LF-safe initial materialization", () =
   assertEquals(assessWritingMutation("x", "xy\n", "user").editable, false);
 });
 
-Deno.test("Writing exposes link command membership and local Mod-k recognition", () => {
+test("Writing exposes link command membership and local Mod-k recognition", () => {
   assert(WRITING_COMMANDS.includes("link"), "link must be available to Writing command consumers");
   assertEquals(writingCommandPlan("link"), { kind: "link", target: "selection-or-stored-mark" });
   assert(isWritingLinkShortcut({ key: "k", ctrlKey: true, metaKey: false }));
@@ -869,7 +863,7 @@ Deno.test("Writing exposes link command membership and local Mod-k recognition",
   assert(!isWritingLinkShortcut({ key: "k", ctrlKey: false, metaKey: false }));
 });
 
-Deno.test("Writing Enter removes only non-code boundary whitespace", () => {
+test("Writing Enter removes only non-code boundary whitespace", () => {
   assertEquals(writingEnterBoundaryWhitespace("paragraph ", "paragraph"), " ");
   assertEquals(writingEnterBoundaryWhitespace("paragraph\t ", "paragraph"), "\t ");
   assertEquals(writingEnterBoundaryWhitespace("paragraph", "paragraph"), "");
@@ -877,7 +871,7 @@ Deno.test("Writing Enter removes only non-code boundary whitespace", () => {
   assertEquals(writingEnterBoundaryWhitespace("code\t", "fence"), "");
 });
 
-Deno.test("toolbar/history mutations use the same canonical save notification path", () => {
+test("toolbar/history mutations use the same canonical save notification path", () => {
   const document = new CanonicalDocument("one");
   const saved: string[] = [];
   const apply = (mutation: () => boolean) => { if (mutation()) saved.push(document.text); };
@@ -887,7 +881,7 @@ Deno.test("toolbar/history mutations use the same canonical save notification pa
   assertEquals(saved, ["two", "one", "two"]);
 });
 
-Deno.test("mindmap projection preserves ordinary Markdown and heading-local task placement", () => {
+test("mindmap projection preserves ordinary Markdown and heading-local task placement", () => {
   const source = [
     "# First",
     "ordinary paragraph",
@@ -902,13 +896,13 @@ Deno.test("mindmap projection preserves ordinary Markdown and heading-local task
   assertEquals(projectMindmapMarkdown(source, "hide"), source.replace("- [ ] first task\n", "").replace("- [x] completed\n", "").replace("- [ ] second task", ""));
 });
 
-Deno.test("open mindmap filtering retains an open child of a completed parent", () => {
+test("open mindmap filtering retains an open child of a completed parent", () => {
   const source = "- [x] completed parent\n  - [ ] open child\n- [ ] sibling\n";
   assertEquals(projectMindmapMarkdown(source, "open"), "  - [ ] open child\n- [ ] sibling\n");
   assertEquals(projectMindmapMarkdown(source, "hide"), "");
 });
 
-Deno.test("analysis defines heading subtree boundaries and source-anchor lookup", () => {
+test("analysis defines heading subtree boundaries and source-anchor lookup", () => {
   const source = [
     "# A",
     "intro",
@@ -936,7 +930,7 @@ Deno.test("analysis defines heading subtree boundaries and source-anchor lookup"
   assertEquals(sectionByAnchor(analysis, b.anchor)?.text, "B");
 });
 
-Deno.test("mindmap scope slices before applying task filters and keeps canonical unchanged", () => {
+test("mindmap scope slices before applying task filters and keeps canonical unchanged", () => {
   const source = [
     "## Duplicate",
     "- [x] first completed",
@@ -954,7 +948,7 @@ Deno.test("mindmap scope slices before applying task filters and keeps canonical
   assertEquals(sectionByAnchor(source, second.anchor)?.from, second.from);
 });
 
-Deno.test("source cursor selects the analysis subtree and its anchor remaps after edits above it", () => {
+test("source cursor selects the analysis subtree and its anchor remaps after edits above it", () => {
   const source = "# A\nintro\n## B\nbody\n";
   const anchor = sectionAnchorAt(source, source.indexOf("body"));
   assertEquals(anchor, source.indexOf("## B"));
@@ -971,7 +965,7 @@ Deno.test("source cursor selects the analysis subtree and its anchor remaps afte
   assertEquals(sectionAnchorAt(edited, 0), undefined);
 });
 
-Deno.test("multi-range task edits preserve the selected B section and current-section projection", () => {
+test("multi-range task edits preserve the selected B section and current-section projection", () => {
   const source = "# A\n- [x] A task\n## B\n- [ ] B task\n# C\n- [x] C task\n";
   const selected = analyzeMarkdown(source).sections.find((section) => section.text === "B");
   assert(selected);
@@ -989,7 +983,7 @@ Deno.test("multi-range task edits preserve the selected B section and current-se
   assertEquals(next.text, "B");
 });
 
-Deno.test("duplicate headings preserve the selected exact heading through multi-range edits", () => {
+test("duplicate headings preserve the selected exact heading through multi-range edits", () => {
   const source = "# Root\n- [x] before\n## Dup\n- [ ] first\n## Dup\n- [ ] second\n# Tail\n- [x] after\n";
   const sections = analyzeMarkdown(source).sections.filter((section) => section.text === "Dup");
   assertEquals(sections.length, 2);
@@ -1004,7 +998,7 @@ Deno.test("duplicate headings preserve the selected exact heading through multi-
   assertEquals(analyzeMarkdown(document.text).sections.filter((section) => section.text === "Dup")[1].anchor, anchor);
 });
 
-Deno.test("Source Replace All exact multiple matches around B preserves its source anchor", () => {
+test("Source Replace All exact multiple matches around B preserves its source anchor", () => {
   const source = "# A\nneedle\n## B\nneedle\n# C\nneedle\n";
   const matches: number[] = [];
   for (let from = source.indexOf("needle"); from >= 0; from = source.indexOf("needle", from + 1)) matches.push(from);
@@ -1018,7 +1012,7 @@ Deno.test("Source Replace All exact multiple matches around B preserves its sour
   assertEquals(reconcileSectionAnchor(next, changeSet, selected.anchor), next.indexOf("## B"));
 });
 
-Deno.test("deleting the selected heading clears the section instead of selecting its successor", () => {
+test("deleting the selected heading clears the section instead of selecting its successor", () => {
   const source = "# A\n## B\nB body\n## C\nC body\n";
   const selected = analyzeMarkdown(source).sections.find((section) => section.text === "B");
   assert(selected);
@@ -1033,7 +1027,7 @@ Deno.test("deleting the selected heading clears the section instead of selecting
   assert(analyzeMarkdown(next).sections.some((section) => section.text === "C"), "successor remains in the document");
 });
 
-Deno.test("insertion at a selected heading anchor follows the original heading", () => {
+test("insertion at a selected heading anchor follows the original heading", () => {
   const source = "# A\n## B\nB body\n";
   const selected = analyzeMarkdown(source).sections.find((section) => section.text === "B");
   assert(selected);
@@ -1046,7 +1040,7 @@ Deno.test("insertion at a selected heading anchor follows the original heading",
   assertEquals(analyzeMarkdown(next).sectionByAnchor(mapped!)?.text, "B");
 });
 
-Deno.test("undo and redo of a multi-range mutation preserve B selection", () => {
+test("undo and redo of a multi-range mutation preserve B selection", () => {
   const source = "# A\n- [x] A task\n## B\nB body\n# C\n- [x] C task\n";
   const selected = analyzeMarkdown(source).sections.find((section) => section.text === "B");
   assert(selected);
@@ -1065,7 +1059,7 @@ Deno.test("undo and redo of a multi-range mutation preserve B selection", () => 
   assertEquals(reconcileSectionAnchor(redone.text, redone.changeSet, selected.anchor), analyzeMarkdown(redone.text).sections.find((section) => section.text === "B")?.anchor);
 });
 
-Deno.test("opaque canonical updates clear the selected section", () => {
+test("opaque canonical updates clear the selected section", () => {
   const source = "# A\n## B\nB body\n";
   const selected = analyzeMarkdown(source).sections.find((section) => section.text === "B");
   assert(selected);
@@ -1074,7 +1068,7 @@ Deno.test("opaque canonical updates clear the selected section", () => {
   assertEquals(reconcileSectionAnchor(document.text, undefined, selected.anchor), undefined);
 });
 
-Deno.test("isMindmapSuitable correctly detects structured vs unstructured markdown", () => {
+test("isMindmapSuitable correctly detects structured vs unstructured markdown", () => {
   assert(!isMindmapSuitable(""));
   assert(!isMindmapSuitable("   \n\n  "));
   assert(!isMindmapSuitable("This is a simple paragraph with no headings or lists."));
@@ -1089,7 +1083,7 @@ Deno.test("isMindmapSuitable correctly detects structured vs unstructured markdo
   assert(isMindmapSuitable("1. First numbered item\n2. Second numbered item"));
 });
 
-Deno.test("section and headingPath batch task operations correctly mutate target groups", () => {
+test("section and headingPath batch task operations correctly mutate target groups", () => {
   const source = `# Section 1
 - [ ] Task 1.1
 - [x] Task 1.2
@@ -1177,7 +1171,7 @@ Deno.test("section and headingPath batch task operations correctly mutate target
   assertEquals(groups[1].tasks.length, 1);
 });
 
-Deno.test("CanonicalDocument - auto-merges non-overlapping remote update when dirty", () => {
+test("CanonicalDocument - auto-merges non-overlapping remote update when dirty", () => {
   const doc = new CanonicalDocument("# Header\n\nSection A\n\nSection B\n");
   doc.applyLocal("# Header\n\nSection A (local edit)\n\nSection B\n");
   assertEquals(doc.dirty, true);
@@ -1189,7 +1183,7 @@ Deno.test("CanonicalDocument - auto-merges non-overlapping remote update when di
   assertEquals(doc.text, "# Header\n\nSection A (local edit)\n\nSection B (remote edit)\n");
 });
 
-Deno.test("CanonicalDocument - flags conflict on overlapping remote update when dirty", () => {
+test("CanonicalDocument - flags conflict on overlapping remote update when dirty", () => {
   const doc = new CanonicalDocument("# Header\n\nSection A\n");
   doc.applyLocal("# Header\n\nSection A (local)\n");
   assertEquals(doc.dirty, true);

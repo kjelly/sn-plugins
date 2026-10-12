@@ -1,10 +1,14 @@
+import { runCommand } from "./helpers/process.ts";
+import { chmod, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "bun:test";
+
 function assertEquals<T>(actual: T, expected: T, message = "values are not equal"): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${message}: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
   }
 }
-
-/// <reference lib="deno.ns" />
 
 import {
   DEFAULT_ANDROID_BUILD_TOOLS_VERSION,
@@ -31,26 +35,8 @@ import {
   waitForStandardNotesUiReady,
 } from "./e2e-android/pages/android-harness.ts";
 
-declare const Deno: {
-  test(name: string, fn: () => void | Promise<void>): void;
-  makeTempDir(options?: { prefix?: string }): Promise<string>;
-  readTextFile(path: string): Promise<string>;
-  writeTextFile(path: string, data: string): Promise<void>;
-  chmod(path: string, mode: number): Promise<void>;
-  Command: new (
-    command: string,
-    options?: {
-      args?: string[];
-      env?: Record<string, string>;
-      stdout?: "piped" | "inherit";
-      stderr?: "piped" | "inherit";
-    },
-  ) => {
-    output(): Promise<{ code: number; stdout: Uint8Array; stderr: Uint8Array }>;
-  };
-};
 
-Deno.test("WDIO endpoint resolver maps default and custom Appium ports", () => {
+test("WDIO endpoint resolver maps default and custom Appium ports", () => {
   assertEquals(resolveAppiumEndpoint(), {
     protocol: "http",
     hostname: "127.0.0.1",
@@ -65,19 +51,19 @@ Deno.test("WDIO endpoint resolver maps default and custom Appium ports", () => {
   });
 });
 
-Deno.test("WDIO Android toolchain resolver maps default and custom Build Tools versions", () => {
+test("WDIO Android toolchain resolver maps default and custom Build Tools versions", () => {
   assertEquals(resolveAndroidBuildToolsVersion(), DEFAULT_ANDROID_BUILD_TOOLS_VERSION);
   assertEquals(resolveAndroidBuildToolsVersion("34.0.0"), "34.0.0");
 });
 
-Deno.test("Android navigation readiness uses the observed semantic menu selector", () => {
+test("Android navigation readiness uses the observed semantic menu selector", () => {
   assertEquals(NAVIGATION_MENU_SELECTORS, [
     '//*[@text="Open navigation menu"]',
     "~Open navigation menu",
   ]);
 });
 
-Deno.test("Android selector fallback queries each candidate separately", async () => {
+test("Android selector fallback queries each candidate separately", async () => {
   const requestedSelectors: string[] = [];
   const selected = await findFirstExistingElement((selector) => {
     requestedSelectors.push(selector);
@@ -92,7 +78,7 @@ Deno.test("Android selector fallback queries each candidate separately", async (
   assertEquals(requestedSelectors.some((selector) => selector.includes(",")), false);
 });
 
-Deno.test("notification permission handling clicks Allow only when its dialog is present", async () => {
+test("notification permission handling clicks Allow only when its dialog is present", async () => {
   const requestedSelectors: string[] = [];
   let clicked = false;
   const handled = await handleNotificationPermission((selector) => {
@@ -113,7 +99,7 @@ Deno.test("notification permission handling clicks Allow only when its dialog is
   assertEquals(requestedSelectors.some((selector) => selector.includes(",")), false);
 });
 
-Deno.test("notification permission handling semantically allows a permission-controller prompt", async () => {
+test("notification permission handling semantically allows a permission-controller prompt", async () => {
   let clicked = false;
   const handled = await handleNotificationPermission(
     (selector) => Promise.resolve({
@@ -133,7 +119,7 @@ Deno.test("notification permission handling semantically allows a permission-con
   assertEquals(clicked, true);
 });
 
-Deno.test("non-empty Standard Notes readiness rejects an empty hierarchy", () => {
+test("non-empty Standard Notes readiness rejects an empty hierarchy", () => {
   assertEquals(hasNonEmptyInteractiveSurface("<hierarchy />"), false);
   assertEquals(
     hasNonEmptyInteractiveSurface(
@@ -143,7 +129,7 @@ Deno.test("non-empty Standard Notes readiness rejects an empty hierarchy", () =>
   );
 });
 
-Deno.test("hierarchy readiness identifies the visible root package", () => {
+test("hierarchy readiness identifies the visible root package", () => {
   const standardNotesHierarchy =
     '<hierarchy rotation="0"><android.widget.FrameLayout package="com.standardnotes">'
     + '<android.widget.TextView package="android" text="Underlying content" />'
@@ -159,7 +145,7 @@ Deno.test("hierarchy readiness identifies the visible root package", () => {
   assertEquals(isStandardNotesHierarchy(androidOverlayHierarchy), false);
 });
 
-Deno.test("Standard Notes readiness waits for a non-empty surface and semantic navigation menu", async () => {
+test("Standard Notes readiness waits for a non-empty surface and semantic navigation menu", async () => {
   const pageSources = [
     "<hierarchy />",
     `<hierarchy><android.widget.FrameLayout class="android.widget.FrameLayout" package="${STANDARD_NOTES_PACKAGE}"><android.widget.Button content-desc="Open navigation menu" clickable="true" /></android.widget.FrameLayout></hierarchy>`,
@@ -205,7 +191,7 @@ Deno.test("Standard Notes readiness waits for a non-empty surface and semantic n
   });
 });
 
-Deno.test("default Standard Notes readiness requires the semantic navigation menu", async () => {
+test("default Standard Notes readiness requires the semantic navigation menu", async () => {
   const pageSource =
     `<hierarchy><android.widget.FrameLayout class="android.widget.FrameLayout" package="${STANDARD_NOTES_PACKAGE}">`
     + '<android.widget.Button content-desc="Open navigation menu" clickable="true" />'
@@ -236,8 +222,8 @@ Deno.test("default Standard Notes readiness requires the semantic navigation men
   assertEquals(lookupCalls, 1);
 });
 
-Deno.test("StandardNotesApp readiness does not query selectors before the Standard Notes gate", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/StandardNotesApp.ts");
+test("StandardNotesApp readiness does not query selectors before the Standard Notes gate", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/StandardNotesApp.ts").text();
   const readinessMethodStart = source.indexOf("private async ensureStandardNotesUiReady()");
   const readinessMethodEnd = source.indexOf("\n  }", readinessMethodStart);
   const readinessMethod = source.slice(readinessMethodStart, readinessMethodEnd);
@@ -246,7 +232,7 @@ Deno.test("StandardNotesApp readiness does not query selectors before the Standa
   assertEquals(readinessMethod.includes("await waitForStandardNotesUiReady(browser, $);"), true);
 });
 
-Deno.test("StandardNotesApp public actions query selectors only after UI readiness", async () => {
+test("StandardNotesApp public actions query selectors only after UI readiness", async () => {
   const events: string[] = [];
   const pageSource =
     `<hierarchy><android.widget.FrameLayout class="android.widget.FrameLayout" package="${STANDARD_NOTES_PACKAGE}">`
@@ -305,7 +291,8 @@ Deno.test("StandardNotesApp public actions query selectors only after UI readine
   globalValues.browser = driver;
 
   try {
-    const { StandardNotesApp } = await import("./e2e-android/pages/StandardNotesApp.ts?readiness-ordering");
+    const modulePath = "./e2e-android/pages/StandardNotesApp.ts?readiness-ordering";
+    const { StandardNotesApp } = await import(modulePath) as typeof import("./e2e-android/pages/StandardNotesApp.ts");
     await new StandardNotesApp().openSettings();
   } finally {
     if (hadDollar) {
@@ -337,7 +324,7 @@ Deno.test("StandardNotesApp public actions query selectors only after UI readine
   assertEquals(settingsClickIndex > menuClickIndex, true, events.join(", "));
 });
 
-Deno.test("readiness timeout rejects non-empty permission-controller and ANR hierarchies", async () => {
+test("readiness timeout rejects non-empty permission-controller and ANR hierarchies", async () => {
   const blockedHierarchies = [
     {
       packageName: "com.google.android.permissioncontroller",
@@ -405,7 +392,7 @@ Deno.test("readiness timeout rejects non-empty permission-controller and ANR hie
   }
 });
 
-Deno.test("readiness rejects a System UI ANR despite stale Standard Notes foreground focus", async () => {
+test("readiness rejects a System UI ANR despite stale Standard Notes foreground focus", async () => {
   const pageSource =
     '<hierarchy rotation="0"><android.widget.FrameLayout package="android">'
     + '<android.widget.TextView text="System UI isn\'t responding" />'
@@ -447,7 +434,7 @@ Deno.test("readiness rejects a System UI ANR despite stale Standard Notes foregr
   assertEquals(selectorLookups, 0);
 });
 
-Deno.test("navigation readiness times out for a non-empty Standard Notes hierarchy without its semantic menu", async () => {
+test("navigation readiness times out for a non-empty Standard Notes hierarchy without its semantic menu", async () => {
   const pageSource =
     `<hierarchy><android.widget.FrameLayout class="android.widget.FrameLayout" package="${STANDARD_NOTES_PACKAGE}">`
     + '<android.widget.TextView text="Notes" />'
@@ -488,14 +475,14 @@ Deno.test("navigation readiness times out for a non-empty Standard Notes hierarc
   );
 });
 
-Deno.test("foreground readiness requires the Standard Notes package and MainActivity", () => {
+test("foreground readiness requires the Standard Notes package and MainActivity", () => {
   assertEquals(isStandardNotesForeground(STANDARD_NOTES_PACKAGE, STANDARD_NOTES_ACTIVITY), true);
   assertEquals(isStandardNotesForeground(STANDARD_NOTES_PACKAGE, ".MainActivity"), true);
   assertEquals(isStandardNotesForeground("com.google.android.permissioncontroller", "GrantPermissionsActivity"), false);
 });
 
 /*
- Deno.test("foreground readiness waits through the permission controller and then succeeds", async () => {
+ test("foreground readiness waits through the permission controller and then succeeds", async () => {
   const foregroundStates = [
     ["com.google.android.permissioncontroller", "GrantPermissionsActivity"],
     [STANDARD_NOTES_PACKAGE, ".MainActivity"],
@@ -514,7 +501,7 @@ Deno.test("foreground readiness requires the Standard Notes package and MainActi
 });
 */
 
-Deno.test("prerequisite gate blocks dependent work until setup completes", () => {
+test("prerequisite gate blocks dependent work until setup completes", () => {
   const gate = createPrerequisiteGate("Android setup");
   let blocked = false;
   try {
@@ -530,7 +517,7 @@ Deno.test("prerequisite gate blocks dependent work until setup completes", () =>
   assertEquals(gate.isReady(), true);
 });
 
-Deno.test("plugin installation verification fails when the plugin is absent", () => {
+test("plugin installation verification fails when the plugin is absent", () => {
   let error = "";
   try {
     assertPluginInstallationVerified("Markdown Notes+", false);
@@ -541,7 +528,7 @@ Deno.test("plugin installation verification fails when the plugin is absent", ()
   assertEquals(error.includes("Markdown Notes+"), true);
 });
 
-Deno.test("editor selection verification fails when the editor menu is absent", () => {
+test("editor selection verification fails when the editor menu is absent", () => {
   let error = "";
   try {
     assertEditorSelectionVerified("Markdown Notes+", {
@@ -556,7 +543,7 @@ Deno.test("editor selection verification fails when the editor menu is absent", 
   assertEquals(error.includes("editor menu"), true);
 });
 
-Deno.test("editor selection verification fails when the option or active editor is absent", () => {
+test("editor selection verification fails when the option or active editor is absent", () => {
   let missingOptionError = "";
   try {
     assertEditorSelectionVerified("Markdown Notes+", {
@@ -583,8 +570,8 @@ Deno.test("editor selection verification fails when the option or active editor 
   assertEquals(missingActiveEditorError.includes("active and visible"), true);
 });
 
-Deno.test("headless runner cleanup targets only the validated emulator PID", async () => {
-  const script = await Deno.readTextFile("scripts/run-headless-e2e.sh");
+test("headless runner cleanup targets only the validated emulator PID", async () => {
+  const script = await Bun.file("scripts/run-headless-e2e.sh").text();
   const cleanupStart = script.indexOf("cleanup() {");
   const cleanupEnd = script.indexOf("trap cleanup EXIT", cleanupStart);
   const cleanup = script.slice(cleanupStart, cleanupEnd);
@@ -594,8 +581,8 @@ Deno.test("headless runner cleanup targets only the validated emulator PID", asy
   assertEquals(cleanup.includes("adb emu kill"), false, cleanup);
 });
 
-Deno.test("headless runner pre-grants and verifies notifications before Appium can launch the app", async () => {
-  const script = await Deno.readTextFile("scripts/run-headless-e2e.sh");
+test("headless runner pre-grants and verifies notifications before Appium can launch the app", async () => {
+  const script = await Bun.file("scripts/run-headless-e2e.sh").text();
   const installIndex = script.indexOf('adb install -r "${APK_PATH}"');
   const permissionIndex = script.indexOf("establish_notification_permission", installIndex);
   const appiumLaunchIndex = script.indexOf('"${ROOT_DIR}/node_modules/.bin/appium"', permissionIndex);
@@ -608,16 +595,16 @@ Deno.test("headless runner pre-grants and verifies notifications before Appium c
 });
 
 async function runNotificationPermissionVerifier(adbScript: string) {
-  const fixtureDir = await Deno.makeTempDir({ prefix: "markdown-notes-plus-permission-" });
+  const fixtureDir = await mkdtemp(join(tmpdir(), "markdown-notes-plus-permission-"));
   const adbPath = `${fixtureDir}/adb`;
   const verifierPath = `${fixtureDir}/verify-permission.sh`;
-  const runner = await Deno.readTextFile("scripts/run-headless-e2e.sh");
+  const runner = await Bun.file("scripts/run-headless-e2e.sh").text();
   const functionStart = runner.indexOf("establish_notification_permission() {");
   const functionEnd = runner.indexOf("\n}\n\ncollect_android_diagnostics", functionStart) + 2;
 
-  await Deno.writeTextFile(adbPath, adbScript);
-  await Deno.chmod(adbPath, 0o755);
-  await Deno.writeTextFile(
+  await Bun.write(adbPath, adbScript);
+  await chmod(adbPath, 0o755);
+  await Bun.write(
     verifierPath,
     `#!/usr/bin/env bash
 set -euo pipefail
@@ -627,18 +614,16 @@ ${runner.slice(functionStart, functionEnd)}
 establish_notification_permission
 `,
   );
-  await Deno.chmod(verifierPath, 0o755);
+  await chmod(verifierPath, 0o755);
 
-  const command = new Deno.Command("bash", {
+  const command = runCommand("bash", {
     args: [verifierPath],
     env: { PATH: `${fixtureDir}:/usr/local/bin:/usr/bin:/bin` },
-    stdout: "piped",
-    stderr: "piped",
   });
-  return command.output();
+  return command;
 }
 
-Deno.test("notification permission verification consumes dumpsys output before matching", async () => {
+test("notification permission verification consumes dumpsys output before matching", async () => {
   const result = await runNotificationPermissionVerifier(`#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"pm grant"* ]]; then
@@ -659,7 +644,7 @@ exit 64
   assertEquals(output.includes("Notification permission verified before Standard Notes launch."), true, output);
 });
 
-Deno.test("notification permission verification fails when dumpsys fails", async () => {
+test("notification permission verification fails when dumpsys fails", async () => {
   const result = await runNotificationPermissionVerifier(`#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"pm grant"* ]]; then
@@ -676,16 +661,16 @@ exit 64
   assertEquals(output.includes("could not inspect com.standardnotes notification permission state"), true, output);
 });
 
-Deno.test("headless runner emits focus, hierarchy, screenshot, and ANR diagnostics on E2E failure", async () => {
-  const script = await Deno.readTextFile("scripts/run-headless-e2e.sh");
+test("headless runner emits focus, hierarchy, screenshot, and ANR diagnostics on E2E failure", async () => {
+  const script = await Bun.file("scripts/run-headless-e2e.sh").text();
   assertEquals(script.includes("=== Focus ==="), true);
   assertEquals(script.includes("uiautomator dump"), true);
   assertEquals(script.includes("screencap -p"), true);
   assertEquals(script.includes("ANR/logcat"), true);
 });
 
-Deno.test("headless runner requires interactive Android health before installing Standard Notes", async () => {
-  const script = await Deno.readTextFile("scripts/run-headless-e2e.sh");
+test("headless runner requires interactive Android health before installing Standard Notes", async () => {
+  const script = await Bun.file("scripts/run-headless-e2e.sh").text();
   const healthGate = script.indexOf("wait_for_android_interactive_health() {");
   const install = script.indexOf('echo "=== [3/6] Installing Standard Notes Official APK ==="');
   const invocation = script.lastIndexOf("wait_for_android_interactive_health", install);
@@ -701,8 +686,8 @@ Deno.test("headless runner requires interactive Android health before installing
   assertEquals(script.includes("collect_android_diagnostics"), true);
 });
 
-Deno.test("plugin installation waits for confirmation dismissal before accepting a managed entry", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/StandardNotesApp.ts");
+test("plugin installation waits for confirmation dismissal before accepting a managed entry", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/StandardNotesApp.ts").text();
   const installMethodStart = source.indexOf("  async installCustomPlugin");
   const installMethodEnd = source.indexOf("\n  async createNewNote", installMethodStart);
   const installMethod = source.slice(installMethodStart, installMethodEnd);
@@ -714,8 +699,8 @@ Deno.test("plugin installation waits for confirmation dismissal before accepting
   assertEquals(installMethod.includes("pluginVisible && !emptyStateVisible"), true);
 });
 
-Deno.test("plugin URL entry closes the keyboard before native Install interaction", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/StandardNotesApp.ts");
+test("plugin URL entry closes the keyboard before native Install interaction", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/StandardNotesApp.ts").text();
   const installMethodStart = source.indexOf("  async installCustomPlugin");
   const installMethodEnd = source.indexOf("\n  async createNewNote", installMethodStart);
   const installMethod = source.slice(installMethodStart, installMethodEnd);
@@ -731,8 +716,8 @@ Deno.test("plugin URL entry closes the keyboard before native Install interactio
   assertEquals(installMethod.includes('pressKey", [{ keycode: 4 }]'), false);
 });
 
-Deno.test("Android editor input is owned by the extension iframe and ProseMirror DOM surface", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+test("Android editor input is owned by the extension iframe and ProseMirror DOM surface", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/AndroidEditorPage.ts").text();
   const typeContentStart = source.indexOf("  async typeContent");
   const typeContentEnd = source.indexOf("\n  async pressSoftKeyboardEnterAndType", typeContentStart);
   const typeContent = source.slice(typeContentStart, typeContentEnd);
@@ -748,9 +733,9 @@ Deno.test("Android editor input is owned by the extension iframe and ProseMirror
   assertEquals(source.includes("getElementText"), false);
 });
 
-Deno.test("Android Writing stability uses a real Enter key and waits past listener settle", async () => {
-  const page = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
-  const spec = await Deno.readTextFile("tests/e2e-android/specs/sn-official-integration.spec.ts");
+test("Android Writing stability uses a real Enter key and waits past listener settle", async () => {
+  const page = await Bun.file("tests/e2e-android/pages/AndroidEditorPage.ts").text();
+  const spec = await Bun.file("tests/e2e-android/specs/sn-official-integration.spec.ts").text();
   const methodStart = page.indexOf("  async pressSoftKeyboardEnterAndType");
   const methodEnd = page.indexOf("\n  async readVisibleText", methodStart);
   const method = page.slice(methodStart, methodEnd);
@@ -765,8 +750,8 @@ Deno.test("Android Writing stability uses a real Enter key and waits past listen
   assertEquals(spec.includes("did not contain soft-keyboard marker"), true);
 });
 
-Deno.test("Android editor frame entry resets a retained child frame before locating the extension iframe", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+test("Android editor frame entry resets a retained child frame before locating the extension iframe", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/AndroidEditorPage.ts").text();
   const frameSelection = source.indexOf("await browser.switchContext(webViewContext);");
   const topLevelReset = source.indexOf("await browser.switchFrame(null);", frameSelection);
   const iframeLookup = source.indexOf("const iframe = await $(EXTENSION_IFRAME);", frameSelection);
@@ -776,8 +761,8 @@ Deno.test("Android editor frame entry resets a retained child frame before locat
   assertEquals(iframeLookup > topLevelReset, true);
 });
 
-Deno.test("Android mode switching preserves a normal click when WDIO visibility is false", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+test("Android mode switching preserves a normal click when WDIO visibility is false", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/AndroidEditorPage.ts").text();
   const modeStart = source.indexOf("  async switchMode");
   const modeMethod = source.slice(modeStart);
   const observationStart = source.indexOf("  private async observeModeButton");
@@ -819,8 +804,8 @@ Deno.test("Android mode switching preserves a normal click when WDIO visibility 
   assertEquals(modeMethod.includes('if (modeName === "Writing") await this.switchToWritingEditor();'), true);
 });
 
-Deno.test("Android mode transitions enter the extension frame without requiring the hidden Writing surface", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
+test("Android mode transitions enter the extension frame without requiring the hidden Writing surface", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/AndroidEditorPage.ts").text();
   const frameEntryStart = source.indexOf("  private async enterExtensionFrame");
   const frameEntryEnd = source.indexOf("\n  private async switchToWritingEditor", frameEntryStart);
   const frameEntry = source.slice(frameEntryStart, frameEntryEnd);
@@ -841,9 +826,9 @@ Deno.test("Android mode transitions enter the extension frame without requiring 
   assertEquals(modeEntry.includes('button[normalize-space(.)="${modeName}"]'), true);
 });
 
-Deno.test("Android E2E restricts mode navigation to actual editor modes and preserves the marker through Source", async () => {
-  const page = await Deno.readTextFile("tests/e2e-android/pages/AndroidEditorPage.ts");
-  const spec = await Deno.readTextFile("tests/e2e-android/specs/sn-official-integration.spec.ts");
+test("Android E2E restricts mode navigation to actual editor modes and preserves the marker through Source", async () => {
+  const page = await Bun.file("tests/e2e-android/pages/AndroidEditorPage.ts").text();
+  const spec = await Bun.file("tests/e2e-android/specs/sn-official-integration.spec.ts").text();
   const modeSignatureStart = page.indexOf("  async switchMode(");
   const modeSignatureEnd = page.indexOf("):", modeSignatureStart);
   const modeSignature = page.slice(modeSignatureStart, modeSignatureEnd);
@@ -859,8 +844,8 @@ Deno.test("Android E2E restricts mode navigation to actual editor modes and pres
   assertEquals(spec.includes('await editor.switchMode("Tasks");'), false);
 });
 
-Deno.test("fallback editor selection closes its own Note options popover before declaring readiness", async () => {
-  const source = await Deno.readTextFile("tests/e2e-android/pages/StandardNotesApp.ts");
+test("fallback editor selection closes its own Note options popover before declaring readiness", async () => {
+  const source = await Bun.file("tests/e2e-android/pages/StandardNotesApp.ts").text();
   const selectionStart = source.indexOf("  async selectEditor");
   const selectionEnd = source.indexOf("\n  async returnToNotesList", selectionStart);
   const selection = source.slice(selectionStart, selectionEnd);
@@ -880,7 +865,7 @@ Deno.test("fallback editor selection closes its own Note options popover before 
   assertEquals(readyAssertion > popoverFailure, true);
 });
 
-Deno.test("Note options popover detection excludes the persistent trigger and matches only the open ListView", () => {
+test("Note options popover detection excludes the persistent trigger and matches only the open ListView", () => {
   assertEquals(NOTE_OPTIONS_POPOVER_SELECTOR, '//*[@class="android.widget.ListView" and @text="Note options menu"]');
   assertEquals(isNoteOptionsPopoverNode({
     className: "android.view.View",
@@ -894,9 +879,9 @@ Deno.test("Note options popover detection excludes the persistent trigger and ma
   }), true);
 });
 
-Deno.test("headless runner fails closed when Appium Build Tools are missing", async () => {
-  const androidHome = await Deno.makeTempDir({ prefix: "markdown-notes-plus-android-home-" });
-  const command = new Deno.Command("bash", {
+test("headless runner fails closed when Appium Build Tools are missing", async () => {
+  const androidHome = await mkdtemp(join(tmpdir(), "markdown-notes-plus-android-home-"));
+  const command = runCommand("bash", {
     args: ["scripts/run-headless-e2e.sh"],
     env: {
       ANDROID_HOME: androidHome,
@@ -905,10 +890,8 @@ Deno.test("headless runner fails closed when Appium Build Tools are missing", as
       HOME: androidHome,
       PATH: "/usr/local/bin:/usr/bin:/bin",
     },
-    stdout: "piped",
-    stderr: "piped",
   });
-  const result = await command.output();
+  const result = await command;
   const output = `${new TextDecoder().decode(result.stdout)}${new TextDecoder().decode(result.stderr)}`;
 
   assertEquals(result.code !== 0, true, output);
@@ -919,18 +902,18 @@ Deno.test("headless runner fails closed when Appium Build Tools are missing", as
   assertEquals(output.includes("Installing Standard Notes Official APK"), false, output);
 });
 
-Deno.test("headless runner fails closed when a required port is occupied", async () => {
-  const fixtureDir = await Deno.makeTempDir({ prefix: "markdown-notes-plus-e2e-" });
+test("headless runner fails closed when a required port is occupied", async () => {
+  const fixtureDir = await mkdtemp(join(tmpdir(), "markdown-notes-plus-e2e-"));
   const fakeSs = `${fixtureDir}/ss`;
-  await Deno.writeTextFile(
+  await Bun.write(
     fakeSs,
     `#!/usr/bin/env bash
-echo "LISTEN 0 128 0.0.0.0:5173 0.0.0.0:* users:((\"fixture-owner\",pid=4242,fd=3))"
+echo 'LISTEN 0 128 0.0.0.0:5173 0.0.0.0:* users:(("fixture-owner",pid=4242,fd=3))'
 `,
   );
-  await Deno.chmod(fakeSs, 0o755);
+  await chmod(fakeSs, 0o755);
 
-  const command = new Deno.Command("bash", {
+  const command = runCommand("bash", {
     args: [
       "-c",
       [
@@ -938,10 +921,8 @@ echo "LISTEN 0 128 0.0.0.0:5173 0.0.0.0:* users:((\"fixture-owner\",pid=4242,fd=
       ].join("\n"),
     ],
     env: { PATH: `${fixtureDir}:/usr/local/bin:/usr/bin:/bin` },
-    stdout: "piped",
-    stderr: "piped",
   });
-  const result = await command.output();
+  const result = await command;
   const output = `${new TextDecoder().decode(result.stdout)}${new TextDecoder().decode(result.stderr)}`;
 
   assertEquals(result.code !== 0, true, output);
@@ -950,14 +931,12 @@ echo "LISTEN 0 128 0.0.0.0:5173 0.0.0.0:* users:((\"fixture-owner\",pid=4242,fd=
   assertEquals(output.includes("fixture-owner"), true, output);
 });
 
-Deno.test("headless runner rejects a self-colliding Appium port before Android work", async () => {
-  const command = new Deno.Command("bash", {
+test("headless runner rejects a self-colliding Appium port before Android work", async () => {
+  const command = runCommand("bash", {
     args: ["scripts/run-headless-e2e.sh"],
     env: { APPIUM_PORT: "5173", PATH: "/usr/local/bin:/usr/bin:/bin" },
-    stdout: "piped",
-    stderr: "piped",
   });
-  const result = await command.output();
+  const result = await command;
   const output = `${new TextDecoder().decode(result.stdout)}${new TextDecoder().decode(result.stderr)}`;
 
   assertEquals(result.code !== 0, true, output);

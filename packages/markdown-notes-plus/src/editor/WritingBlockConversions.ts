@@ -46,7 +46,7 @@ export function convertCurrentBlock(
     if (target === "paragraph" || target.startsWith("heading") || target === "code_block" || target === "blockquote") {
       const itemType = state.schema.nodes.list_item;
       if (itemType) {
-        // deno-lint-ignore no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (liftListItem(itemType) as any)(state, (tr: any) => {
           dispatch(tr);
         });

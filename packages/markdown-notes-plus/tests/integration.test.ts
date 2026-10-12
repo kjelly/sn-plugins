@@ -1,4 +1,4 @@
-/// <reference lib="deno.ns" />
+import { test } from "bun:test";
 
 import { CanonicalDocument } from "../src/document/CanonicalDocument.ts";
 import {
@@ -26,8 +26,6 @@ import { canReviewWritingNormalizationInPlace, modeAfterRequest } from "../src/a
 import { findMarkdownLinkAtOffset } from "../src/editor/SourceLinks.ts";
 import type { WritingCapabilityProof } from "../src/editor/WritingEditorLifecycle.ts";
 
-declare const Deno: { test(name: string, fn: () => void | Promise<void>): void; readTextFile(path: string | URL): Promise<string> };
-
 type FakeBridgeHarness = {
   bridge: EditorKitBridge;
   document: CanonicalDocument;
@@ -41,13 +39,14 @@ function fakeBridgeHarness(): FakeBridgeHarness {
   let delegate: EditorKitDelegate | undefined;
   let options: { coallesedSaving: boolean } | undefined;
   const saves: Array<{ note: Record<string, unknown>; text: string | undefined }> = [];
-  const timers = new Map<number, () => void>();
+  type Timer = ReturnType<typeof globalThis.setTimeout>;
+  const timers = new Map<Timer, () => void>();
   let nextTimer = 1;
   const clock = {
-    setTimeout(handler: () => void): number { const id = nextTimer++; timers.set(id, handler); return id; },
-    clearTimeout(id: number): void { timers.delete(id); },
+    setTimeout(handler: () => void): Timer { const id = nextTimer++ as unknown as Timer; timers.set(id, handler); return id; },
+    clearTimeout(id: Timer): void { timers.delete(id); },
     runNext(): void {
-      const entry = timers.entries().next().value as [number, () => void] | undefined;
+      const entry = timers.entries().next().value as [Timer, () => void] | undefined;
       if (!entry) return;
       timers.delete(entry[0]);
       entry[1]();
@@ -80,7 +79,7 @@ function attachAppLifecycle(document: CanonicalDocument): AppDocumentLifecycle {
   return new AppDocumentLifecycle(document);
 }
 
-Deno.test("App lifecycle retires a rejected Writing fallback on an explicit Source no-op", async () => {
+test("App lifecycle retires a rejected Writing fallback on an explicit Source no-op", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "canonical", "note-app-fallback");
   const appLifecycle = attachAppLifecycle(harness.document);
@@ -97,7 +96,7 @@ Deno.test("App lifecycle retires a rejected Writing fallback on an explicit Sour
   assertEquals(harness.saves.length, 0);
 });
 
-Deno.test("Canonical conflict invalidates a move token without changing text or history", () => {
+test("Canonical conflict invalidates a move token without changing text or history", () => {
   const document = new CanonicalDocument("base");
   let notifications = 0;
   const transitions: string[] = [];
@@ -123,7 +122,7 @@ Deno.test("Canonical conflict invalidates a move token without changing text or 
   assertEquals(document.text, "base");
 });
 
-Deno.test("App lifecycle rejects every non-Source local writer while fallback is present", async () => {
+test("App lifecycle rejects every non-Source local writer while fallback is present", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "- [ ] task", "note-app-writers");
   const appLifecycle = attachAppLifecycle(harness.document);
@@ -141,7 +140,7 @@ Deno.test("App lifecycle rejects every non-Source local writer while fallback is
   assertEquals(harness.saves.length, 0);
 });
 
-Deno.test("App mode requests stay in Source while a Writing fallback is present", () => {
+test("App mode requests stay in Source while a Writing fallback is present", () => {
   assertEquals(modeAfterRequest("source", true), "source");
   assertEquals(modeAfterRequest("writing", true), "source");
   assertEquals(modeAfterRequest("split", true), "source");
@@ -152,7 +151,7 @@ Deno.test("App mode requests stay in Source while a Writing fallback is present"
   assertEquals(modeAfterRequest("kanban", false), "kanban");
 });
 
-Deno.test("Writing reviews whitespace-only normalization without leaving the mode", () => {
+test("Writing reviews whitespace-only normalization without leaving the mode", () => {
   assert(canReviewWritingNormalizationInPlace({
     kind: "normalizable",
     editable: false,
@@ -171,8 +170,8 @@ Deno.test("Writing reviews whitespace-only normalization without leaving the mod
   }), "GFM structure normalization should retain the Source-only review flow");
 });
 
-Deno.test("App routes every mode request through the fallback-aware transition", async () => {
-  const source = await Deno.readTextFile(new URL("../src/app/App.tsx", import.meta.url));
+test("App routes every mode request through the fallback-aware transition", async () => {
+  const source = await Bun.file(new URL("../src/app/App.tsx", import.meta.url)).text();
   const directModeWrites = source.split("\n").filter((line) => line.includes("setMode("));
   assert(directModeWrites.length > 0, "App must have an explicit mode transition owner");
   assert(directModeWrites.every((line) =>
@@ -197,7 +196,7 @@ Deno.test("App routes every mode request through the fallback-aware transition",
   assert(!snippetHandler.includes("canonical.applyLocal"), "snippet insertion must not bypass the lifecycle");
 });
 
-Deno.test("App lifecycle clears fallback only for authoritative remote replacement", async () => {
+test("App lifecycle clears fallback only for authoritative remote replacement", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "canonical", "note-app-provenance");
   const appLifecycle = attachAppLifecycle(harness.document);
@@ -219,7 +218,7 @@ Deno.test("App lifecycle clears fallback only for authoritative remote replaceme
   assertEquals(harness.saves.length, 0);
 });
 
-Deno.test("EditorKitBridge initializes a switched note before any local save can target it", async () => {
+test("EditorKitBridge initializes a switched note before any local save can target it", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "A canonical", "note-a");
   const appLifecycle = attachAppLifecycle(harness.document);
@@ -239,7 +238,7 @@ Deno.test("EditorKitBridge initializes a switched note before any local save can
   assertEquals(harness.saves, []);
 });
 
-Deno.test("EditorKitBridge does not save an initial note containing only a fenced task example", async () => {
+test("EditorKitBridge does not save an initial note containing only a fenced task example", async () => {
   const harness = fakeBridgeHarness();
   const input = "# Notes\n\n```md\n- [x] Example @repeat(1d) @done(2020-01-01)\n```\n";
   await deliverBridgeContext(harness, input, "note-fenced-recurring-example");
@@ -250,7 +249,7 @@ Deno.test("EditorKitBridge does not save an initial note containing only a fence
   assertEquals(harness.saves, []);
 });
 
-Deno.test("EditorKitBridge defers recurring-task reset until after initial delivery", async () => {
+test("EditorKitBridge defers recurring-task reset until after initial delivery", async () => {
   const harness = fakeBridgeHarness();
   const input = "# Routine\n\n- [x] Water plants @repeat(3d) @done(2026-08-20)\n";
   await deliverBridgeContext(harness, input, "note-deferred-recurring");
@@ -268,7 +267,7 @@ Deno.test("EditorKitBridge defers recurring-task reset until after initial deliv
   assertEquals(harness.saves.map((save) => save.text), ["# Routine\n\n- [ ] Water plants @repeat(3d)\n"]);
 });
 
-Deno.test("App lifecycle retires fallback for an equal-text note initialization", async () => {
+test("App lifecycle retires fallback for an equal-text note initialization", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "same text", "note-a");
   const appLifecycle = attachAppLifecycle(harness.document);
@@ -288,7 +287,7 @@ Deno.test("App lifecycle retires fallback for an equal-text note initialization"
   assertEquals(harness.saves.map((save) => save.text), ["same text\nB edit"]);
 });
 
-Deno.test("mode switch keeps a Writing transaction observable at the canonical boundary", () => {
+test("mode switch keeps a Writing transaction observable at the canonical boundary", () => {
   const document = new CanonicalDocument("initial");
   const gate = new WritingEditorChangeGate();
   const generation = gate.begin(document.text);
@@ -308,7 +307,7 @@ Deno.test("mode switch keeps a Writing transaction observable at the canonical b
   assert(document.text === "source edit", "stale Writing edit must not overwrite the replacement");
 });
 
-Deno.test("stale Writing proof cannot add canonical history or bridge save", async () => {
+test("stale Writing proof cannot add canonical history or bridge save", async () => {
   const harness = fakeBridgeHarness();
   const noteId = "note-stale-writing-proof";
   await deliverBridgeContext(harness, "base\n", noteId);
@@ -332,7 +331,7 @@ Deno.test("stale Writing proof cannot add canonical history or bridge save", asy
   assertEquals(harness.document.text, "base\nlocal\n");
 });
 
-Deno.test("Writing epoch retires the pre-sync DOM after undo/redo but admits the new session", async () => {
+test("Writing epoch retires the pre-sync DOM after undo/redo but admits the new session", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "base\n", "note-writing-epoch");
   const lifecycle = attachAppLifecycle(harness.document);
@@ -389,7 +388,7 @@ Deno.test("Writing epoch retires the pre-sync DOM after undo/redo but admits the
   assertEquals(harness.saves.at(-1)?.text, "base\nwriting\nnew session\n");
 });
 
-Deno.test("SourceEditor change metadata reaches the canonical transition contract", () => {
+test("SourceEditor change metadata reaches the canonical transition contract", () => {
   const source = "# A\n## B\nB body\n# C\n";
   const inserted = "intro\n";
   const from = source.indexOf("## B");
@@ -409,7 +408,7 @@ Deno.test("SourceEditor change metadata reaches the canonical transition contrac
   assertEquals(received?.changeSet?.changes, [{ from, to: from, insertedLength: inserted.length }]);
 });
 
-Deno.test("external SourceEditor replacement cannot reselect a deleted duplicate successor", () => {
+test("external SourceEditor replacement cannot reselect a deleted duplicate successor", () => {
   const source = "# Root\n## Duplicate\nselected body\n## Duplicate\nsuccessor body\n# Tail\n";
   const selected = analyzeMarkdown(source).sections.find((section) => section.text === "Duplicate");
   assert(selected !== undefined, "the selected duplicate heading must exist");
@@ -435,7 +434,7 @@ Deno.test("external SourceEditor replacement cannot reselect a deleted duplicate
   assert(shouldReportSourceSelection({ selectionSet: false, docChanged: true }, false), "user document updates must remain reportable");
 });
 
-Deno.test("fake EditorKit host records a save request without inventing host confirmation", () => {
+test("fake EditorKit host records a save request without inventing host confirmation", () => {
   const document = new CanonicalDocument("initial");
   const lifecycle = new EditorKitLifecycle();
   let saveRequested = false;
@@ -459,7 +458,7 @@ Deno.test("fake EditorKit host records a save request without inventing host con
   assert(document.pendingRemote === undefined, "save request created a false conflict");
 });
 
-Deno.test("EditorKitBridge owns cancellable scheduling across remote conflict resolution", async () => {
+test("EditorKitBridge owns cancellable scheduling across remote conflict resolution", async () => {
   const harness = fakeBridgeHarness();
   assert(harness.options?.coallesedSaving === false, "bridge must disable EditorKit coalescing");
   await deliverBridgeContext(harness, "initial", "note-1");
@@ -486,7 +485,7 @@ Deno.test("EditorKitBridge owns cancellable scheduling across remote conflict re
   assertEquals(keepLocal.saves[0].text, "local");
 });
 
-Deno.test("EditorKitBridge flushes a pending generation exactly once", async () => {
+test("EditorKitBridge flushes a pending generation exactly once", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "initial", "note-flush");
   assert(harness.document.applyLocal("local"), "local edit should apply");
@@ -499,7 +498,7 @@ Deno.test("EditorKitBridge flushes a pending generation exactly once", async () 
   assertEquals(harness.bridge.flush(), false);
 });
 
-Deno.test("EditorKitBridge dispose flushes pending work and cancels its timer", async () => {
+test("EditorKitBridge dispose flushes pending work and cancels its timer", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "initial", "note-dispose");
   assert(harness.document.applyLocal("local"), "local edit should apply");
@@ -519,20 +518,20 @@ Deno.test("EditorKitBridge dispose flushes pending work and cancels its timer", 
   assertEquals(harness.saves.length, 1);
 });
 
-Deno.test("writing command plans preserve structural nodes and selection context", () => {
+test("writing command plans preserve structural nodes and selection context", () => {
   assertEquals(writingCommandPlan("heading"), { kind: "set-block-type", nodeName: "heading", attrs: { level: 1 }, target: "current-block" });
   assertEquals(writingCommandPlan("quote"), { kind: "wrap", nodeName: "blockquote", target: "selection" });
   assertEquals(writingCommandPlan("task"), { kind: "task-list", target: "selection" });
   assertEquals(writingCommandPlan("table"), { kind: "replace-block", nodeName: "table", target: "current-block" });
 });
 
-Deno.test("Writing integration gate keeps unsupported source in Source mode", () => {
+test("Writing integration gate keeps unsupported source in Source mode", () => {
   assert(!assessWritingRoundTrip("- safe task", "- safe task").editable, "round-trip without the live codec must fail closed");
   assert(!assessWritingRoundTrip("+ unsafe bullet", "+ unsafe bullet").editable, "plus bullets need Source mode");
   assert(!assessWritingMutation("a\nb", "a\r\nb").editable, "line-ending change needs Source mode");
 });
 
-Deno.test("Writing gate admits empty-note LF materialization but not later none-to-LF changes", () => {
+test("Writing gate admits empty-note LF materialization but not later none-to-LF changes", () => {
   assert(assessWritingMutation("", "x\n", "user").editable, "empty note LF materialization should be editable");
   assert(assessWritingMutation("", "a\nb\n", "user").editable, "empty note multiline LF materialization should be editable");
   assert(!assessWritingMutation("", "+ item\n", "user").editable, "plus bullets must remain gated");
@@ -540,7 +539,7 @@ Deno.test("Writing gate admits empty-note LF materialization but not later none-
   assert(!assessWritingMutation("x", "xy\n", "user").editable, "non-empty none-to-LF changes must remain gated");
 });
 
-Deno.test("blank Writing first edit reaches canonical and emits one save after flush", async () => {
+test("blank Writing first edit reaches canonical and emits one save after flush", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "", "note-empty-writing");
   const gate = new WritingEditorChangeGate();
@@ -557,7 +556,7 @@ Deno.test("blank Writing first edit reaches canonical and emits one save after f
   assertEquals(harness.saves.map((save) => save.text), ["x\n"]);
 });
 
-Deno.test("rejected Writing mutation waits for explicit Source confirmation without silent save", async () => {
+test("rejected Writing mutation waits for explicit Source confirmation without silent save", async () => {
   const harness = fakeBridgeHarness();
   const canonical = "text";
   await deliverBridgeContext(harness, canonical, "note-writing-source-fallback");
@@ -592,7 +591,7 @@ Deno.test("rejected Writing mutation waits for explicit Source confirmation with
   assert(gate.markdownUpdated(generation, "text!"), "a later user edit must not remain suppressed");
 });
 
-Deno.test("remote replaceAll normalization is provenance-suppressed and never saves", async () => {
+test("remote replaceAll normalization is provenance-suppressed and never saves", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "text  \nnext", "note-normalization");
   const document = harness.document;
@@ -618,7 +617,7 @@ Deno.test("remote replaceAll normalization is provenance-suppressed and never sa
   assertEquals(harness.saves.length, 0);
 });
 
-Deno.test("Writing commands cross structural dispatch, Milkdown serializer, and canonical boundary", () => {
+test("Writing commands cross structural dispatch, Milkdown serializer, and canonical boundary", () => {
   const serializerOutputs: Array<["heading" | "task" | "code" | "table" | "divider", string, string]> = [
     ["heading", "title", "# title"],
     ["task", "task", "- [ ] task"],
@@ -637,7 +636,7 @@ Deno.test("Writing commands cross structural dispatch, Milkdown serializer, and 
   }
 });
 
-Deno.test("command-aware gate only relaxes lexical-risk checks for valid explicit outputs", () => {
+test("command-aware gate only relaxes lexical-risk checks for valid explicit outputs", () => {
   assert(assessWritingMutation("plain", "plain\n|   |   |\n|---|---|\n|   |   |", { kind: "command", command: "table" }).editable, "valid command table should be accepted");
   assert(assessWritingMutation("plain", "plain\n```\ncode\n```", { kind: "command", command: "code" }).editable, "valid command fence should be accepted");
   assert(assessWritingMutation("plain", "plain\n---", { kind: "command", command: "divider" }).editable, "valid command divider should be accepted");
@@ -645,7 +644,7 @@ Deno.test("command-aware gate only relaxes lexical-risk checks for valid explici
   assert(!assessWritingMutation("plain", "plain\n---", "user").editable, "ordinary input cannot bypass the lexical-risk gate");
 });
 
-Deno.test("command-origin task, table, and divider CRLF output remains rejected", () => {
+test("command-origin task, table, and divider CRLF output remains rejected", () => {
   const cases: Array<["task" | "table" | "divider", string]> = [
     ["task", "- [ ] task\r\n"],
     ["table", "| a | b |\r\n| --- | --- |\r\n| c | d |\r\n"],
@@ -656,7 +655,7 @@ Deno.test("command-origin task, table, and divider CRLF output remains rejected"
   }
 });
 
-Deno.test("structural command contexts accept subsequent serializer spelling", () => {
+test("structural command contexts accept subsequent serializer spelling", () => {
   const cases: Array<["table" | "code" | "divider", string, string]> = [
     ["table", "|   |   |\n|---|---|\n|   |   |\n", "| edit |   |\n|---|---|\n|   |   |\n"],
     ["code", "```\nsnippet\n```", "```\nsnippet edit\n```"],
@@ -674,7 +673,7 @@ Deno.test("structural command contexts accept subsequent serializer spelling", (
   }
 });
 
-Deno.test("Task subtree mutation, uncheckAll, and deleteCompleted integrate with CanonicalDocument changeSets and undo/redo", () => {
+test("Task subtree mutation, uncheckAll, and deleteCompleted integrate with CanonicalDocument changeSets and undo/redo", () => {
   const source = "# Project\n\n## Backend\n- [x] Database setup\n  - [x] Migrations\n  - [ ] Seed data\n- [ ] API routes\n\n## Frontend\n- [x] Setup Vite\n- [ ] Components\n";
   const document = new CanonicalDocument(source);
   let latestTransition: { kind: string; changeSet?: unknown } | undefined;
@@ -720,7 +719,7 @@ Deno.test("Task subtree mutation, uncheckAll, and deleteCompleted integrate with
   assertEquals(document.text, deleteResult.markdown);
 });
 
-Deno.test("Multi-range Source editor replacements preserve active SectionAnchor across duplicate headings", () => {
+test("Multi-range Source editor replacements preserve active SectionAnchor across duplicate headings", () => {
   const source = "# Project\n\n## Milestone\nAlpha details\n\n## Milestone\nBeta details\n\n## Milestone\nGamma details\n";
   const analysis = analyzeMarkdown(source);
   const headings = analysis.sections.filter((s) => s.text === "Milestone");
@@ -765,7 +764,7 @@ Deno.test("Multi-range Source editor replacements preserve active SectionAnchor 
   assert(sectionContent.includes("Beta details"), "anchor must point to the exact same Beta section");
 });
 
-Deno.test("projectMindmapMarkdown integrates all combinations of scope and task filters", () => {
+test("projectMindmapMarkdown integrates all combinations of scope and task filters", () => {
   const source = "# Project\n\n## Backend\n- [ ] Open DB task\n- [x] Closed API task\n\n## Frontend\n- [ ] UI task\n";
   const analysis = analyzeMarkdown(source);
   const backendSection = analysis.sections.find((s) => s.text === "Backend");
@@ -809,7 +808,7 @@ Deno.test("projectMindmapMarkdown integrates all combinations of scope and task 
   assertEquals(fallbackMap, allMap);
 });
 
-Deno.test("EditorKitBridge debounced saving coalesces rapid edits into a single host save", async () => {
+test("EditorKitBridge debounced saving coalesces rapid edits into a single host save", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "start", "note-rapid-edits");
 
@@ -831,7 +830,7 @@ Deno.test("EditorKitBridge debounced saving coalesces rapid edits into a single 
   assertEquals(harness.saves[0].text, "edit 10");
 });
 
-Deno.test("EditorKitBridge conflict lifecycle: dirty local vs multiple remote updates with resolution", async () => {
+test("EditorKitBridge conflict lifecycle: dirty local vs multiple remote updates with resolution", async () => {
   const harness = fakeBridgeHarness();
   await deliverBridgeContext(harness, "initial content", "note-conflict-chain");
 
@@ -863,7 +862,7 @@ Deno.test("EditorKitBridge conflict lifecycle: dirty local vs multiple remote up
   assertEquals(harness.saves[0].text, "subsequent local edit");
 });
 
-Deno.test("EditorKitBridge - triggers scheduleSave on successful remote auto-merge", async () => {
+test("EditorKitBridge - triggers scheduleSave on successful remote auto-merge", async () => {
   const harness = fakeBridgeHarness();
   const initial = "# Section 1\n\nContent 1\n\n# Section 2\n\nContent 2\n";
   await deliverBridgeContext(harness, initial, "note-auto-merge");
@@ -888,7 +887,7 @@ Deno.test("EditorKitBridge - triggers scheduleSave on successful remote auto-mer
   assertEquals(harness.saves[0].text, expectedMerged);
 });
 
-Deno.test("SourceLinks - detects inline link [text](url)", () => {
+test("SourceLinks - detects inline link [text](url)", () => {
   const line = "Check out [Standard Notes](https://standardnotes.com) for details";
   // Inside [Standard Notes]
   assertEquals(findMarkdownLinkAtOffset(line, 15), "https://standardnotes.com");
@@ -899,19 +898,19 @@ Deno.test("SourceLinks - detects inline link [text](url)", () => {
   assertEquals(findMarkdownLinkAtOffset(line, 58), undefined);
 });
 
-Deno.test("SourceLinks - detects autolink <url>", () => {
+test("SourceLinks - detects autolink <url>", () => {
   const line = "Visit <https://example.com> now";
   assertEquals(findMarkdownLinkAtOffset(line, 10), "https://example.com");
   assertEquals(findMarkdownLinkAtOffset(line, 2), undefined);
 });
 
-Deno.test("SourceLinks - detects bare url", () => {
+test("SourceLinks - detects bare url", () => {
   const line = "Visit https://example.com/docs today";
   assertEquals(findMarkdownLinkAtOffset(line, 10), "https://example.com/docs");
   assertEquals(findMarkdownLinkAtOffset(line, 2), undefined);
 });
 
-Deno.test("RecurringTasks integration - toggleTask auto-appends and removes @done tag", () => {
+test("RecurringTasks integration - toggleTask auto-appends and removes @done tag", () => {
   const fixedDate = new Date(2026, 7, 29); // 2026-08-29
   const source = "# Habits\n- [ ] Water plants @repeat(3d)\n- [ ] Buy milk\n";
   const analysis1 = analyzeMarkdown(source);
@@ -938,7 +937,6 @@ Deno.test("RecurringTasks integration - toggleTask auto-appends and removes @don
   assertEquals(res4.changed, true);
   assertEquals(res4.markdown, "# Habits\n- [ ] Water plants @repeat(3d)\n- [ ] Buy milk\n");
 });
-
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
