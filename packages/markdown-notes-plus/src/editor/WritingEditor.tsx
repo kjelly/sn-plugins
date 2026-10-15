@@ -18,6 +18,7 @@ import { scanWritingNormalization, WRITING_CODEC_OPTIONS, type WritingCodec } fr
 import { PERF_MARKS, PERF_MEASURES } from "../performance/PerfNames.ts";
 import { isPerfTraceEnabled, markAndMeasurePerf, markPerf, measurePerf, recordPerfDuration } from "../performance/PerfTrace.ts";
 import { writingEmptyTaskListItem } from "../markdown/writingTaskCodec.ts";
+import { writingBlankLines } from "../markdown/writingBlankLines.ts";
 import { applyWritingCommand, isWritingViewEditable, writingLinkHref, insertWritingMarkdown, WRITING_COMMANDS, COMMAND_ALIASES, type SlashMatch, type WritingCommandName } from "./WritingCommands";
 import { isWritingBoldShortcut, isWritingInlineCodeShortcut, isWritingItalicShortcut, isWritingLinkShortcut, isWritingStrikeShortcut } from "./WritingShortcuts";
 import { openExternalLink } from "../utils/linkOpener.ts";
@@ -736,6 +737,7 @@ export function configureWritingEditor(editor: Editor, {
     .use(writingCommonmark)
     .use(gfm)
     .use(writingEmptyTaskListItem)
+    .use(writingBlankLines)
     .use(history)
     .use(listener)
     .config((ctx) => {

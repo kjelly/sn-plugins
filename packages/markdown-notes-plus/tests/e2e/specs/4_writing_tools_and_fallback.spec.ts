@@ -250,11 +250,13 @@ test.describe("Writing Tools & Lossless Guard", () => {
     expect(source).not.toContain("* [ ]");
   });
 
-  test("Whitespace normalization does not bounce Writing back to Source", async ({ page }) => {
+  test("Other whitespace normalization preserves blank paragraphs in Writing", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
 
-    const docWithTrailingBlankLines = "# Notes with Blank Lines\n\nContent paragraph.\n\n\n\n\n\n";
+    // The missing heading separator needs review; the trailing paragraphs
+    // already have Writing's exact spelling and must survive that review.
+    const docWithTrailingBlankLines = "# Notes with Blank Lines\nContent paragraph.\n\n\n\n\n\n";
     await host.goto(docWithTrailingBlankLines, "note-trailing-blank-lines", false);
 
     const dialog = editor.frame.getByRole("dialog", { name: "Writing normalization required" });
@@ -269,6 +271,8 @@ test.describe("Writing Tools & Lossless Guard", () => {
     await expect(editor.writingPane).toBeVisible();
     await expect(editor.sourcePane).toBeHidden();
     await expect(editor.writingEditor).toHaveAttribute("contenteditable", "true");
+    await expect(editor.writingEditor.locator("p")).toHaveCount(4);
+    await expect.poll(() => host.getLatestSavedText()).toBe("# Notes with Blank Lines\n\nContent paragraph.\n\n\n\n\n\n");
   });
 
   test("Writing mode admits a codec-proven Markdown hard break", async ({ page }) => {

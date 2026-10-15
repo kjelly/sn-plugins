@@ -242,6 +242,10 @@ function stripTerminalLineEndings(markdown: string): string {
   return markdown.replace(/(?:\r\n|\r|\n)+$/, "");
 }
 
+function withoutBlankLines(markdown: string): string {
+  return markdown.split("\n").filter((line) => line !== "").join("\n");
+}
+
 /**
  * Milkdown is a structural editor, not a lossless Markdown editor. This
  * conservative profile is the explicit proof boundary for Writing mode.
@@ -282,7 +286,11 @@ export function assessWritingRoundTrip(source: string, serialized: string, codec
   const scan = scanWritingNormalization(source);
   if (scan.unsupportedReason) return unsupportedCapability(scan.unsupportedReason);
   if (!codec) return unsupportedCapability("Writing codec proof is unavailable; use Source mode.");
-  if (source === serialized && scan.changes.length === 0) {
+  // The live codec can preserve Writing's intentional empty paragraphs even
+  // though the generic whitespace scanner proposes collapsing them. Admit
+  // only an exact round trip; opening the note must never rewrite its source.
+  const onlyBlankSpacing = scan.changes.every(({ category }) => category === "blank-line" || category === "final-newline");
+  if (source === serialized && onlyBlankSpacing) {
     if (!isWritingLexicallySafe(source)) return unsupportedCapability("Writing cannot prove this Markdown is lossless; use Source mode.");
     return losslessCapability();
   }
@@ -304,12 +312,13 @@ export function assessWritingRoundTrip(source: string, serialized: string, codec
     if (proofFailure) return unsupportedCapability(proofFailure);
     return losslessCapability();
   }
-  // The live serializer may omit terminal line endings, but it must otherwise
-  // match the policy's normalized Markdown exactly. A body mismatch from a
-  // proven serializer-owned syntax is an explicit normalization; other
+  // The live codec may retain empty paragraphs that the generic scanner
+  // collapses. Compare the remaining lines and still require AST equivalence
+  // and serializer idempotence below, including all literal code whitespace.
+  // A body mismatch from a proven serializer-owned syntax is an explicit normalization; other
   // differences (such as a javascript: link serializer change) remain
   // Source-only.
-  if (stripTerminalLineEndings(serialized) !== stripTerminalLineEndings(scan.markdown)) {
+  if (withoutBlankLines(serialized) !== withoutBlankLines(scan.markdown)) {
     if (hasSerializerOwnedSyntax(source)) {
       const proofFailure = proveWritingNormalization(source, serialized, codec);
       if (proofFailure) return unsupportedCapability(proofFailure);

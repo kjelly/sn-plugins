@@ -54,6 +54,11 @@ Writing mode preserves only documents whose actual Milkdown serializer output
 matches the canonical Markdown. Remote replacements are applied with a
 transaction provenance tag; their normalized serializer callback is ignored,
 so raw remote text remains canonical and is shown in Source mode when needed.
+Empty paragraphs created with Enter between top-level blocks, at the start,
+or at the end of a note are restored from Writing's LF spacing on reload.
+When that spacing round-trips exactly, Writing stays editable without a
+normalization prompt; opening the note does not rewrite or save its Markdown.
+Whitespace inside lists, quotes, and code blocks keeps its existing handling.
 Explicit table, fenced-code, and divider commands establish a stable structural
 editing context, and subsequent edits are accepted only while that structure
 remains serializer-safe. If a user mutation cannot be proven lossless, the app

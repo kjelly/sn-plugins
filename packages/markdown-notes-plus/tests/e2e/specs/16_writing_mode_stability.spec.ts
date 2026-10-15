@@ -82,6 +82,53 @@ async function expectWritingStable(page: Page, editor: EditorPage): Promise<void
 }
 
 test.describe("Writing mode stability contract", () => {
+  test("blank paragraph separators survive saving and reopening in Writing", async ({ page }) => {
+    const host = new MockHost(page);
+    const editor = new EditorPage(page);
+    await host.goto("Alpha\n\nOmega\n", "writing-blank-separators", false);
+    await placeCaretAt(editor.writingEditor.locator("p").first(), "end");
+    for (let index = 0; index < 3; index += 1) {
+      await page.keyboard.press("Enter");
+      await expectWritingStable(page, editor);
+    }
+    await page.keyboard.type("Middle");
+    const expected = "Alpha\n\n\n\n\n\nMiddle\n\nOmega\n";
+    await expect.poll(() => host.getLatestSavedText()).toBe(expected);
+
+    // A fresh editor must recover the spacing without asking to normalize it.
+    await host.goto(expected, "writing-blank-separators", false);
+    await expectWritingStable(page, editor);
+    await expect(editor.frame.getByRole("dialog", { name: "Writing normalization required" })).toBeHidden();
+    await expect(editor.writingEditor.locator("p")).toHaveCount(5);
+    await expect(editor.writingEditor.locator("p").nth(1)).toHaveText("");
+    await expect(editor.writingEditor.locator("p").nth(2)).toHaveText("");
+    await expect.poll(() => host.getSaves()).toHaveLength(0);
+
+    await placeCaretAt(editor.writingEditor.locator("p").last(), "end");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    const withTrailingBlanks = expected.replace(/\n$/, "\n\n\n\n");
+    await expect.poll(() => host.getLatestSavedText()).toBe(withTrailingBlanks);
+    await host.goto(withTrailingBlanks, "writing-blank-separators", false);
+    await expectWritingStable(page, editor);
+    await expect(editor.writingEditor.locator("p")).toHaveCount(7);
+    await placeCaretAt(editor.writingEditor.locator("p").last(), "end");
+    await page.keyboard.press("Backspace");
+    await expectWritingStable(page, editor);
+    await expect(editor.writingEditor.locator("p")).toHaveCount(6);
+    await page.keyboard.press("ControlOrMeta+z");
+    await expectWritingStable(page, editor);
+    await expect(editor.writingEditor.locator("p")).toHaveCount(7);
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    await expectWritingStable(page, editor);
+    await expect(editor.writingEditor.locator("p")).toHaveCount(6);
+    await page.keyboard.press("ControlOrMeta+z");
+    await expectWritingStable(page, editor);
+    await page.keyboard.type("Continued");
+    await expect.poll(() => host.getLatestSavedText()).toBe(`${withTrailingBlanks}Continued\n`);
+    await expectWritingStable(page, editor);
+  });
+
   test("Enter stays in Writing across supported block types", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);

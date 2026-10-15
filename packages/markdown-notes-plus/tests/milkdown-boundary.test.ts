@@ -20,6 +20,7 @@ import { EditorKitBridge, type EditorKitDelegate } from "../src/standardnotes/Ed
 import { configureWritingEditor, replaceAllWithOrigin, synchronizeWritingEditorValue, writingCommonmark, writingLinkSchema } from "../src/editor/WritingEditor";
 import { scanWritingNormalization, WRITING_CODEC_OPTIONS } from "../src/markdown/writingNormalization.ts";
 import { remarkWritingEmptyTaskListItem } from "../src/markdown/writingTaskCodec.ts";
+import { remarkWritingBlankLines } from "../src/markdown/writingBlankLines.ts";
 import { analyzeMarkdown, deleteTask } from "../src/markdown/analysis.ts";
 import { normalizeBareUrls } from "../src/document/normalizeBareUrls.ts";
 
@@ -38,6 +39,7 @@ function createWritingEnvironment(plugins: MilkdownPlugin[] = writingCommonmark,
   const processor = remark()
     .use(remarkGfm)
     .use(remarkWritingEmptyTaskListItem)
+    .use(remarkWritingBlankLines)
     .data("settings", { ...WRITING_CODEC_OPTIONS, resourceLink });
   const parse = ParserState.create!(schema, processor);
   const serialize = SerializerState.create!(schema, processor);
@@ -263,6 +265,8 @@ testWritingEditorPresetLifecycle();
     ["a\n\n\nb", "a\n\nb\n", "a\n\nb\n"],
     ["a \nb", "a\nb\n", "a\nb\n"],
     ["a\r\nb\r\n", "a\nb\n", "a\nb\n"],
+    ["* task\n\n\n\nAfter\n", "- task\n\n\n\nAfter\n", "- task\n\n\n\nAfter\n"],
+    ["# heading\nitem\n\n\n\nAfter\n", "# heading\n\nitem\n\n\n\nAfter\n", "# heading\n\nitem\n\n\n\nAfter\n"],
   ] as const) {
     const result = assessWritingRoundTrip(source, rawSerialized, { parse, serialize });
     assert.equal(result.kind, "normalizable", `format-only difference should be normalizable: ${JSON.stringify(source)} ${JSON.stringify(result)}`);
@@ -310,11 +314,60 @@ testWritingEditorPresetLifecycle();
   assert(!serialized.includes("<br />") && !serialized.includes("<html>"), "Writing must not synthesize raw HTML for empty paragraphs");
   assert.equal(assessWritingMutation("# aa\n", serialized).editable, true, "empty paragraph serialization must remain editable");
   const reloaded = serialize(parse(serialized));
-  assert.equal(reloaded, "# aa\n", "ordinary LF blank lines must parse and reload as canonical Markdown");
+  assert.equal(reloaded, serialized, "Writing's empty paragraphs must survive reloading as ordinary LF blank lines");
+  assert(parse(serialized).eq(doc), "reopening must recover the empty paragraphs, not only their Markdown spelling");
+  assert.equal(assessWritingRoundTrip(serialized, reloaded, { parse, serialize }).kind, "lossless", "preserved blank paragraphs must not request normalization");
   assert(!reloaded.includes("<br />") && !reloaded.includes("<html>"), "reloaded Writing Markdown must remain free of synthetic HTML");
 
   const sourceLiteral = "# aa\n\n<br />\n";
   assert.equal(assessWritingMutation("# aa\n\n", sourceLiteral).editable, false, "literal Source HTML must remain protected by the Writing gate");
+}
+
+{
+  const { schema, parse, serialize } = createWritingEnvironment(writingCommonmark, true);
+  const codec = { parse, serialize };
+  const empty = () => schema.nodes.paragraph.create();
+  for (const blockSource of [
+    "Paragraph\n",
+    "# Heading\n",
+    "- Item\n",
+    "- [ ] Task\n",
+    "> Quote\n",
+    "```text\nfirst\n\n\nlast\n```\n",
+    "| A | B |\n| - | - |\n| C | D |\n",
+  ]) {
+    const block = parse(blockSource).firstChild!;
+    for (const leading of [0, 1, 2]) {
+      for (const trailing of [0, 1, 2]) {
+        const document = schema.nodes.doc.create(null, [
+          ...Array.from({ length: leading }, empty),
+          block,
+          empty(),
+          empty(),
+          schema.nodes.paragraph.create(null, schema.text("After")),
+          ...Array.from({ length: trailing }, empty),
+        ]);
+        const markdown = serialize(document);
+        const reloaded = parse(markdown);
+        assert(reloaded.eq(document), `blank paragraphs must survive around ${blockSource.trim()}: ${leading}/${trailing}`);
+        assert.equal(serialize(reloaded), markdown, "blank spacing must not grow or collapse on reload");
+        assert.equal(assessWritingRoundTrip(markdown, serialize(reloaded), codec).kind, "lossless", "Writing-generated spacing must be admitted without a prompt");
+      }
+    }
+  }
+  for (const count of [1, 2, 3, 4]) {
+    const document = schema.nodes.doc.create(null, Array.from({ length: count }, empty));
+    const markdown = serialize(document);
+    assert(parse(markdown).eq(document), "all-blank notes must preserve their editable paragraphs");
+    assert.equal(assessWritingRoundTrip(markdown, serialize(parse(markdown)), codec).kind, "lossless");
+  }
+  const protectedSource = "Alpha\n\n\n\n<div>HTML</div>\n";
+  assert.equal(assessWritingRoundTrip(protectedSource, protectedSource, codec).kind, "unsupported", "preserved blanks must not bypass unsupported syntax protection");
+  assert.equal(
+    assessWritingRoundTrip("```text\nfirst\n\nlast\n```", "```text\nfirst\nlast\n```\n", codec).kind,
+    "unsupported",
+    "blank-line comparison must still reject lost whitespace inside code",
+  );
 }
 
 function testWritingInitializationReplacementHandoff(): void {
