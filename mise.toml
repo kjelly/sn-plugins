@@ -176,10 +176,11 @@ npm --prefix packages/markdown-notes-plus run test:artifacts
 description = "Build the GitHub Pages artifact with Mise-managed tools"
 depends = ["playwright:install:ci"]
 run = '''
+python3 scripts/build_test.py
 npm --prefix packages/markdown-notes-plus run test:e2e:release
 repo_name="${GITHUB_REPOSITORY#*/}"
 base_url="${PAGES_BASE_URL:-}"
-if [[ -z "$base_url" ]]; then
+if [ -z "$base_url" ]; then
   base_url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${repo_name}"
 fi
 python3 scripts/build.py --owner "${GITHUB_REPOSITORY_OWNER}" --base-url "$base_url"

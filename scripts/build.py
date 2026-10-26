@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+from urllib.parse import urlsplit
 import zipfile
 
 
@@ -50,6 +51,20 @@ def normalize_owner(owner: str) -> str:
     value = value.strip(".-")
     if not value:
         raise ValueError("Owner becomes empty after normalization")
+    return value
+
+
+def normalize_base_url(base_url: str) -> str:
+    value = base_url.strip().rstrip("/")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.query
+        or parsed.fragment
+        or any(character.isspace() for character in value)
+    ):
+        raise ValueError("Base URL must be an absolute HTTP(S) URL without a query or fragment")
     return value
 
 
@@ -342,7 +357,7 @@ def write_catalog(output: Path, manifests: list[dict], base_url: str) -> None:
 def main() -> int:
     args = parse_args()
     owner = normalize_owner(args.owner)
-    base_url = args.base_url.rstrip("/")
+    base_url = normalize_base_url(args.base_url)
     output = Path(args.output).resolve()
 
     if not PACKAGES_DIR.is_dir():
