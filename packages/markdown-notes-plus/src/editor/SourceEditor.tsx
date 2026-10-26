@@ -86,7 +86,12 @@ export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(fu
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.lineWrapping,
         EditorView.cspNonce.of("sn-editor-csp-nonce"),
-        readOnlyCompartment.current.of(EditorView.editable.of(!readOnly)),
+        // A non-editable surface still needs focus for selection and copy shortcuts.
+        EditorView.contentAttributes.of({ tabindex: "0" }),
+        readOnlyCompartment.current.of([
+          EditorState.readOnly.of(readOnly),
+          EditorView.editable.of(!readOnly),
+        ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !applyingExternal.current) {
             onChangeRef.current(update.state.doc.toString(), sourceChangeSetFromCodeMirror(
@@ -138,11 +143,13 @@ export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(fu
   }, [value, resetGeneration]);
 
   useEffect(() => {
-    view.current?.dispatch({ effects: readOnlyCompartment.current.reconfigure(EditorView.editable.of(!readOnly)) });
+    view.current?.dispatch({ effects: readOnlyCompartment.current.reconfigure([
+      EditorState.readOnly.of(readOnly),
+      EditorView.editable.of(!readOnly),
+    ]) });
   }, [readOnly]);
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (readOnly) return;
     const target = event.target as HTMLElement;
     if (target.closest("button, input, a, select, textarea")) return;
     if (!view.current?.hasFocus) {

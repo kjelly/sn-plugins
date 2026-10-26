@@ -47,6 +47,51 @@ test.describe("Modes and Projections", () => {
     await expect(editor.sourceSearchPanel).toBeVisible();
   });
 
+  for (const initiallyLocked of [true, false]) {
+    test(`Locked Source keeps Select All inside the note (${initiallyLocked ? "initial lock" : "live lock"})`, async ({ page }) => {
+      const host = new MockHost(page);
+      const editor = new EditorPage(page);
+      const content = "# Locked selection\n\nOnly the note should be selected.\n";
+      await host.goto(content, "note-source-selection", initiallyLocked);
+      await editor.switchMode("Source");
+      if (!initiallyLocked) await host.setLocked(true);
+      await expect(editor.sourceEditor).toHaveAttribute("contenteditable", "false");
+
+      await editor.sourceEditor.click();
+      await page.keyboard.press("ControlOrMeta+a");
+      await expect.poll(() => editor.sourceEditor.evaluate((element) => {
+        const selection = window.getSelection();
+        return {
+          insideSource: !!selection && element.contains(selection.anchorNode) && element.contains(selection.focusNode),
+          text: selection?.toString().trimEnd(),
+        };
+      })).toEqual({ insideSource: true, text: content.trimEnd() });
+      await expect(editor.sourceEditor).toBeFocused();
+
+      // Destructive shortcuts must leave both the source and host untouched.
+      await page.keyboard.press("Backspace");
+      await page.keyboard.type("Blocked edit");
+      await page.keyboard.press("Tab");
+      await expect.poll(() => editor.getSourceText()).toBe(content);
+      expect(await host.getSaves()).toHaveLength(0);
+
+      // The search field must keep its own native Select All behavior.
+      await editor.sourceSearchButton.click();
+      await expect(editor.sourceSearchPanel.locator('button[name="replaceAll"]')).toHaveCount(0);
+      const search = editor.sourceSearchPanel.locator('input[name="search"]');
+      await search.fill("Only the note");
+      await search.press("ControlOrMeta+a");
+      expect(await search.evaluate((element: HTMLInputElement) => [element.selectionStart, element.selectionEnd]))
+        .toEqual([0, "Only the note".length]);
+      await search.press("Escape");
+
+      await host.setLocked(false);
+      await expect(editor.sourceEditor).toHaveAttribute("contenteditable", "true");
+      await editor.selectAllAndTypeInSource("# Unlocked\n");
+      await expect.poll(() => host.getLatestSavedText()).toBe("# Unlocked\n");
+    });
+  }
+
   test("Outline heading click preserves Writing mode and highlights section", async ({ page }) => {
     const host = new MockHost(page);
     const editor = new EditorPage(page);
